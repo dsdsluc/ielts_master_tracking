@@ -1,0 +1,22 @@
+import { prisma } from "@/lib/prisma";
+
+async function getAppSetting(configGroup: string, key: string): Promise<string | null> {
+  const row = await prisma.appSetting.findUnique({
+    where: { configGroup_key: { configGroup, key } },
+  });
+  return row?.value ?? null;
+}
+
+/** Cửa sổ cảnh báo trùng (giờ) — CONFIG_DUPLICATE.DUP_WINDOW_HOURS, mặc định 24. */
+export async function getDuplicateWindowHours(): Promise<number> {
+  const raw = await getAppSetting("duplicate", "DUP_WINDOW_HOURS");
+  const v = Number(raw);
+  return Number.isFinite(v) && v > 0 ? v : 24;
+}
+
+/** Số lần chăm sóc riêng biệt tối thiểu trước khi đóng Spam vì im lặng — mặc định 3. */
+export async function getSpamNoReplyMinAttempts(): Promise<number> {
+  const raw = await getAppSetting("system", "SPAM_NO_REPLY_MIN_ATTEMPTS");
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 3;
+}

@@ -1,0 +1,309 @@
+// Prisma schema — Tracking Leads IELTS Master
+// Thiết kế chi tiết & lý do: xem plans/architecture.txt ở gốc repo
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// 1. DANH MỤC (CONFIG_*)
+// ---------------------------------------------------------------------------
+
+model Branch {
+  code              String   @id
+  name              String
+  active            Boolean  @default(true)
+  slaReceiveMinutes Int      @map("sla_receive_minutes")
+  slaProcessHours   Int      @map("sla_process_hours")
+  note              String?
+
+  fanpages              Fanpage[]
+  users                 User[]
+  suggestedInteractions Interaction[] @relation("SuggestedBranch")
+  assignedInteractions  Interaction[] @relation("AssignedBranch")
+  adsCosts              AdsCost[]
+
+  @@map("branches")
+}
+
+model Source {
+  name         String   @id
+  channelGroup String   @map("channel_group")
+  sourceGroup  String   @map("source_group")
+  requireAdId  Boolean  @default(false) @map("require_ad_id")
+  active       Boolean  @default(true)
+  note         String?
+
+  domains      SourceDomain[]
+  fanpages     Fanpage[]
+  interactions Interaction[]
+  adsCosts     AdsCost[]
+
+  @@map("sources")
+}
+
+model SourceDomain {
+  id         Int    @id @default(autoincrement())
+  sourceName String @map("source_name")
+  domain     String
+
+  source Source @relation(fields: [sourceName], references: [name], onDelete: Cascade)
+
+  @@unique([sourceName, domain])
+  @@map("source_domains")
+}
+
+model Fanpage {
+  name              String  @id
+  defaultSourceName String  @map("default_source_name")
+  suggestedBranchCode String @map("suggested_branch_code")
+  requireAdId       Boolean @default(false) @map("require_ad_id")
+  active            Boolean @default(true)
+  note              String?
+
+  defaultSource   Source        @relation(fields: [defaultSourceName], references: [name])
+  suggestedBranch Branch        @relation(fields: [suggestedBranchCode], references: [code])
+  interactions    Interaction[]
+  adsCosts        AdsCost[]
+
+  @@map("fanpages")
+}
+
+model Status {
+  name            String  @id
+  sortOrder       Int     @map("sort_order")
+  isClosingStatus Boolean @default(false) @map("is_closing_status")
+  requirePhone    Boolean @default(false) @map("require_phone")
+  active          Boolean @default(true)
+  note            String?
+
+  allowedRoles StatusAllowedRole[]
+  interactions Interaction[]
+  customers    Customer[]
+
+  @@map("statuses")
+}
+
+model StatusAllowedRole {
+  id         Int    @id @default(autoincrement())
+  statusName String @map("status_name")
+  role       String
+
+  status Status @relation(fields: [statusName], references: [name], onDelete: Cascade)
+
+  @@unique([statusName, role])
+  @@map("status_allowed_roles")
+}
+
+model CustomerObject {
+  name      String  @id
+  sortOrder Int     @map("sort_order")
+  active    Boolean @default(true)
+
+  interactions Interaction[]
+
+  @@map("customer_objects")
+}
+
+model User {
+  email             String  @id
+  fullName          String  @map("full_name")
+  role              String
+  branchCode        String? @map("branch_code")
+  active            Boolean @default(true)
+  viewAllBranches   Boolean @default(false) @map("view_all_branches")
+  userKey           String? @map("user_key")
+  canCloseMktReport Boolean @default(false) @map("can_close_mkt_report")
+  note              String?
+
+  passwordHash      String  @map("password_hash")
+  mustChangePassword Boolean @default(true) @map("must_change_password")
+
+  branch                  Branch?       @relation(fields: [branchCode], references: [code])
+  assignedInteractions    Interaction[] @relation("AssignedSale")
+  createdInteractions     Interaction[] @relation("CreatedBy")
+  updatedInteractions     Interaction[] @relation("UpdatedBy")
+  reassignedInteractions  Interaction[] @relation("ReassignedBy")
+  followupInteractions    Interaction[] @relation("FollowupHandledBy")
+  mktPushedInteractions   Interaction[] @relation("MktPushedBy")
+  systemLogs              SystemLog[]
+
+  @@map("users")
+}
+
+model AppSetting {
+  id          Int     @id @default(autoincrement())
+  configGroup String  @map("config_group") // "duplicate" | "system"
+  key         String
+  value       String
+  description String?
+
+  @@unique([configGroup, key])
+  @@map("app_settings")
+}
+
+// ---------------------------------------------------------------------------
+// 2. NGHIỆP VỤ LÕI
+// ---------------------------------------------------------------------------
+
+model Customer {
+  customerKey      String   @id @map("customer_key")
+  displayName      String   @map("display_name")
+  canonicalLink    String   @unique @map("canonical_link")
+  phoneNormalized  String?  @map("phone_normalized")
+  firstTouchAt     DateTime @map("first_touch_at")
+  lastTouchAt      DateTime @map("last_touch_at")
+  currentStatusName String  @map("current_status_name")
+
+  currentStatus Status        @relation(fields: [currentStatusName], references: [name])
+  interactions  Interaction[]
+
+  @@map("customers")
+}
+
+model Interaction {
+  interactionId  String   @id @map("interaction_id")
+  customerKey    String   @map("customer_key")
+  version        Int      @default(1)
+  activeFlag     Boolean  @default(true) @map("active_flag")
+  createdLeadAt  DateTime @map("created_lead_at")
+
+  sourceName         String  @map("source_name")
+  fanpageName         String  @map("fanpage_name")
+  adId                String? @map("ad_id")
+  firstTouchAdId      String? @map("first_touch_ad_id")
+  lastTouchAdId       String? @map("last_touch_ad_id")
+
+  rawLink       String  @map("raw_link")
+  canonicalLink String  @map("canonical_link")
+  customerName  String  @map("customer_name")
+
+  customerObjectName String @map("customer_object_name")
+  suggestedBranchCode String @map("suggested_branch_code")
+  assignedBranchCode  String @map("assigned_branch_code")
+  statusName          String @map("status_name")
+
+  interactionType String @map("interaction_type")
+  touchCount      Int    @default(1) @map("touch_count")
+
+  assignedSaleEmail String? @map("assigned_sale_email")
+
+  receivedAt      DateTime? @map("received_at")
+  phoneRaw        String?   @map("phone_raw")
+  phoneNormalized String?   @map("phone_normalized")
+  phoneCapturedAt DateTime? @map("phone_captured_at")
+  closedAt        DateTime? @map("closed_at")
+
+  transferredToPse Boolean @default(false) @map("transferred_to_pse")
+  pseProfileCode   String? @map("pse_profile_code")
+
+  createdByEmail String   @map("created_by_email")
+  createdAt      DateTime @map("created_at")
+  updatedByEmail String?  @map("updated_by_email")
+  updatedAt      DateTime? @map("updated_at")
+
+  reassignedByEmail String? @map("reassigned_by_email")
+  reassignReason    String? @map("reassign_reason")
+
+  needsFollowup Boolean @default(false) @map("needs_followup")
+
+  mktPushedAt      DateTime? @map("mkt_pushed_at")
+  mktPushedByEmail String?   @map("mkt_pushed_by_email")
+
+  conversationLink String? @map("conversation_link")
+  mktSuggestion    String? @map("mkt_suggestion")
+
+  followupHandledByEmail String?   @map("followup_handled_by_email")
+  followupHandledAt      DateTime? @map("followup_handled_at")
+
+  customer         Customer        @relation(fields: [customerKey], references: [customerKey])
+  source           Source          @relation(fields: [sourceName], references: [name])
+  fanpage          Fanpage         @relation(fields: [fanpageName], references: [name])
+  customerObject   CustomerObject  @relation(fields: [customerObjectName], references: [name])
+  suggestedBranch  Branch          @relation("SuggestedBranch", fields: [suggestedBranchCode], references: [code])
+  assignedBranch   Branch          @relation("AssignedBranch", fields: [assignedBranchCode], references: [code])
+  status           Status          @relation(fields: [statusName], references: [name])
+  assignedSale     User?           @relation("AssignedSale", fields: [assignedSaleEmail], references: [email])
+  createdBy        User            @relation("CreatedBy", fields: [createdByEmail], references: [email])
+  updatedBy        User?           @relation("UpdatedBy", fields: [updatedByEmail], references: [email])
+  reassignedBy     User?           @relation("ReassignedBy", fields: [reassignedByEmail], references: [email])
+  followupHandledBy User?          @relation("FollowupHandledBy", fields: [followupHandledByEmail], references: [email])
+  mktPushedBy      User?           @relation("MktPushedBy", fields: [mktPushedByEmail], references: [email])
+
+  migrationMeta InteractionMigrationMeta?
+  systemLogs    SystemLog[]
+
+  @@index([customerKey])
+  @@index([statusName])
+  @@index([assignedBranchCode])
+  @@index([createdLeadAt])
+  @@map("interactions")
+}
+
+// Dữ liệu đối chiếu migration — tách khỏi bảng chính, chỉ phục vụ audit 1 lần
+model InteractionMigrationMeta {
+  interactionId String  @id @map("interaction_id")
+  legacyStt     Int?    @map("legacy_stt")
+  legacyRow     Int?    @map("legacy_row")
+  migrationNote String? @map("migration_note")
+
+  interaction Interaction @relation(fields: [interactionId], references: [interactionId], onDelete: Cascade)
+
+  @@map("interaction_migration_meta")
+}
+
+// ---------------------------------------------------------------------------
+// 3. TÀI CHÍNH / MARKETING
+// ---------------------------------------------------------------------------
+
+model AdsCost {
+  id             Int      @id @default(autoincrement())
+  periodStart    DateTime @map("period_start")
+  periodEnd      DateTime @map("period_end")
+  adId           String   @map("ad_id")
+  adName         String   @map("ad_name")
+  sourceName     String?  @map("source_name")
+  fanpageName    String?  @map("fanpage_name")
+  branchCode     String?  @map("branch_code")
+  costVnd        Decimal  @map("cost_vnd") @db.Decimal(14, 2)
+  note           String?
+  updatedByEmail String?  @map("updated_by_email")
+  updatedAt      DateTime @map("updated_at")
+
+  source  Source?  @relation(fields: [sourceName], references: [name])
+  fanpage Fanpage? @relation(fields: [fanpageName], references: [name])
+  branch  Branch?  @relation(fields: [branchCode], references: [code])
+
+  @@index([adId])
+  @@map("ads_cost")
+}
+
+// ---------------------------------------------------------------------------
+// 4. AUDIT LOG
+// ---------------------------------------------------------------------------
+
+model SystemLog {
+  logId         String   @id @map("log_id")
+  loggedAt      DateTime @map("logged_at")
+  actorEmail    String?  @map("actor_email")
+  actorName     String   @map("actor_name")
+  actorRole     String   @map("actor_role")
+  action        String
+  interactionId String?  @map("interaction_id")
+  detailOld     Json?    @map("detail_old")
+  detailNew     Json?    @map("detail_new")
+  result        String
+  technicalInfo String?  @map("technical_info")
+
+  actor       User?        @relation(fields: [actorEmail], references: [email])
+  interaction Interaction? @relation(fields: [interactionId], references: [interactionId])
+
+  @@index([loggedAt])
+  @@index([interactionId])
+  @@map("system_log")
+}
