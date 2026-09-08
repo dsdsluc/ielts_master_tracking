@@ -22,6 +22,7 @@ export async function requireApiUser(): Promise<CurrentUser> {
       viewAllBranches: true,
       active: true,
       mustChangePassword: true,
+      canCloseMktReport: true,
       branch: { select: { name: true } },
     },
   });

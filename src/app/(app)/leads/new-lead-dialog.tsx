@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LoaderCircle, Plus, TriangleAlert, UserRoundPlus } from "lucide-react";
+import { LoaderCircle, Plus, Search, TriangleAlert, UserRoundPlus } from "lucide-react";
 import { detectSourceName, type LeadFormOptions } from "@/app/(app)/leads/lead-form-options";
 import {
   Dialog,
@@ -18,6 +18,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Autocomplete,
+  AutocompleteClear,
+  AutocompleteEmpty,
+  AutocompleteIcon,
+  AutocompleteInput,
+  AutocompleteInputGroup,
+  AutocompleteItem,
+  AutocompleteList,
+  AutocompletePopup,
+  AutocompletePortal,
+  AutocompletePositioner,
+} from "@/components/ui/autocomplete";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -51,6 +64,10 @@ export function NewLeadDialog({ options, onCreated }: { options: LeadFormOptions
   const filteredFanpages = useMemo(
     () => (detectedSourceName ? options.fanpages.filter((f) => f.defaultSourceName === detectedSourceName) : options.fanpages),
     [detectedSourceName, options.fanpages]
+  );
+  const adItems = useMemo(
+    () => options.adSuggestions.map((a) => ({ value: a.adId, label: a.adId, adName: a.adName })),
+    [options.adSuggestions]
   );
 
   function update<K extends keyof typeof form>(key: K, value: string) {
@@ -158,7 +175,43 @@ export function NewLeadDialog({ options, onCreated }: { options: LeadFormOptions
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="adId">Ad ID (tuỳ chọn)</Label>
-              <Input id="adId" value={form.adId} onChange={(e) => update("adId", e.target.value)} className="h-11 rounded-xl bg-secondary/40" />
+              <Autocomplete
+                items={adItems}
+                value={form.adId}
+                onValueChange={(v) => update("adId", v)}
+                itemToStringValue={(item) => item.value}
+                filter={(item, query) => {
+                  const q = query.trim().toLowerCase();
+                  if (!q) return true;
+                  return item.value.toLowerCase().includes(q) || item.adName.toLowerCase().includes(q);
+                }}
+                openOnInputClick
+              >
+                <AutocompleteInputGroup className="h-11 bg-secondary/40">
+                  <AutocompleteIcon>
+                    <Search className="size-3.5" />
+                  </AutocompleteIcon>
+                  <AutocompleteInput id="adId" placeholder="Dán hoặc tìm Ad ID / tên quảng cáo…" />
+                  <AutocompleteClear />
+                </AutocompleteInputGroup>
+                <AutocompletePortal>
+                  <AutocompletePositioner>
+                    <AutocompletePopup>
+                      <AutocompleteEmpty>
+                        Chưa có Ad ID này trong danh sách — có thể quảng cáo chưa được đồng bộ, vẫn nhập/dán tay được.
+                      </AutocompleteEmpty>
+                      <AutocompleteList>
+                        {(item: { value: string; label: string; adName: string }) => (
+                          <AutocompleteItem key={item.value} value={item}>
+                            <span className="truncate font-mono text-xs text-foreground">{item.value}</span>
+                            <span className="truncate text-xs text-muted-foreground">{item.adName}</span>
+                          </AutocompleteItem>
+                        )}
+                      </AutocompleteList>
+                    </AutocompletePopup>
+                  </AutocompletePositioner>
+                </AutocompletePortal>
+              </Autocomplete>
             </div>
           </div>
 

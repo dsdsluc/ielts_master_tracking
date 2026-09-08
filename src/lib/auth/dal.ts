@@ -31,6 +31,7 @@ export const getCurrentUser = cache(async () => {
       viewAllBranches: true,
       active: true,
       mustChangePassword: true,
+      canCloseMktReport: true,
       branch: { select: { name: true } },
     },
   });

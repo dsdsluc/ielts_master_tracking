@@ -70,6 +70,7 @@ model Fanpage {
   suggestedBranch Branch        @relation(fields: [suggestedBranchCode], references: [code])
   interactions    Interaction[]
   adsCosts        AdsCost[]
+  mktPageReports  MktPageReport[]
 
   @@map("fanpages")
 }
@@ -132,6 +133,7 @@ model User {
   followupInteractions    Interaction[] @relation("FollowupHandledBy")
   mktPushedInteractions   Interaction[] @relation("MktPushedBy")
   systemLogs              SystemLog[]
+  closedMktPageReports    MktPageReport[] @relation("ClosedMktPageReport")
 
   @@map("users")
 }
@@ -281,6 +283,27 @@ model AdsCost {
 
   @@index([adId])
   @@map("ads_cost")
+}
+
+// Báo cáo Page hằng ngày — cohort theo ngày TẠO lead (không phải ngày xin được
+// SĐT), nên lead cũ xin SĐT hôm nay chỉ cộng vào report của ngày nó được tạo.
+// Trước khi chốt: totalLeads/qualifiedLeads = null, số liệu đọc trực tiếp từ
+// Interaction. Sau khi chốt (closedAt có giá trị): đọc 2 cột này làm snapshot
+// cố định, không tính lại nữa dù dữ liệu gốc có đổi.
+model MktPageReport {
+  id             Int       @id @default(autoincrement())
+  reportDate     DateTime  @map("report_date") @db.Date
+  fanpageName    String    @map("fanpage_name")
+  totalLeads     Int?      @map("total_leads")
+  qualifiedLeads Int?      @map("qualified_leads")
+  closedAt       DateTime? @map("closed_at")
+  closedByEmail  String?   @map("closed_by_email")
+
+  fanpage  Fanpage @relation(fields: [fanpageName], references: [name])
+  closedBy User?   @relation("ClosedMktPageReport", fields: [closedByEmail], references: [email])
+
+  @@unique([reportDate, fanpageName])
+  @@map("mkt_page_reports")
 }
 
 // ---------------------------------------------------------------------------

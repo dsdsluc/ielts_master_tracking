@@ -5,6 +5,7 @@ export type LeadFormOptions = {
   fanpages: { name: string; defaultSourceName: string }[];
   branches: { code: string; name: string }[];
   objects: string[];
+  adSuggestions: { adId: string; adName: string }[];
 };
 
 /** Nhận diện Nguồn từ domain trong link — mirror detectSourceFromLink phía

@@ -64,6 +64,8 @@ export const SYSTEM_LOG_ACTION = {
   MKT_PUSH: "MKT_PUSH_SALE",
   MKT_PUSH_RESOLVED: "MKT_PUSH_RESOLVED",
   REASSIGN_PHONE_LEAD: "REASSIGN_PHONE_LEAD",
+  CLOSE_MKT_PAGE_REPORT: "CLOSE_MKT_PAGE_REPORT",
+  REOPEN_MKT_PAGE_REPORT: "REOPEN_MKT_PAGE_REPORT",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.

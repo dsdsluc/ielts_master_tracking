@@ -10,9 +10,23 @@ import {
   MessageCircleMore,
   PhoneCall,
   Save,
+  Search,
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
+import {
+  Autocomplete,
+  AutocompleteClear,
+  AutocompleteEmpty,
+  AutocompleteIcon,
+  AutocompleteInput,
+  AutocompleteInputGroup,
+  AutocompleteItem,
+  AutocompleteList,
+  AutocompletePopup,
+  AutocompletePortal,
+  AutocompletePositioner,
+} from "@/components/ui/autocomplete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,6 +117,10 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
   const filteredFanpages = useMemo(
     () => (detectedSourceName ? options.fanpages.filter((f) => f.defaultSourceName === detectedSourceName) : options.fanpages),
     [detectedSourceName, options.fanpages]
+  );
+  const adItems = useMemo(
+    () => options.adSuggestions.map((a) => ({ value: a.adId, label: a.adId, adName: a.adName })),
+    [options.adSuggestions]
   );
 
   useEffect(() => {
@@ -236,7 +254,43 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                     </div>
                     <div className="flex flex-col gap-2.5">
                       <Label htmlFor="edit-adId" className="text-base">Ad ID (tuỳ chọn)</Label>
-                      <Input id="edit-adId" value={form.adId} onChange={(e) => update("adId", e.target.value)} className="h-12 rounded-xl text-base" />
+                      <Autocomplete
+                        items={adItems}
+                        value={form.adId}
+                        onValueChange={(v) => update("adId", v)}
+                        itemToStringValue={(item) => item.value}
+                        filter={(item, query) => {
+                          const q = query.trim().toLowerCase();
+                          if (!q) return true;
+                          return item.value.toLowerCase().includes(q) || item.adName.toLowerCase().includes(q);
+                        }}
+                        openOnInputClick
+                      >
+                        <AutocompleteInputGroup className="h-12">
+                          <AutocompleteIcon>
+                            <Search className="size-4" />
+                          </AutocompleteIcon>
+                          <AutocompleteInput id="edit-adId" placeholder="Dán hoặc tìm Ad ID / tên quảng cáo…" className="text-base" />
+                          <AutocompleteClear />
+                        </AutocompleteInputGroup>
+                        <AutocompletePortal>
+                          <AutocompletePositioner>
+                            <AutocompletePopup>
+                              <AutocompleteEmpty>
+                                Chưa có Ad ID này trong danh sách — có thể quảng cáo chưa được đồng bộ, vẫn nhập/dán tay được.
+                              </AutocompleteEmpty>
+                              <AutocompleteList>
+                                {(item: { value: string; label: string; adName: string }) => (
+                                  <AutocompleteItem key={item.value} value={item}>
+                                    <span className="truncate font-mono text-xs text-foreground">{item.value}</span>
+                                    <span className="truncate text-xs text-muted-foreground">{item.adName}</span>
+                                  </AutocompleteItem>
+                                )}
+                              </AutocompleteList>
+                            </AutocompletePopup>
+                          </AutocompletePositioner>
+                        </AutocompletePortal>
+                      </Autocomplete>
                     </div>
                   </div>
 

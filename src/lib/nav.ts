@@ -4,6 +4,7 @@ import {
   Gauge,
   Inbox,
   Users,
+  CalendarCheck,
   Megaphone,
   Building2,
   Flag,
@@ -12,10 +13,13 @@ import {
   Tag,
   UserCog,
   SlidersHorizontal,
+  History,
   ScrollText,
   ShieldAlert,
+  Sparkles,
+  TrendingUp,
 } from "lucide-react";
-import { ROLES, CAN_VIEW_LEAD } from "@/lib/interactions/constants";
+import { ROLES, CAN_VIEW_LEAD, CAN_PUSH_FOLLOWUP } from "@/lib/interactions/constants";
 
 type AppRole = (typeof ROLES)[keyof typeof ROLES];
 
@@ -92,16 +96,52 @@ export const navGroups: NavGroup[] = [
         icon: Users,
         allowedRoles: SALE_WORKSPACE_ROLES,
       },
+      {
+        title: "Cần chăm sóc lại",
+        href: "/followup-inbox",
+        icon: Sparkles,
+        allowedRoles: SALE_WORKSPACE_ROLES,
+      },
     ],
   },
   {
     label: "Marketing",
     items: [
       {
+        title: "Dashboard Marketing",
+        href: "/marketing-dashboard",
+        icon: Gauge,
+        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+      },
+      {
+        title: "Báo cáo Page hằng ngày",
+        href: "/page-report",
+        icon: CalendarCheck,
+        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+      },
+      {
         title: "Chi phí quảng cáo",
         href: "/ads-cost",
         icon: Megaphone,
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+      },
+      {
+        title: "Hiệu quả quảng cáo",
+        href: "/ads-performance",
+        icon: TrendingUp,
+        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+      },
+      {
+        title: "Chăm sóc lại",
+        href: "/followup",
+        icon: Sparkles,
+        allowedRoles: CAN_PUSH_FOLLOWUP,
+      },
+      {
+        title: "Theo dõi hiệu quả chăm sóc lại",
+        href: "/followup-tracking",
+        icon: History,
+        allowedRoles: CAN_PUSH_FOLLOWUP,
       },
     ],
   },
