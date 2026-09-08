@@ -36,6 +36,13 @@ const SALE_WORKSPACE_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
 const LEAD_ROLES = CAN_VIEW_LEAD;
 const ADMIN_ROLES = [ROLES.ADMIN] as const;
 
+// Sale/Admin không được vào trang Dashboard tổng ("/") — home của họ là
+// Dashboard Sale. Các vai trò còn lại (Marketing, Leader, BGĐ, Admin) đều có
+// quyền vào "/".
+export function getHomePathForRole(role: string): string {
+  return role === ROLES.SALES ? "/dashboard-sale" : "/";
+}
+
 export function getNavTitle(pathname: string): string {
   const allItems = navGroups.flatMap((g) => g.items);
   // Khớp tuyệt đối trước — "/admin" và "/admin/users" đều là href hợp lệ,

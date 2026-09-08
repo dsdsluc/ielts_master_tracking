@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       needsFollowup: query.needsFollowup === "true",
       mine: query.mine === "true",
       branch: query.branch,
+      search: query.search,
       page: query.page,
       pageSize: query.pageSize,
     });

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
+import { getHomePathForRole } from "@/lib/nav";
 
 export type LoginState = { error?: string } | undefined;
 
@@ -35,5 +36,5 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
     viewAllBranches: user.viewAllBranches,
   });
 
-  redirect("/");
+  redirect(getHomePathForRole(user.role));
 }

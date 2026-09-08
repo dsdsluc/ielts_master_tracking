@@ -204,17 +204,17 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
               </div>
             )}
 
-            <div className="rounded-2xl border border-border bg-card p-6 sm:p-7">
-              <div className="mb-5 flex items-center justify-between gap-2">
+            <div className="shadow-bubble rounded-3xl border border-border bg-card p-6 sm:p-8 lg:p-10">
+              <div className="mb-7 flex items-center justify-between gap-2">
                 <h2 className="font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Thông tin liên hệ</h2>
                 {!canEdit && <span className="text-xs text-muted-foreground">Chỉ xem — không thể chỉnh sửa hội thoại này</span>}
               </div>
 
               {canEdit ? (
-                <div className="flex flex-col gap-6">
-                  <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-8">
+                  <div className="flex flex-col gap-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="edit-rawLink">Link khách hàng</Label>
+                      <Label htmlFor="edit-rawLink" className="text-base">Link khách hàng</Label>
                       {form.rawLink.trim() &&
                         (detectedSourceName ? (
                           <span className="rounded-full bg-status-received-bg px-2 py-0.5 font-condensed text-[10px] font-semibold tracking-wide text-status-received uppercase">
@@ -226,25 +226,25 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                           </span>
                         ))}
                     </div>
-                    <Input id="edit-rawLink" value={form.rawLink} onChange={(e) => update("rawLink", e.target.value)} className="h-11 rounded-xl" />
+                    <Input id="edit-rawLink" value={form.rawLink} onChange={(e) => update("rawLink", e.target.value)} className="h-12 rounded-xl text-base" />
                   </div>
 
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="edit-customerName">Tên khách</Label>
-                      <Input id="edit-customerName" value={form.customerName} onChange={(e) => update("customerName", e.target.value)} className="h-11 rounded-xl" />
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <div className="flex flex-col gap-2.5">
+                      <Label htmlFor="edit-customerName" className="text-base">Tên khách</Label>
+                      <Input id="edit-customerName" value={form.customerName} onChange={(e) => update("customerName", e.target.value)} className="h-12 rounded-xl text-base" />
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="edit-adId">Ad ID (tuỳ chọn)</Label>
-                      <Input id="edit-adId" value={form.adId} onChange={(e) => update("adId", e.target.value)} className="h-11 rounded-xl" />
+                    <div className="flex flex-col gap-2.5">
+                      <Label htmlFor="edit-adId" className="text-base">Ad ID (tuỳ chọn)</Label>
+                      <Input id="edit-adId" value={form.adId} onChange={(e) => update("adId", e.target.value)} className="h-12 rounded-xl text-base" />
                     </div>
                   </div>
 
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <Label>Fanpage</Label>
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <div className="flex flex-col gap-2.5">
+                      <Label className="text-base">Fanpage</Label>
                       <Select value={form.fanpageName} onValueChange={(v) => update("fanpageName", v ?? "")}>
-                        <SelectTrigger className="h-11 w-full rounded-xl">
+                        <SelectTrigger className="h-12 w-full rounded-xl text-base">
                           <SelectValue placeholder="Chọn fanpage" />
                         </SelectTrigger>
                         <SelectContent>
@@ -256,10 +256,10 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>Đối tượng</Label>
+                    <div className="flex flex-col gap-2.5">
+                      <Label className="text-base">Đối tượng</Label>
                       <Select value={form.customerObjectName} onValueChange={(v) => update("customerObjectName", v ?? "")}>
-                        <SelectTrigger className="h-11 w-full rounded-xl">
+                        <SelectTrigger className="h-12 w-full rounded-xl text-base">
                           <SelectValue placeholder="Chọn đối tượng" />
                         </SelectTrigger>
                         <SelectContent>
@@ -271,10 +271,10 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>Cơ sở phụ trách</Label>
+                    <div className="flex flex-col gap-2.5">
+                      <Label className="text-base">Cơ sở phụ trách</Label>
                       <Select value={form.assignedBranchCode} onValueChange={(v) => update("assignedBranchCode", v ?? "")}>
-                        <SelectTrigger className="h-11 w-full rounded-xl">
+                        <SelectTrigger className="h-12 w-full rounded-xl text-base">
                           <SelectValue placeholder="Chọn cơ sở" />
                         </SelectTrigger>
                         <SelectContent>
@@ -288,9 +288,9 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="edit-conversationLink">Link hội thoại (tuỳ chọn)</Label>
-                    <Input id="edit-conversationLink" value={form.conversationLink} onChange={(e) => update("conversationLink", e.target.value)} className="h-11 rounded-xl" />
+                  <div className="flex flex-col gap-2.5">
+                    <Label htmlFor="edit-conversationLink" className="text-base">Link hội thoại (tuỳ chọn)</Label>
+                    <Input id="edit-conversationLink" value={form.conversationLink} onChange={(e) => update("conversationLink", e.target.value)} className="h-12 rounded-xl text-base" />
                   </div>
 
                   {saveDuplicate && (
@@ -304,12 +304,12 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                   )}
                   {saveError && <FormMessage kind="error">{saveError}</FormMessage>}
 
-                  <div className="flex items-center gap-3 pt-1">
+                  <div className="flex items-center gap-3 pt-2">
                     {saveDuplicate ? (
                       <Button
                         type="button"
                         variant="outline"
-                        className="glossy rounded-full border-gold/40 bg-accent px-5 text-accent-foreground hover:bg-accent/80"
+                        className="glossy h-11 rounded-full border-gold/40 bg-accent px-6 text-base text-accent-foreground hover:bg-accent/80"
                         disabled={saving}
                         onClick={() => handleSave("Sale xác nhận không trùng, vẫn lưu thay đổi")}
                       >
@@ -319,7 +319,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                     ) : (
                       <Button
                         type="button"
-                        className="glossy shadow-bubble rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary/90"
+                        className="glossy shadow-bubble h-11 rounded-full bg-primary px-6 text-base text-primary-foreground hover:bg-primary/90"
                         disabled={saving}
                         onClick={() => handleSave()}
                       >

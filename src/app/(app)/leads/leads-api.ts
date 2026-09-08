@@ -30,6 +30,7 @@ export async function fetchInteractions(params: {
   status?: string; // 1 trạng thái, hoặc nhiều trạng thái nối dấu phẩy
   needsFollowup?: boolean;
   mine?: boolean;
+  search?: string;
   page?: number;
   pageSize?: number;
 }): Promise<PagedInteractions> {
@@ -37,6 +38,7 @@ export async function fetchInteractions(params: {
   if (params.status) search.set("status", params.status);
   if (params.needsFollowup) search.set("needsFollowup", "true");
   if (params.mine) search.set("mine", "true");
+  if (params.search) search.set("search", params.search);
   if (params.page) search.set("page", String(params.page));
   if (params.pageSize) search.set("pageSize", String(params.pageSize));
 

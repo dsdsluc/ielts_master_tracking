@@ -3,6 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { readSession, type SessionPayload } from "@/lib/auth/session";
+import { getHomePathForRole } from "@/lib/nav";
 
 // Optimistic: chỉ đọc payload từ cookie JWT, không chạm DB. Dùng cho các
 // trang cần biết "đã đăng nhập chưa" nhanh (redirect nếu chưa).
@@ -35,7 +36,11 @@ export const getCurrentUser = cache(async () => {
   });
 
   if (!user || !user.active) {
-    redirect("/login");
+    // Không redirect("/login") thẳng ở đây — đang render Server Component nên
+    // không được phép xoá cookie, mà cookie JWT (còn hạn) vẫn còn thì proxy.ts
+    // sẽ coi "/login" là đã đăng nhập rồi đá ngược lại đây, gây lặp vô hạn.
+    // Route Handler /api/auth/session-expired xoá cookie trước khi redirect.
+    redirect("/api/auth/session-expired");
   }
 
   return user;
@@ -44,7 +49,7 @@ export const getCurrentUser = cache(async () => {
 export async function requireRole(...roles: string[]) {
   const user = await getCurrentUser();
   if (!roles.includes(user.role)) {
-    redirect("/");
+    redirect(getHomePathForRole(user.role));
   }
   return user;
 }

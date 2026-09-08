@@ -29,6 +29,7 @@ export const listInteractionsQuerySchema = z.object({
   assignedSaleEmail: z.string().optional(),
   needsFollowup: z.enum(["true", "false"]).optional(),
   mine: z.enum(["true", "false"]).optional(),
+  search: z.string().trim().max(200, "Từ khoá tìm kiếm quá dài.").optional(),
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });

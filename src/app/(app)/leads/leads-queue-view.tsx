@@ -48,6 +48,7 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [branch, setBranch] = useState("all");
   const [followupOnly, setFollowupOnly] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
@@ -62,19 +63,33 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
     return matchesSearch && (branch === "all" || item.assignedBranchCode === branch) && (!followupOnly || item.needsFollowup) && (!mineOnly || isMine);
   }, [branch, followupOnly, mineOnly, search, currentUserEmail]);
 
-  const load = useCallback((activeTab: TabKey, activePage: number) => {
+  // Debounce ô tìm kiếm trước khi gọi server — tránh 1 request/ký tự gõ.
+  // Đặt lại page về 1 cùng lúc (trong cùng callback, được React batch chung 1
+  // lần render) để tránh việc load() bị gọi 2 lần cho 1 lượt gõ.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  const load = useCallback((activeTab: TabKey, activePage: number, activeSearch: string) => {
     setLoading(true);
     setError(null);
 
     let request: Promise<void>;
     if (activeTab === "priority") {
+      // Hàng đợi ưu tiên không hỗ trợ tìm kiếm ở server (getQueue trả về toàn
+      // bộ tập mở để gộp nhóm) — tìm kiếm cho tab này vẫn lọc client-side qua
+      // matchesFilters bên dưới.
       request = fetchQueue().then((res) => {
         setQueue(res);
         setFlatItems([]);
         setPageMeta(null);
       });
     } else {
-      request = fetchInteractions({ ...tabToParams(activeTab), page: activePage, pageSize: PAGE_SIZE }).then((res) => {
+      request = fetchInteractions({ ...tabToParams(activeTab), page: activePage, pageSize: PAGE_SIZE, search: activeSearch || undefined }).then((res) => {
         setFlatItems(res.items);
         setQueue(null);
         setPageMeta({ page: res.page, totalPages: res.totalPages, totalItems: res.totalItems });
@@ -87,11 +102,11 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
   }, []);
 
   useEffect(() => {
-    // Fetch-on-tab/page-change: no external store to subscribe to for a REST
-    // list call, so this is the standard data-fetching effect shape.
+    // Fetch-on-tab/page/search-change: no external store to subscribe to for
+    // a REST list call, so this is the standard data-fetching effect shape.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    load(tab, page);
-  }, [tab, page, load]);
+    load(tab, page, debouncedSearch);
+  }, [tab, page, debouncedSearch, load]);
 
   function changeTab(next: TabKey) {
     setTab(next);
@@ -99,7 +114,7 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
   }
 
   function refreshCurrentTab() {
-    load(tab, page);
+    load(tab, page, debouncedSearch);
   }
 
   function exportHref(): string | null {
@@ -110,6 +125,7 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
     if (params.needsFollowup) search.set("needsFollowup", "true");
     if (mineOnly) search.set("mine", "true");
     if (branch !== "all") search.set("branch", branch);
+    if (debouncedSearch) search.set("search", debouncedSearch);
     return `/api/interactions/export?${search.toString()}`;
   }
 

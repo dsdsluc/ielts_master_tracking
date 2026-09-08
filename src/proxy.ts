@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { decryptSessionToken, SESSION_COOKIE } from "@/lib/auth/session";
+import { ROLES } from "@/lib/interactions/constants";
 
 const PUBLIC_ROUTES = ["/login"];
 
@@ -20,7 +21,8 @@ export default async function proxy(request: NextRequest) {
   }
 
   if (isPublicRoute && session) {
-    return NextResponse.redirect(new URL("/", request.url));
+    const homePath = session.role === ROLES.SALES ? "/dashboard-sale" : "/";
+    return NextResponse.redirect(new URL(homePath, request.url));
   }
 
   return NextResponse.next();

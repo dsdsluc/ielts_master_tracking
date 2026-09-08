@@ -84,6 +84,7 @@ export type ListInteractionsParams = {
   needsFollowup?: boolean;
   mine?: boolean;
   branch?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 };
@@ -99,6 +100,10 @@ export type ListInteractionsResult = {
 /** Dùng chung giữa listInteractions (phân trang) và route export (lấy toàn bộ). */
 export function buildInteractionWhere(actor: CurrentUser, params: Omit<ListInteractionsParams, "page" | "pageSize">): Prisma.InteractionWhereInput {
   const where: Prisma.InteractionWhereInput = { ...branchScopeWhere(actor), activeFlag: true };
+  // "mine" và "search" đều cần diễn đạt bằng OR — không thể gán trực tiếp 2 lần
+  // vào where.OR (key sau sẽ đè key trước), nên mỗi OR-block được gom vào đây
+  // và kết hợp lại bằng AND ở cuối.
+  const andConditions: Prisma.InteractionWhereInput[] = [];
 
   if (params.status) {
     const statuses = params.status.split(",").map((s) => s.trim()).filter(Boolean);
@@ -111,7 +116,7 @@ export function buildInteractionWhere(actor: CurrentUser, params: Omit<ListInter
     // HOẶC lead đã Đủ tiêu chuẩn mà actor là người phụ trách chính thức —
     // chỉ lọc theo assignedSaleEmail sẽ luôn rỗng ở 2 tab đầu vì field đó chỉ
     // được gán từ lúc Đủ tiêu chuẩn trở đi (xem mutations.ts updateStatus).
-    where.OR = [{ createdByEmail: actor.email }, { assignedSaleEmail: actor.email }];
+    andConditions.push({ OR: [{ createdByEmail: actor.email }, { assignedSaleEmail: actor.email }] });
   }
   if (params.branch && params.branch !== "all") {
     // Bộ lọc cơ sở trên UI chỉ được thu hẹp thêm, không được mở rộng ra ngoài
@@ -119,6 +124,24 @@ export function buildInteractionWhere(actor: CurrentUser, params: Omit<ListInter
     if (!canAccessBranch(actor, params.branch)) throw Errors.forbidden("Bạn không được xem cơ sở này.");
     where.assignedBranchCode = params.branch;
   }
+  if (params.search) {
+    const needle = params.search.trim();
+    if (needle) {
+      // Tìm theo tên khách, SĐT (thô lẫn đã chuẩn hoá) và link — khớp các cột
+      // người dùng thực sự gõ vào ô tìm kiếm trên UI (leads-queue-view.tsx).
+      andConditions.push({
+        OR: [
+          { customerName: { contains: needle, mode: "insensitive" } },
+          { phoneNormalized: { contains: needle, mode: "insensitive" } },
+          { phoneRaw: { contains: needle, mode: "insensitive" } },
+          { rawLink: { contains: needle, mode: "insensitive" } },
+          { canonicalLink: { contains: needle, mode: "insensitive" } },
+        ],
+      });
+    }
+  }
+
+  if (andConditions.length > 0) where.AND = andConditions;
 
   return where;
 }

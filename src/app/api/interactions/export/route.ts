@@ -17,6 +17,7 @@ export async function GET(request: Request) {
       needsFollowup: url.searchParams.get("needsFollowup") === "true",
       mine: url.searchParams.get("mine") === "true",
       branch: url.searchParams.get("branch") ?? undefined,
+      search: url.searchParams.get("search") ?? undefined,
     });
 
     const rows = await prisma.interaction.findMany({
