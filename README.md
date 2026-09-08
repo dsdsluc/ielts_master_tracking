@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Theo dõi Liên hệ · IELTS Master
 
-## Getting Started
+Hệ thống theo dõi và chăm sóc lead nội bộ, xây trên Next.js (App Router) + Prisma 7 + PostgreSQL.
 
-First, run the development server:
+## Chạy local
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Cài dependencies:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+   ```bash
+   npm install
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2. Sao chép `.env.example` thành `.env` và điền `DATABASE_URL` (Postgres) + `SESSION_SECRET`:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```bash
+   cp .env.example .env
+   ```
 
-## Learn More
+3. Tạo Prisma Client + áp migration:
 
-To learn more about Next.js, take a look at the following resources:
+   ```bash
+   npx prisma generate
+   npx prisma migrate deploy
+   npm run seed
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Chạy dev server:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+   Mở [http://localhost:3000](http://localhost:3000).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deploy lên Vercel
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Import repo này vào Vercel (Next.js được nhận diện tự động, không cần cấu hình build riêng).
+2. Khai báo 2 biến môi trường ở **Project Settings → Environment Variables** (xem chi tiết trong `.env.example`):
+   - `DATABASE_URL` — chuỗi kết nối Postgres. Nếu dùng Neon, dùng đúng connection string dạng **pooler** (có `-pooler` trong host) để chạy ổn định trên serverless, tránh cạn kết nối DB.
+   - `SESSION_SECRET` — chuỗi ngẫu nhiên riêng cho production (không dùng lại giá trị ở local), tạo bằng `openssl rand -base64 32`.
+3. `npm install` sẽ tự chạy `prisma generate` (khai báo ở script `postinstall`) — không cần bước thủ công nào thêm, Vercel build bình thường qua `next build`.
+4. Database (bảng + migration) cần được tạo trước khi app chạy được — chạy `npx prisma migrate deploy` nhắm vào DB production (từ máy local hoặc CI, trỏ `DATABASE_URL` production) trước lần deploy đầu tiên.
+
+## Scripts
+
+- `npm run dev` — dev server (Turbopack).
+- `npm run build` / `npm start` — build & chạy production.
+- `npm run lint` — ESLint.
+- `npm run seed` — seed danh mục (cơ sở, người dùng) từ dữ liệu gốc.
+- `npm run seed:data:pilot` — seed dữ liệu pilot cho môi trường thử nghiệm.
