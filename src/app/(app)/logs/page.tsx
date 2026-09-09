@@ -91,14 +91,7 @@ export default async function LogsPage({
           }
         />
       ) : (
-        <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
-          <div className="flex items-center justify-between border-b border-border/70 bg-card px-5 py-3">
-            <p className="text-xs text-muted-foreground">
-              <strong className="font-mono text-foreground">{totalItems}</strong> dòng nhật ký
-            </p>
-          </div>
-          <LogsTable rows={rows} />
-        </div>
+        <LogsTable rows={rows} totalItems={totalItems} />
       )}
 
       {totalPages > 1 && (

@@ -9,6 +9,7 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   CLOSE_MKT_PAGE_REPORT: "Chốt báo cáo Page",
   REOPEN_MKT_PAGE_REPORT: "Mở lại báo cáo Page",
   MERGE_CUSTOMERS: "Gộp khách hàng trùng",
+  CLEANUP_SYSTEM_LOGS: "Dọn dẹp System Log",
 };
 
 export function actionLabel(action: string) {

@@ -79,6 +79,7 @@ export const SYSTEM_LOG_ACTION = {
   CLOSE_MKT_PAGE_REPORT: "CLOSE_MKT_PAGE_REPORT",
   REOPEN_MKT_PAGE_REPORT: "REOPEN_MKT_PAGE_REPORT",
   MERGE_CUSTOMERS: "MERGE_CUSTOMERS",
+  CLEANUP_SYSTEM_LOGS: "CLEANUP_SYSTEM_LOGS",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.
