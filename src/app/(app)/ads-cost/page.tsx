@@ -1,9 +1,12 @@
+import { FileDown } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
+import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/dal";
 import { ROLES } from "@/lib/interactions/constants";
 import { prisma } from "@/lib/prisma";
+import { isAdsCostCleanupEnabled } from "@/lib/interactions/settings";
 import { AdsCostDialog } from "@/app/(app)/ads-cost/ads-cost-dialog";
 import { AdsCostFilterBar } from "@/app/(app)/ads-cost/ads-cost-filter-bar";
 import { AdsCostTable } from "@/app/(app)/ads-cost/ads-cost-table";
@@ -28,12 +31,13 @@ export default async function AdsCostPage({
     ];
   }
 
-  const [adsCosts, totalAgg, sources, fanpages, branches] = await Promise.all([
+  const [adsCosts, totalAgg, sources, fanpages, branches, cleanupEnabled] = await Promise.all([
     prisma.adsCost.findMany({ where, orderBy: [{ periodStart: "desc" }, { id: "desc" }] }),
     prisma.adsCost.aggregate({ where, _sum: { costVnd: true } }),
     prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
     prisma.fanpage.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
     prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
+    isAdsCostCleanupEnabled(),
   ]);
 
   const branchNames = Object.fromEntries(branches.map((b) => [b.code, b.name]));
@@ -51,6 +55,12 @@ export default async function AdsCostPage({
   }));
   const hasFilters = !!q?.trim() || (!!source && source !== "all") || (!!branch && branch !== "all");
   const totalCost = totalAgg._sum.costVnd?.toString() ?? "0";
+
+  const exportParams = new URLSearchParams();
+  if (q?.trim()) exportParams.set("q", q.trim());
+  if (source && source !== "all") exportParams.set("source", source);
+  if (branch && branch !== "all") exportParams.set("branch", branch);
+  const exportHref = `/api/ads-cost/export?${exportParams.toString()}`;
 
   return (
     <>
@@ -73,7 +83,19 @@ export default async function AdsCostPage({
           <KpiCard label={hasFilters ? "Tổng chi phí (đã lọc)" : "Tổng chi phí"} value={formatVnd(totalCost)} accentClassName="bg-primary" />
           <KpiCard label="Số bản ghi" value={rows.length} accentClassName="bg-foreground/50" />
         </div>
-        <AdsCostFilterBar sourceOptions={sources.map((s) => s.name)} branchOptions={branches} />
+        <div className="flex flex-wrap items-center gap-2">
+          <AdsCostFilterBar sourceOptions={sources.map((s) => s.name)} branchOptions={branches} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 rounded-full"
+            nativeButton={false}
+            render={<a href={exportHref} />}
+          >
+            <FileDown className="size-3.5" />
+            Xuất Excel
+          </Button>
+        </div>
       </div>
 
       <AdsCostTable
@@ -83,6 +105,7 @@ export default async function AdsCostPage({
         fanpageOptions={fanpages.map((f) => f.name)}
         branchOptions={branches}
         hasFilters={hasFilters}
+        cleanupEnabled={cleanupEnabled}
       />
     </>
   );

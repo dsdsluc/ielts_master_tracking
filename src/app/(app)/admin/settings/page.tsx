@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { prisma } from "@/lib/prisma";
 import { SettingCard } from "@/app/(app)/admin/settings/setting-card";
+import { AdsCostCleanupCard } from "@/app/(app)/admin/settings/ads-cost-cleanup-card";
 
 // Danh sách cố định — đúng 2 tham số thật sự được lib/interactions/settings.ts
 // đọc (fallback về default nếu DB chưa có dòng nào). Không làm CRUD key/value
@@ -36,6 +37,7 @@ const KNOWN_SETTINGS = [
 export default async function SettingsPage() {
   const rows = await prisma.appSetting.findMany();
   const valueByKey = new Map(rows.map((r) => [`${r.configGroup}.${r.key}`, r.value]));
+  const adsCostCleanupEnabled = valueByKey.get("system.ADS_COST_CLEANUP_ENABLED") === "true";
 
   return (
     <>
@@ -61,6 +63,7 @@ export default async function SettingsPage() {
             />
           );
         })}
+        <AdsCostCleanupCard initialEnabled={adsCostCleanupEnabled} />
       </div>
     </>
   );

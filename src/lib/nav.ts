@@ -141,6 +141,12 @@ export const navGroups: NavGroup[] = [
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
       },
       {
+        title: "Nhập chi phí từ Excel",
+        href: "/ads-cost/import",
+        icon: FileSpreadsheet,
+        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+      },
+      {
         title: "Hiệu quả quảng cáo",
         href: "/ads-performance",
         icon: TrendingUp,

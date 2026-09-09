@@ -27,3 +27,9 @@ export async function getMaxFollowupBeforeSpam(): Promise<number> {
   const v = Number(raw);
   return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 3;
 }
+
+/** Bật/tắt thủ công chức năng dọn dẹp trang Chi phí quảng cáo — mặc định tắt. */
+export async function isAdsCostCleanupEnabled(): Promise<boolean> {
+  const raw = await getAppSetting("system", "ADS_COST_CLEANUP_ENABLED");
+  return raw === "true";
+}
