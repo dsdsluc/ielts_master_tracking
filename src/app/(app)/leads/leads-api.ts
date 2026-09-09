@@ -87,12 +87,12 @@ export async function updateStatus(
   await parseJson(res);
 }
 
-export async function resolveFollowup(id: string): Promise<void> {
+export async function resolveFollowup(id: string): Promise<InteractionDetail> {
   const res = await fetch(`/api/interactions/${id}/followup/resolve`, {
     method: "POST",
     credentials: "same-origin",
   });
-  await parseJson(res);
+  return parseJson<InteractionDetail>(res);
 }
 
 export type LeadInfoPayload = {

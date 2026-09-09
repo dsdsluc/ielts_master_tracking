@@ -1,10 +1,18 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { cached } from "@/lib/cache";
 import type { LeadFormOptions } from "@/app/(app)/leads/lead-form-options";
 
 /** Danh mục cho form tạo/sửa liên hệ — dùng chung ở leads/page.tsx (dialog
- * tạo mới) và leads/[id]/page.tsx (trang chỉnh sửa). */
+ * tạo mới), leads/[id]/page.tsx (trang chỉnh sửa) và leads/import/page.tsx.
+ * Giống hệt nhau cho mọi user (không scope theo chi nhánh/role) và hiếm khi
+ * đổi (admin thêm branch/fanpage/source) — cache 5 phút an toàn, ngược lại
+ * với danh sách liên hệ/khách hàng (xem ghi chú không cache ở leads/page.tsx). */
 export async function getLeadFormOptions(): Promise<LeadFormOptions> {
+  return cached("lead-form-options:v1", 300, () => computeLeadFormOptions());
+}
+
+async function computeLeadFormOptions(): Promise<LeadFormOptions> {
   const [sources, fanpages, branches, objects, adCosts] = await Promise.all([
     prisma.source.findMany({
       where: { active: true },

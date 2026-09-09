@@ -7,6 +7,7 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
+import { STATUS } from "../src/lib/interactions/constants";
 
 const DEFAULT_PASSWORD = "12345678";
 
@@ -14,6 +15,22 @@ const branches = [
   { code: "TDM", name: "Thủ Dầu Một", active: true, slaReceiveMinutes: 30, slaProcessHours: 24 },
   { code: "Dĩ An", name: "Dĩ An", active: true, slaReceiveMinutes: 30, slaProcessHours: 24 },
   { code: "Thuận An", name: "Thuận An", active: true, slaReceiveMinutes: 30, slaProcessHours: 24 },
+];
+
+// 4 trạng thái cố định của toàn bộ luồng nghiệp vụ (hardcode ở
+// lib/interactions/constants.ts — xem STATUS/SETTABLE_STATUSES). Bảng
+// `statuses` chỉ là metadata hiển thị (sortOrder/note, xem admin/statuses/
+// actions.ts) NHƯNG interactions.status_name có khoá ngoại tới bảng này, nên
+// thiếu 1 dòng là toàn bộ thao tác chuyển sang trạng thái đó sẽ vỡ FK ở tầng
+// DB (đã xảy ra với "Spam" vì trước đây Status chỉ được seed lười theo dữ
+// liệu pilot — pilot chưa từng có lead Spam nên dòng này chưa từng được tạo).
+// Seed ở đây đảm bảo cả 4 dòng luôn tồn tại bất kể dữ liệu pilot có gì; dùng
+// create-if-missing (update: {}) để không ghi đè sortOrder/note admin đã sửa.
+const statuses = [
+  { name: STATUS.WAITING, sortOrder: 1, isClosingStatus: false, requirePhone: false, active: true, note: "Chưa xác định trạng thái, cần chăm thêm. Trạng thái mặc định khi tạo mới." },
+  { name: STATUS.PROCESSING, sortOrder: 2, isClosingStatus: false, requirePhone: false, active: true, note: "Có tương tác, cần nhắn thêm để xin số điện thoại." },
+  { name: STATUS.PHONE, sortOrder: 3, isClosingStatus: true, requirePhone: true, active: true, note: "Lead chất lượng, bắt buộc đã để lại SĐT; tự gán Sale thực hiện." },
+  { name: STATUS.SPAM, sortOrder: 4, isClosingStatus: true, requirePhone: false, active: true, note: "Không có nhu cầu / im lặng quá lâu / rác — đóng hội thoại, không tính chuyển đổi." },
 ];
 
 // Cơ_sở trong CONFIG_USERS ghi "Tất cả" cho vai trò quản lý/marketing — đây
@@ -121,6 +138,15 @@ async function main() {
     });
   }
   console.log(`Đã seed ${branches.length} cơ sở.`);
+
+  for (const status of statuses) {
+    await prisma.status.upsert({
+      where: { name: status.name },
+      update: {},
+      create: status,
+    });
+  }
+  console.log(`Đã đảm bảo đủ ${statuses.length} trạng thái cố định.`);
 
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
 

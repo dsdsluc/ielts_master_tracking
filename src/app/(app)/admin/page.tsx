@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { ROLES, SPAM_REASON, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { getQueue } from "@/lib/interactions/queries";
 import { SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
@@ -15,6 +15,7 @@ import { SlaBreachSection } from "@/app/(app)/admin/sla-breach-section";
 const WINDOW_DAYS = 7;
 
 function reasonLabel(code: string | null) {
+  if (code === SPAM_REASON.MAX_FOLLOWUP_EXCEEDED) return "Hệ thống tự động (vượt số lần chăm sóc lại cho phép)";
   return SPAM_REASON_OPTIONS.find((r) => r.code === code)?.label ?? code ?? "Không rõ (không tìm thấy nhật ký)";
 }
 

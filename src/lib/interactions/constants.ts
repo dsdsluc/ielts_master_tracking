@@ -45,6 +45,9 @@ export const SPAM_REASON = {
   NO_REPLY: "NO_REPLY_AFTER_MIN_ATTEMPTS",
   NO_NEED: "CUSTOMER_CONFIRMED_NO_NEED",
   JUNK: "JUNK_OR_FAKE_ACCOUNT",
+  // Hệ thống tự gắn khi resolveFollowup() vượt ngưỡng MAX_FOLLOWUP_BEFORE_SPAM
+  // — không xuất hiện trong danh sách lý do Sale tự chọn ở SpamDialog.
+  MAX_FOLLOWUP_EXCEEDED: "MAX_FOLLOWUP_ATTEMPTS_EXCEEDED",
 } as const;
 
 export type SpamReason = (typeof SPAM_REASON)[keyof typeof SPAM_REASON];
@@ -56,6 +59,15 @@ export const INTERACTION_TYPE = {
   SUSPECT_DUP: "Nghi trùng 24h",
 } as const;
 
+// Kết quả xử lý yêu cầu "Chăm sóc lại" — dùng để tách "chăm sóc thật" (có đổi
+// trạng thái) khỏi "bấm cho xong" (đóng thủ công không kèm hành động).
+export const FOLLOWUP_OUTCOME = {
+  STATUS_CHANGED: "STATUS_CHANGED",
+  MANUAL_DISMISS: "MANUAL_DISMISS",
+} as const;
+
+export type FollowupOutcome = (typeof FOLLOWUP_OUTCOME)[keyof typeof FOLLOWUP_OUTCOME];
+
 export const SYSTEM_LOG_ACTION = {
   CREATE_CONVERSATION: "CREATE_CONVERSATION",
   UPDATE_CONVERSATION_INFO: "UPDATE_CONVERSATION_INFO",
@@ -66,6 +78,7 @@ export const SYSTEM_LOG_ACTION = {
   REASSIGN_PHONE_LEAD: "REASSIGN_PHONE_LEAD",
   CLOSE_MKT_PAGE_REPORT: "CLOSE_MKT_PAGE_REPORT",
   REOPEN_MKT_PAGE_REPORT: "REOPEN_MKT_PAGE_REPORT",
+  MERGE_CUSTOMERS: "MERGE_CUSTOMERS",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.

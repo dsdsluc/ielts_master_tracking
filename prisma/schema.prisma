@@ -222,6 +222,14 @@ model Interaction {
 
   followupHandledByEmail String?   @map("followup_handled_by_email")
   followupHandledAt      DateTime? @map("followup_handled_at")
+  // "STATUS_CHANGED": Sale đổi trạng thái nghiệp vụ thực sau khi được nhắc (tự
+  // động tắt cờ) — tín hiệu chăm sóc thật. "MANUAL_DISMISS": Sale bấm "Đánh dấu
+  // đã xử lý" thủ công, không kèm thay đổi trạng thái nào.
+  followupOutcome        String?   @map("followup_outcome")
+  // Đếm dồn số lần Sale bấm "Đánh dấu đã xử lý" (MANUAL_DISMISS) cho liên hệ
+  // này qua các đợt Marketing nhắc chăm sóc lại. Vượt ngưỡng cấu hình hệ thống
+  // (mặc định 3) thì tự động chuyển Spam — xem resolveFollowup() trong mutations.ts.
+  followupResolvedCount  Int       @default(0) @map("followup_resolved_count")
 
   customer         Customer        @relation(fields: [customerKey], references: [customerKey])
   source           Source          @relation(fields: [sourceName], references: [name])

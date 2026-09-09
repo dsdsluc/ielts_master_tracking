@@ -20,3 +20,10 @@ export async function getSpamNoReplyMinAttempts(): Promise<number> {
   const v = Number(raw);
   return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 3;
 }
+
+/** Số lần "Đánh dấu đã xử lý" chăm sóc lại tối đa trước khi tự động chuyển Spam — mặc định 3. */
+export async function getMaxFollowupBeforeSpam(): Promise<number> {
+  const raw = await getAppSetting("system", "MAX_FOLLOWUP_BEFORE_SPAM");
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 3;
+}

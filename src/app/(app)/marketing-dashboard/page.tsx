@@ -4,9 +4,12 @@ import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { requireRole } from "@/lib/auth/dal";
+import type { CurrentUser } from "@/lib/auth/dal";
 import { ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
+import { isLeaderLike } from "@/lib/interactions/scope";
 import { dayKey } from "@/lib/day-key";
+import { cached } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { getPageReportRows } from "@/lib/marketing/page-report";
 import { DashboardChart, type ChartPoint, type ChartSeries } from "@/app/(app)/dashboard-chart";
@@ -25,22 +28,34 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default async function MarketingDashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ days?: string }>;
-}) {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
-  const { days: daysParam } = await searchParams;
-  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
+// Marketing/Admin xem toàn bộ chi nhánh trong hầu hết trường hợp thực tế (xem
+// seed.ts) — nhưng vẫn tính đúng theo scope thay vì giả định, để 1 tài khoản
+// Marketing bị giới hạn 1 chi nhánh không vô tình đọc cache của tài khoản khác.
+function scopeCacheKey(user: CurrentUser): string {
+  if (isLeaderLike(user) || user.viewAllBranches) return "all";
+  return user.branchCode ?? "none";
+}
 
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - (days - 1));
-  windowStart.setHours(0, 0, 0, 0);
-  const windowEnd = new Date();
-  windowEnd.setHours(23, 59, 59, 999);
+type MarketingDashboardData = {
+  totalLeads: number;
+  qualified: number;
+  totalCost: number;
+  chartData: ChartPoint[];
+  topPages: RankRow[];
+  topAds: RankRow[];
+  byAdIdSize: number;
+};
 
-  const [rows, costRows, todayRows, pendingFollowup, totalAdsCostRecords] = await Promise.all([
+// Query interactions cả cửa sổ (tới 90 ngày) + tổng hợp theo ngày/Page/quảng
+// cáo trong JS — phần nặng nhất của trang, nhiều Marketing/Admin cùng mở mỗi
+// ngày nhưng dữ liệu không cần chính xác tới từng giây, nên cache lại.
+async function computeMarketingDashboardData(
+  user: CurrentUser,
+  days: number,
+  windowStart: Date,
+  windowEnd: Date
+): Promise<MarketingDashboardData> {
+  const [rows, costRows] = await Promise.all([
     prisma.interaction.findMany({
       where: { ...branchScopeWhere(user), activeFlag: true, createdLeadAt: { gte: windowStart } },
       select: { createdLeadAt: true, statusName: true, fanpageName: true, adId: true },
@@ -49,16 +64,11 @@ export default async function MarketingDashboardPage({
       where: { periodStart: { lte: windowEnd }, periodEnd: { gte: windowStart } },
       select: { costVnd: true },
     }),
-    getPageReportRows(todayStr()),
-    prisma.interaction.count({ where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: true } }),
-    prisma.adsCost.count(),
   ]);
 
   const totalLeads = rows.length;
   const qualified = rows.filter((r) => r.statusName === STATUS.PHONE).length;
-  const conversionRate = totalLeads > 0 ? (qualified / totalLeads) * 100 : 0;
   const totalCost = costRows.reduce((sum, c) => sum + Number(c.costVnd), 0);
-  const costPerLead = totalCost > 0 && totalLeads > 0 ? totalCost / totalLeads : null;
 
   const byDay = new Map<string, { total: number; qualified: number }>();
   for (const r of rows) {
@@ -101,6 +111,36 @@ export default async function MarketingDashboardPage({
     .sort((a, b) => b.total - a.total)
     .slice(0, 5);
 
+  return { totalLeads, qualified, totalCost, chartData, topPages, topAds, byAdIdSize: byAdId.size };
+}
+
+export default async function MarketingDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
+  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const { days: daysParam } = await searchParams;
+  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
+
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - (days - 1));
+  windowStart.setHours(0, 0, 0, 0);
+  const windowEnd = new Date();
+  windowEnd.setHours(23, 59, 59, 999);
+
+  const [{ totalLeads, qualified, totalCost, chartData, topPages, topAds, byAdIdSize }, todayRows, pendingFollowup, totalAdsCostRecords] =
+    await Promise.all([
+      cached(`dash:marketing:v1:${scopeCacheKey(user)}:${days}`, 90, () =>
+        computeMarketingDashboardData(user, days, windowStart, windowEnd)
+      ),
+      getPageReportRows(todayStr()),
+      prisma.interaction.count({ where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: true } }),
+      prisma.adsCost.count(),
+    ]);
+
+  const conversionRate = totalLeads > 0 ? (qualified / totalLeads) * 100 : 0;
+  const costPerLead = totalCost > 0 && totalLeads > 0 ? totalCost / totalLeads : null;
   const todayClosed = todayRows.filter((r) => r.closed).length;
 
   return (
@@ -167,7 +207,7 @@ export default async function MarketingDashboardPage({
             </span>
             <div>
               <p className="text-sm font-medium text-foreground">Hiệu quả quảng cáo</p>
-              <p className="text-xs text-muted-foreground">{byAdId.size} quảng cáo có lead</p>
+              <p className="text-xs text-muted-foreground">{byAdIdSize} quảng cáo có lead</p>
             </div>
           </div>
           <ArrowRight className="size-4 text-muted-foreground" />

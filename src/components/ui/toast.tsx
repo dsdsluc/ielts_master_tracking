@@ -48,13 +48,12 @@ function Toaster() {
               data-slot="toast"
               className={cn(
                 "shadow-bubble absolute right-0 bottom-0 left-0 z-[calc(100-var(--toast-index))] mt-2 flex items-start gap-2.5 rounded-2xl border border-border bg-card p-4 text-sm text-card-foreground select-none",
-                "transition-all duration-300",
+                "transition-[transform,opacity] duration-300",
                 "data-[starting-style]:translate-y-4 data-[starting-style]:opacity-0",
                 "data-[ending-style]:translate-y-4 data-[ending-style]:opacity-0",
                 "data-[limited]:opacity-0",
                 "[transform:translateY(calc(var(--toast-offset-y)*-1))_scale(var(--toast-scale))]"
               )}
-              style={{ transitionProperty: "transform, opacity" }}
             >
               <span className={cn("mt-0.5 flex shrink-0 items-center justify-center", TOAST_ICON_STYLES[toast.type ?? "info"])}>
                 <Icon className="size-4.5" />

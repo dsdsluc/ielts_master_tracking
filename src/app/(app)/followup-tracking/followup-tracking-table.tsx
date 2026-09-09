@@ -8,6 +8,7 @@ import { StatusPill } from "@/components/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PaginationBar } from "@/components/pagination-bar";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
+import { FOLLOWUP_OUTCOME, STATUS } from "@/lib/interactions/constants";
 
 export type FollowupTrackingRow = {
   interactionId: string;
@@ -20,16 +21,36 @@ export type FollowupTrackingRow = {
   needsFollowup: boolean;
   followupHandledAt: string | null;
   followupHandledByName: string | null;
+  followupOutcome: string | null;
+  followupResolvedCount: number;
 };
 
 const PAGE_SIZE = 15;
 
-function ResolvedPill({ pending }: { pending: boolean }) {
-  const style = pending ? "bg-status-waiting-bg text-status-waiting" : "bg-status-qualified-bg text-status-qualified";
+function ResolvedPill({ pending, outcome, status }: { pending: boolean; outcome: string | null; status: string }) {
+  if (pending) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-status-waiting-bg px-2.5 py-0.5 text-xs font-medium text-status-waiting">
+        <span className="size-1.5 rounded-full bg-current" />
+        Đang chờ xử lý
+      </span>
+    );
+  }
+  if (status === STATUS.SPAM) {
+    const isAuto = outcome === FOLLOWUP_OUTCOME.MANUAL_DISMISS;
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+        <span className="size-1.5 rounded-full bg-current" />
+        {isAuto ? "Spam (tự động — quá số lần)" : "Spam (Sale đóng)"}
+      </span>
+    );
+  }
+  const isRealChange = outcome === FOLLOWUP_OUTCOME.STATUS_CHANGED;
+  const style = isRealChange ? "bg-status-qualified-bg text-status-qualified" : "bg-secondary text-muted-foreground";
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`}>
       <span className="size-1.5 rounded-full bg-current" />
-      {pending ? "Đang chờ xử lý" : "Đã xử lý"}
+      {isRealChange ? "Đổi trạng thái" : "Đóng thủ công"}
     </span>
   );
 }
@@ -74,6 +95,7 @@ export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTra
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Gợi ý đã gửi</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Gửi lúc</TableHead>
               <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Xử lý</TableHead>
+              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Số lần</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Thời gian xử lý</TableHead>
               <TableHead className="w-10 pr-4" />
             </TableRow>
@@ -96,11 +118,12 @@ export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTra
                 </TableCell>
                 <TableCell className="hidden px-4 text-xs text-muted-foreground md:table-cell">{formatDateTime(row.mktPushedAt)}</TableCell>
                 <TableCell className="px-4">
-                  <ResolvedPill pending={row.needsFollowup} />
+                  <ResolvedPill pending={row.needsFollowup} outcome={row.followupOutcome} status={row.status} />
                   {!row.needsFollowup && row.followupHandledByName && (
                     <p className="mt-1 truncate text-xs text-muted-foreground">bởi {row.followupHandledByName}</p>
                   )}
                 </TableCell>
+                <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">{row.followupResolvedCount}</TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground lg:table-cell">
                   {row.followupHandledAt ? formatDuration(row.mktPushedAt, row.followupHandledAt) : "—"}
                 </TableCell>

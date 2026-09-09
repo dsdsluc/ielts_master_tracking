@@ -18,6 +18,8 @@ export type FollowupInboxItem = {
   mktSuggestion: string | null;
   mktPushedAt: string;
   mktPushedByName: string | null;
+  followupResolvedCount: number;
+  maxBeforeSpam: number;
 };
 
 function daysSince(iso: string) {
@@ -31,8 +33,12 @@ function FollowupCard({ item, onResolved }: { item: FollowupInboxItem; onResolve
   async function handleResolve() {
     setPending(true);
     try {
-      await resolveFollowup(item.interactionId);
-      toast.success("Đã đánh dấu xử lý xong.");
+      const updated = await resolveFollowup(item.interactionId);
+      if (updated.status === "Spam") {
+        toast.info("Đã tự động chuyển Spam — liên hệ này đã bị nhắc chăm sóc lại quá số lần cho phép.");
+      } else {
+        toast.success("Đã đánh dấu xử lý xong.");
+      }
       onResolved(item.interactionId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không xử lý được.");
@@ -42,6 +48,8 @@ function FollowupCard({ item, onResolved }: { item: FollowupInboxItem; onResolve
   }
 
   const idle = daysSince(item.mktPushedAt);
+  const nextCount = item.followupResolvedCount + 1;
+  const isLastChance = nextCount >= item.maxBeforeSpam;
 
   return (
     <div className="flex flex-col gap-2.5 rounded-2xl border border-accent bg-accent/40 p-4">
@@ -62,7 +70,14 @@ function FollowupCard({ item, onResolved }: { item: FollowupInboxItem; onResolve
         {item.mktPushedByName ? `${item.mktPushedByName} yêu cầu lúc ` : "Yêu cầu lúc "}
         {formatDateTime(item.mktPushedAt)}
         {idle > 0 && ` · ${idle} ngày trước`}
+        {" · "}Đã chăm sóc lại {item.followupResolvedCount}/{item.maxBeforeSpam} lần
       </p>
+
+      {isLastChance && (
+        <p className="text-xs font-medium text-destructive">
+          Đây là lần thứ {nextCount} — bấm &ldquo;Đánh dấu đã xử lý&rdquo; mà chưa đổi trạng thái sẽ tự động chuyển liên hệ này sang Spam.
+        </p>
+      )}
 
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <Button

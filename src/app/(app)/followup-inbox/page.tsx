@@ -4,13 +4,14 @@ import { EmptyState } from "@/components/empty-state";
 import { requireRole } from "@/lib/auth/dal";
 import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
+import { getMaxFollowupBeforeSpam } from "@/lib/interactions/settings";
 import { prisma } from "@/lib/prisma";
 import { FollowupInboxView, type FollowupInboxItem } from "@/app/(app)/followup-inbox/followup-inbox-view";
 
 export default async function FollowupInboxPage() {
   const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
 
-  const [branches, rows] = await Promise.all([
+  const [branches, rows, maxBeforeSpam] = await Promise.all([
     prisma.branch.findMany({ select: { code: true, name: true } }),
     prisma.interaction.findMany({
       where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: true },
@@ -22,9 +23,11 @@ export default async function FollowupInboxPage() {
         mktSuggestion: true,
         mktPushedAt: true,
         mktPushedBy: { select: { fullName: true } },
+        followupResolvedCount: true,
       },
       orderBy: { mktPushedAt: "asc" },
     }),
+    getMaxFollowupBeforeSpam(),
   ]);
 
   const branchNames = Object.fromEntries(branches.map((b) => [b.code, b.name]));
@@ -36,6 +39,8 @@ export default async function FollowupInboxPage() {
     mktSuggestion: r.mktSuggestion,
     mktPushedAt: r.mktPushedAt!.toISOString(),
     mktPushedByName: r.mktPushedBy?.fullName ?? null,
+    followupResolvedCount: r.followupResolvedCount,
+    maxBeforeSpam,
   }));
 
   return (

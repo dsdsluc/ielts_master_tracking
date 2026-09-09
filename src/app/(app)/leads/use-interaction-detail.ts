@@ -60,8 +60,12 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
     if (!interactionId) return;
     setFollowupPending(true);
     try {
-      await resolveFollowup(interactionId);
-      toast.success("Đã đánh dấu xử lý xong yêu cầu chăm sóc lại.");
+      const updated = await resolveFollowup(interactionId);
+      if (updated.status === "Spam") {
+        toast.info("Đã tự động chuyển Spam — liên hệ này đã bị nhắc chăm sóc lại quá số lần cho phép theo cấu hình hệ thống.");
+      } else {
+        toast.success("Đã đánh dấu xử lý xong yêu cầu chăm sóc lại.");
+      }
       refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Không cập nhật được.";

@@ -23,6 +23,14 @@ const KNOWN_SETTINGS = [
       "Sale phải bấm \"Ghi nhận đã liên hệ\" đủ số lần này, ở các ngày khác nhau, mới được đóng Spam với lý do khách im lặng.",
     fallback: "3",
   },
+  {
+    configGroup: "system",
+    key: "MAX_FOLLOWUP_BEFORE_SPAM",
+    label: "Số lần chăm sóc lại tối đa trước khi tự động chuyển Spam",
+    description:
+      "Mỗi lần Sale bấm \"Đánh dấu đã xử lý\" cho yêu cầu \"Chăm sóc lại\" của Marketing sẽ được đếm dồn cho liên hệ đó. Vượt quá số lần này mà liên hệ vẫn chưa đổi trạng thái, hệ thống tự động chuyển sang Spam.",
+    fallback: "3",
+  },
 ];
 
 export default async function SettingsPage() {

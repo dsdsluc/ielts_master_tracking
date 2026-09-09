@@ -2,7 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { requireRole } from "@/lib/auth/dal";
-import { CAN_PUSH_FOLLOWUP } from "@/lib/interactions/constants";
+import { CAN_PUSH_FOLLOWUP, FOLLOWUP_OUTCOME, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { prisma } from "@/lib/prisma";
@@ -51,6 +51,8 @@ export default async function FollowupTrackingPage({
       mktPushedAt: true,
       mktSuggestion: true,
       followupHandledAt: true,
+      followupOutcome: true,
+      followupResolvedCount: true,
       mktPushedBy: { select: { fullName: true } },
       followupHandledBy: { select: { fullName: true } },
     },
@@ -70,12 +72,30 @@ export default async function FollowupTrackingPage({
     needsFollowup: r.needsFollowup,
     followupHandledAt: r.followupHandledAt?.toISOString() ?? null,
     followupHandledByName: r.followupHandledBy?.fullName ?? null,
+    followupOutcome: r.followupOutcome,
+    followupResolvedCount: r.followupResolvedCount,
   }));
 
   const total = tableRows.length;
   const pending = tableRows.filter((r) => r.needsFollowup).length;
   const resolvedCount = total - pending;
   const resolvedRate = total > 0 ? (resolvedCount / total) * 100 : 0;
+  // Chuyển đổi thật = có đổi trạng thái nghiệp vụ sau khi được nhắc (không phải
+  // chỉ bấm "đã xử lý") VÀ trạng thái hiện tại là "Đủ tiêu chuẩn" (đã lấy SĐT).
+  const convertedCount = tableRows.filter(
+    (r) => r.followupOutcome === FOLLOWUP_OUTCOME.STATUS_CHANGED && r.status === STATUS.PHONE
+  ).length;
+  const conversionRate = total > 0 ? (convertedCount / total) * 100 : 0;
+  // Spam trong chăm sóc lại = liên hệ đang được nhắc chăm sóc lại mà cuối cùng
+  // đóng Spam — bất kể Sale tự tay đóng Spam ngay trong lúc xử lý (outcome
+  // STATUS_CHANGED) hay bị hệ thống tự động chuyển vì vượt số lần cấu hình
+  // (outcome MANUAL_DISMISS, xem resolveFollowup() trong mutations.ts). Đây là
+  // 1 kết quả rõ ràng — không tính vào "đóng thủ công không rõ kết quả".
+  const spamCount = tableRows.filter((r) => r.status === STATUS.SPAM).length;
+  const spamRate = total > 0 ? (spamCount / total) * 100 : 0;
+  const manualDismissCount = tableRows.filter(
+    (r) => r.followupOutcome === FOLLOWUP_OUTCOME.MANUAL_DISMISS && r.status !== STATUS.SPAM
+  ).length;
   const resolvedDurationsHours = tableRows
     .filter((r) => r.followupHandledAt)
     .map((r) => (new Date(r.followupHandledAt as string).getTime() - new Date(r.mktPushedAt).getTime()) / 3600000);
@@ -100,9 +120,18 @@ export default async function FollowupTrackingPage({
         <KpiCard label="Thời gian xử lý TB" value={avgResolveLabel} accentClassName="bg-primary" />
       </div>
 
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard label="Chuyển đổi thật (ra SĐT)" value={convertedCount} accentClassName="bg-status-qualified" />
+        <KpiCard label="Tỷ lệ chuyển đổi" value={`${conversionRate.toFixed(1)}%`} accentClassName="bg-status-qualified" />
+        <KpiCard label="Spam trong chăm sóc lại" value={spamCount} accentClassName="bg-destructive" />
+        <KpiCard label="Đóng thủ công (không rõ kết quả)" value={manualDismissCount} accentClassName="bg-muted-foreground/40" />
+      </div>
+
       {total > 0 && (
         <p className="mb-4 text-xs text-muted-foreground">
-          Tỷ lệ đã xử lý: <strong className="font-mono text-foreground">{resolvedRate.toFixed(1)}%</strong>
+          Tỷ lệ đã xử lý: <strong className="font-mono text-foreground">{resolvedRate.toFixed(1)}%</strong> · Chuyển đổi thật (ra SĐT) chiếm{" "}
+          <strong className="font-mono text-foreground">{conversionRate.toFixed(1)}%</strong> · Spam sau khi được nhắc chiếm{" "}
+          <strong className="font-mono text-foreground">{spamRate.toFixed(1)}%</strong> tổng số đã gửi.
         </p>
       )}
 

@@ -47,6 +47,11 @@ export function SpamDialog({
 
   const isSilence = reason === SILENCE_REASON_CODE;
   const notEnoughTouches = isSilence && touchCount < 3;
+  // base-ui Select chỉ resolve nhãn hiển thị từ DOM của <Select.Item> đang mount
+  // (bên trong Popup) nếu không truyền `items` — sau khi đóng popup, Item unmount
+  // và SelectValue rơi về hiển thị value thô. Truyền items tường minh để trigger
+  // luôn hiện đúng nhãn tiếng Việt bất kể popup đang mở hay đã đóng.
+  const reasonItems = Object.fromEntries(SPAM_REASON_OPTIONS.map((r) => [r.code, r.label]));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -90,7 +95,7 @@ export function SpamDialog({
 
           <div className="flex flex-col gap-1.5 rounded-2xl border border-border/60 bg-secondary/30 p-4">
             <Label htmlFor="spam-reason">Lý do đóng</Label>
-            <Select value={reason} onValueChange={(v) => setReason(v ?? "")}>
+            <Select value={reason} onValueChange={(v) => setReason(v ?? "")} items={reasonItems}>
               <SelectTrigger id="spam-reason" className="h-11 w-full rounded-xl bg-background">
                 <SelectValue placeholder="Chọn lý do…" />
               </SelectTrigger>

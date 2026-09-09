@@ -8,6 +8,7 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   REASSIGN_PHONE_LEAD: "Chuyển tư vấn viên",
   CLOSE_MKT_PAGE_REPORT: "Chốt báo cáo Page",
   REOPEN_MKT_PAGE_REPORT: "Mở lại báo cáo Page",
+  MERGE_CUSTOMERS: "Gộp khách hàng trùng",
 };
 
 export function actionLabel(action: string) {

@@ -8,6 +8,7 @@ import { ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { dayKey } from "@/lib/day-key";
+import { cached } from "@/lib/cache";
 import { DashboardFilterBar } from "@/app/(app)/dashboard-filter-bar";
 import { DashboardChart, type ChartPoint, type ChartSeries } from "@/app/(app)/dashboard-chart";
 
@@ -23,46 +24,28 @@ const STATUS_SERIES: ChartSeries[] = [
 ];
 const CHART_PALETTE = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ groupBy?: string; days?: string; branch?: string; source?: string }>;
-}) {
-  const user = await requireRole(...REPORT_ROLES);
-  const { groupBy: groupByParam, days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
+type DashboardKpi = { total: number; waiting: number; processing: number; qualified: number; spam: number };
+type DashboardData = { kpi: DashboardKpi; chartData: ChartPoint[]; series: ChartSeries[] };
 
-  const groupBy = groupByParam === "branch" || groupByParam === "source" ? groupByParam : "status";
-  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
-
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - (days - 1));
-  windowStart.setHours(0, 0, 0, 0);
-
-  const [branches, sourceRows] = await Promise.all([
-    prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
-  ]);
-  const branchNameByCode = new Map(branches.map((b) => [b.code, b.name]));
-
-  const where: Prisma.InteractionWhereInput = {
-    ...branchScopeWhere(user),
-    activeFlag: true,
-    createdLeadAt: { gte: windowStart },
-  };
-  if (branchParam && branchParam !== "all" && canAccessBranch(user, branchParam)) {
-    where.assignedBranchCode = branchParam;
-  }
-  if (sourceParam && sourceParam !== "all") {
-    where.sourceName = sourceParam;
-  }
-
+// Quét toàn bộ interaction trong cửa sổ ngày rồi group theo trạng thái/chi
+// nhánh/nguồn trong JS — nặng nhất trang, và đây là trang mặc định BGĐ/Leader/
+// Admin/Marketing mở đầu tiên nên tần suất xem cao. Cache theo đúng scope thật
+// (branchScopeWhere) bằng cách dùng chính where-clause làm 1 phần khoá — tự
+// động đúng nếu logic phân quyền chi nhánh đổi sau này, khỏi duy trì 2 chỗ.
+async function computeDashboardData(
+  where: Prisma.InteractionWhereInput,
+  days: number,
+  windowStart: Date,
+  groupBy: "status" | "branch" | "source",
+  branchNameByCode: Map<string, string>
+): Promise<DashboardData> {
   const rows = await prisma.interaction.findMany({
     where,
     select: { createdLeadAt: true, statusName: true, assignedBranchCode: true, sourceName: true },
   });
 
   // KPI: luôn theo trạng thái, độc lập với bộ lọc "Nhóm theo" của biểu đồ.
-  const kpi = { total: rows.length, waiting: 0, processing: 0, qualified: 0, spam: 0 };
+  const kpi: DashboardKpi = { total: rows.length, waiting: 0, processing: 0, qualified: 0, spam: 0 };
   for (const row of rows) {
     if (row.statusName === STATUS.WAITING) kpi.waiting++;
     else if (row.statusName === STATUS.PROCESSING) kpi.processing++;
@@ -109,6 +92,48 @@ export default async function DashboardPage({
     d.setDate(d.getDate() + i);
     return { date: d.toISOString(), values: byDay.get(dayKey(d)) ?? {} };
   });
+
+  return { kpi, chartData, series };
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ groupBy?: string; days?: string; branch?: string; source?: string }>;
+}) {
+  const user = await requireRole(...REPORT_ROLES);
+  const { groupBy: groupByParam, days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
+
+  const groupBy = groupByParam === "branch" || groupByParam === "source" ? groupByParam : "status";
+  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
+
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - (days - 1));
+  windowStart.setHours(0, 0, 0, 0);
+
+  const [branches, sourceRows] = await Promise.all([
+    prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
+  ]);
+  const branchNameByCode = new Map(branches.map((b) => [b.code, b.name]));
+
+  const scope = branchScopeWhere(user);
+  const where: Prisma.InteractionWhereInput = {
+    ...scope,
+    activeFlag: true,
+    createdLeadAt: { gte: windowStart },
+  };
+  if (branchParam && branchParam !== "all" && canAccessBranch(user, branchParam)) {
+    where.assignedBranchCode = branchParam;
+  }
+  if (sourceParam && sourceParam !== "all") {
+    where.sourceName = sourceParam;
+  }
+
+  const cacheKey = `dash:overview:v1:${JSON.stringify(scope)}:${days}:${branchParam ?? "all"}:${sourceParam ?? "all"}:${groupBy}`;
+  const { kpi, chartData, series } = await cached(cacheKey, 90, () =>
+    computeDashboardData(where, days, windowStart, groupBy, branchNameByCode)
+  );
 
   return (
     <>

@@ -14,12 +14,15 @@ import {
   UserCog,
   SlidersHorizontal,
   History,
+  FileSpreadsheet,
+  GitMerge,
+  ListPlus,
   ScrollText,
   ShieldAlert,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import { ROLES, CAN_VIEW_LEAD, CAN_PUSH_FOLLOWUP } from "@/lib/interactions/constants";
+import { ROLES, CAN_VIEW_LEAD, CAN_PUSH_FOLLOWUP, CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 
 type AppRole = (typeof ROLES)[keyof typeof ROLES];
 
@@ -102,6 +105,18 @@ export const navGroups: NavGroup[] = [
         icon: Sparkles,
         allowedRoles: SALE_WORKSPACE_ROLES,
       },
+      {
+        title: "Nhập từ Excel",
+        href: "/leads/import",
+        icon: FileSpreadsheet,
+        allowedRoles: CAN_CREATE_OR_EDIT_LEAD,
+      },
+      {
+        title: "Khách hàng trùng",
+        href: "/customers/duplicates",
+        icon: GitMerge,
+        allowedRoles: SALE_WORKSPACE_ROLES,
+      },
     ],
   },
   {
@@ -129,6 +144,12 @@ export const navGroups: NavGroup[] = [
         title: "Hiệu quả quảng cáo",
         href: "/ads-performance",
         icon: TrendingUp,
+        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+      },
+      {
+        title: "Ad ID mới",
+        href: "/new-ad-ids",
+        icon: ListPlus,
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
       },
       {

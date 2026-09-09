@@ -8,6 +8,7 @@ import {
   CAN_CREATE_OR_EDIT_LEAD,
   CAN_PUSH_FOLLOWUP,
   CAN_REASSIGN,
+  FOLLOWUP_OUTCOME,
   IS_LEADER_LIKE,
   ROLES,
   STATUS,
@@ -22,7 +23,7 @@ import { resolveLeadInfo } from "@/lib/interactions/lead-info";
 import { normalizePhone } from "@/lib/interactions/link";
 import { newInteractionId } from "@/lib/interactions/ids";
 import { logAction } from "@/lib/interactions/audit";
-import { getSpamNoReplyMinAttempts } from "@/lib/interactions/settings";
+import { getMaxFollowupBeforeSpam, getSpamNoReplyMinAttempts } from "@/lib/interactions/settings";
 import { detailInclude, toDetail } from "@/lib/interactions/serialize";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { LeadInfoInput, StatusUpdateInput } from "@/lib/interactions/validation";
@@ -330,6 +331,7 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
         needsFollowup: false,
         followupHandledByEmail: actor.email,
         followupHandledAt: now,
+        followupOutcome: FOLLOWUP_OUTCOME.STATUS_CHANGED,
       });
     }
 
@@ -391,6 +393,7 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
           mktSuggestion: suggestion || null,
           followupHandledByEmail: null,
           followupHandledAt: null,
+          followupOutcome: null,
         },
       });
       await logAction(tx, actor, SYSTEM_LOG_ACTION.MKT_PUSH, interactionId, { status: lead.statusName }, { pushedBy: actor.email, suggestion: suggestion || null });
@@ -415,12 +418,63 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string)
   }
 
   const now = new Date();
+  const resolvedCount = lead.followupResolvedCount + 1;
+  const maxBeforeSpam = await getMaxFollowupBeforeSpam();
+  // Đóng thủ công (bấm "Đánh dấu đã xử lý") mà vẫn còn mở sau đủ số lần cấu
+  // hình -> lead đang bị nhắc đi nhắc lại không tiến triển, tự động đóng Spam
+  // thay vì để treo vô hạn. Không áp dụng nếu lead đã rời trạng thái mở (an
+  // toàn phòng hờ — về lý thuyết needsFollowup chỉ true khi đang Chờ/Tiếp nhận).
+  const shouldAutoSpam = resolvedCount >= maxBeforeSpam && isOpenStatus(lead.statusName);
+
   return prisma.$transaction(async (tx) => {
-    await tx.interaction.update({
-      where: { interactionId },
-      data: { version: { increment: 1 }, needsFollowup: false, followupHandledByEmail: actor.email, followupHandledAt: now },
-    });
-    await logAction(tx, actor, SYSTEM_LOG_ACTION.MKT_PUSH_RESOLVED, interactionId, { pushedAt: lead.mktPushedAt }, { resolvedAt: now, resolvedByEmail: actor.email });
+    const data: Prisma.InteractionUncheckedUpdateInput = {
+      version: { increment: 1 },
+      needsFollowup: false,
+      followupHandledByEmail: actor.email,
+      followupHandledAt: now,
+      followupOutcome: FOLLOWUP_OUTCOME.MANUAL_DISMISS,
+      followupResolvedCount: resolvedCount,
+    };
+
+    if (shouldAutoSpam) {
+      Object.assign(data, {
+        statusName: STATUS.SPAM,
+        closedAt: now,
+        phoneRaw: null,
+        phoneNormalized: null,
+        phoneCapturedAt: null,
+        assignedSaleEmail: null,
+        receivedAt: null,
+        updatedByEmail: actor.email,
+        updatedAt: now,
+      });
+    }
+
+    await tx.interaction.update({ where: { interactionId }, data });
+
+    await logAction(
+      tx,
+      actor,
+      SYSTEM_LOG_ACTION.MKT_PUSH_RESOLVED,
+      interactionId,
+      { pushedAt: lead.mktPushedAt },
+      { resolvedAt: now, resolvedByEmail: actor.email, resolvedCount }
+    );
+
+    if (shouldAutoSpam) {
+      await tx.customer.update({ where: { customerKey: lead.customerKey }, data: { currentStatusName: STATUS.SPAM, lastTouchAt: now } });
+      await logAction(
+        tx,
+        actor,
+        SYSTEM_LOG_ACTION.UPDATE_RESULT,
+        interactionId,
+        { status: lead.statusName },
+        { status: STATUS.SPAM, spamReason: SPAM_REASON.MAX_FOLLOWUP_EXCEEDED, autoTriggered: true, resolvedCount },
+        "SUCCESS",
+        `Tự động chuyển Spam: đã "Đánh dấu đã xử lý" chăm sóc lại ${resolvedCount}/${maxBeforeSpam} lần theo cấu hình hệ thống.`
+      );
+    }
+
     return getInteractionDetail(actor, interactionId, tx);
   });
 }

@@ -6,42 +6,20 @@ import { ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { prisma } from "@/lib/prisma";
+import { cached } from "@/lib/cache";
 import { AdsPerformanceFilterBar } from "@/app/(app)/ads-performance/ads-performance-filter-bar";
 import { AdsPerformanceTable, type AdPerfRow } from "@/app/(app)/ads-performance/ads-performance-table";
 import { formatVnd } from "@/app/(app)/ads-cost/format";
 
 const DAYS_OPTIONS = [7, 30, 90];
 
-export default async function AdsPerformancePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ days?: string; branch?: string; source?: string }>;
-}) {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
-  const { days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
-  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
+type AdsPerformanceData = { tableRows: AdPerfRow[]; withoutAdIdCount: number; totalLeadsWithAd: number };
 
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - (days - 1));
-  windowStart.setHours(0, 0, 0, 0);
-
-  const [branches, sourceRows] = await Promise.all([
-    prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
-  ]);
-
-  const where: Prisma.InteractionWhereInput = {
-    ...branchScopeWhere(user),
-    activeFlag: true,
-    createdLeadAt: { gte: windowStart },
-  };
-  if (branchParam && branchParam !== "all" && canAccessBranch(user, branchParam)) {
-    where.assignedBranchCode = branchParam;
-  }
-  if (sourceParam && sourceParam !== "all") {
-    where.sourceName = sourceParam;
-  }
-
+// Quét interaction cả cửa sổ ngày + join chi phí quảng cáo theo Ad ID — nặng
+// nhất trang, Marketing mở thường xuyên để so hiệu quả quảng cáo. Cache theo
+// đúng where-clause thật (branchScopeWhere) làm 1 phần khoá, giống Dashboard
+// tổng quan — tự động đúng nếu logic phân quyền chi nhánh đổi sau này.
+async function computeAdsPerformanceData(where: Prisma.InteractionWhereInput): Promise<AdsPerformanceData> {
   const rows = await prisma.interaction.findMany({
     where,
     select: { adId: true, statusName: true, sourceName: true, fanpageName: true },
@@ -93,7 +71,43 @@ export default async function AdsPerformancePage({
     })
     .sort((a, b) => b.totalLeads - a.totalLeads);
 
-  const totalLeadsWithAd = withAdId.length;
+  return { tableRows, withoutAdIdCount, totalLeadsWithAd: withAdId.length };
+}
+
+export default async function AdsPerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string; branch?: string; source?: string }>;
+}) {
+  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const { days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
+  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
+
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - (days - 1));
+  windowStart.setHours(0, 0, 0, 0);
+
+  const [branches, sourceRows] = await Promise.all([
+    prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
+  ]);
+
+  const scope = branchScopeWhere(user);
+  const where: Prisma.InteractionWhereInput = {
+    ...scope,
+    activeFlag: true,
+    createdLeadAt: { gte: windowStart },
+  };
+  if (branchParam && branchParam !== "all" && canAccessBranch(user, branchParam)) {
+    where.assignedBranchCode = branchParam;
+  }
+  if (sourceParam && sourceParam !== "all") {
+    where.sourceName = sourceParam;
+  }
+
+  const cacheKey = `ads-perf:v1:${JSON.stringify(scope)}:${days}:${branchParam ?? "all"}:${sourceParam ?? "all"}`;
+  const { tableRows, withoutAdIdCount, totalLeadsWithAd } = await cached(cacheKey, 90, () => computeAdsPerformanceData(where));
+
   const totalQualified = tableRows.reduce((sum, r) => sum + r.qualified, 0);
   const avgConversion = totalLeadsWithAd > 0 ? (totalQualified / totalLeadsWithAd) * 100 : 0;
   const totalCostKnown = tableRows.reduce((sum, r) => sum + (r.totalCost ?? 0), 0);
