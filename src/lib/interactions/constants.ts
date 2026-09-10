@@ -83,6 +83,7 @@ export const SYSTEM_LOG_ACTION = {
   CLEANUP_ADS_COST: "CLEANUP_ADS_COST",
   ADD_TO_WORKSPACE: "ADD_TO_WORKSPACE",
   RELEASE_FROM_WORKSPACE: "RELEASE_FROM_WORKSPACE",
+  FLAG_SLA_BREACH: "FLAG_SLA_BREACH",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.

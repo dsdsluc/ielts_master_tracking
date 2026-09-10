@@ -35,6 +35,16 @@ async function loadInteractionOr404(interactionId: string) {
   return row;
 }
 
+/** Sale thao tác lên 1 hội thoại (ghi nhận chăm sóc, đổi trạng thái, đánh dấu
+ * đã xử lý chăm sóc lại, lưu thay đổi thông tin...) thì mặc nhiên "nhận" luôn
+ * hội thoại đó vào Workspace của mình — như đã làm với create — nhưng chỉ khi
+ * CHƯA ai claim trước (không cướp Workspace của Sale khác), và chỉ áp dụng cho
+ * vai trò Sale (Leader/Admin thao tác thay không tự nhận về mình). */
+function autoClaimWorkspace(actor: CurrentUser, currentClaimedByEmail: string | null): { workspaceClaimedByEmail?: string } {
+  if (actor.role !== ROLES.SALES || currentClaimedByEmail) return {};
+  return { workspaceClaimedByEmail: actor.email };
+}
+
 // ---------------------------------------------------------------------------
 // Tạo Interaction mới
 // ---------------------------------------------------------------------------
@@ -101,6 +111,11 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
         updatedAt: now,
         needsFollowup: false,
         conversationLink: info.conversationLink || null,
+        // Người tạo liên hệ mặc nhiên là người sẽ làm việc với nó — tự thêm
+        // luôn vào Workspace của họ, khỏi phải quay lại trang Workspace bấm
+        // thêm thủ công. Luôn hợp lệ vì đây là dòng Interaction vừa tạo mới,
+        // không thể đã bị ai khác claim trước.
+        workspaceClaimedByEmail: actor.email,
       },
     });
 
@@ -181,6 +196,7 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
         lastTouchAdId: touch.lastTouchAdId,
         updatedByEmail: actor.email,
         updatedAt: now,
+        ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail),
       },
     });
     if (result.count === 0) throw Errors.staleVersion();
@@ -207,7 +223,7 @@ export async function recordTouch(actor: CurrentUser, interactionId: string, not
     await logAction(tx, actor, SYSTEM_LOG_ACTION.TOUCH, interactionId, null, { note: note || null });
     await tx.interaction.update({
       where: { interactionId },
-      data: { updatedByEmail: actor.email, updatedAt: new Date() },
+      data: { updatedByEmail: actor.email, updatedAt: new Date(), ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail) },
     });
   });
 
@@ -234,7 +250,14 @@ async function countDistinctTouchDays(interactionId: string): Promise<number> {
 // hội thoại đã đóng (mở lại) nhưng bắt buộc có `note` lý do.
 // ---------------------------------------------------------------------------
 export async function updateStatus(actor: CurrentUser, interactionId: string, input: StatusUpdateInput) {
-  requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
+  // Ngoại lệ hẹp: Marketing được đóng thẳng Spam khi xem lại hội thoại ở
+  // trang "Chăm sóc lại" — đọc thấy khách rõ ràng không có nhu cầu thì khỏi
+  // cần đẩy cờ cho Sale xử lý nữa. Mọi trường hợp khác Marketing vẫn không có
+  // quyền đổi trạng thái (không mở rộng CAN_CREATE_OR_EDIT_LEAD nói chung).
+  const isMarketingSpam = actor.role === ROLES.MARKETING && input.status === STATUS.SPAM;
+  if (!isMarketingSpam) {
+    requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
+  }
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
 
   const lead = await loadInteractionOr404(interactionId);
@@ -245,6 +268,9 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
   const saleCanTouch = beforeKey === "WAITING" || beforeKey === "PROCESSING";
   if (!isLeaderLike(actor) && actor.role === ROLES.SALES && !saleCanTouch) {
     throw Errors.forbidden("Hội thoại đã đóng. Sale chỉ được xem; hãy báo Leader/Quản trị nếu cần hiệu chỉnh.");
+  }
+  if (isMarketingSpam && beforeKey !== "WAITING" && beforeKey !== "PROCESSING") {
+    throw Errors.forbidden("Chỉ đóng Spam trực tiếp được với hội thoại đang mở.");
   }
   const requiresReason = beforeKey === "PHONE" || beforeKey === "SPAM";
   if (requiresReason && !input.note) {
@@ -288,6 +314,7 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
       statusName: input.status,
       updatedByEmail: actor.email,
       updatedAt: now,
+      ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail),
     };
 
     if (afterKey === "WAITING" || afterKey === "PROCESSING") {
@@ -434,6 +461,7 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string)
       followupHandledAt: now,
       followupOutcome: FOLLOWUP_OUTCOME.MANUAL_DISMISS,
       followupResolvedCount: resolvedCount,
+      ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail),
     };
 
     if (shouldAutoSpam) {

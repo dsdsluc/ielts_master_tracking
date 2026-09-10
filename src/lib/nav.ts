@@ -22,6 +22,8 @@ import {
   Sparkles,
   TrendingUp,
   Briefcase,
+  ClipboardCheck,
+  TimerOff,
 } from "lucide-react";
 import { ROLES, CAN_VIEW_LEAD, CAN_PUSH_FOLLOWUP, CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 
@@ -183,6 +185,8 @@ export const navGroups: NavGroup[] = [
     label: "Quản trị",
     items: [
       { title: "Giám sát", href: "/admin", icon: ShieldAlert, allowedRoles: ADMIN_ROLES },
+      { title: "Rà soát SLA", href: "/admin/sla-review", icon: TimerOff, allowedRoles: ADMIN_ROLES },
+      { title: "Tổng quan báo cáo đã chốt", href: "/page-report/closed", icon: ClipboardCheck, allowedRoles: ADMIN_ROLES },
       { title: "Cơ sở", href: "/admin/branches", icon: Building2, allowedRoles: ADMIN_ROLES },
       { title: "Fanpage", href: "/admin/fanpages", icon: Flag, allowedRoles: ADMIN_ROLES },
       { title: "Nguồn", href: "/admin/sources", icon: Share2, allowedRoles: ADMIN_ROLES },

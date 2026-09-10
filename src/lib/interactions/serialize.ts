@@ -4,6 +4,7 @@ import type { InteractionDetail, InteractionListItem } from "@/lib/interactions/
 
 export const listItemInclude = {
   assignedSale: { select: { fullName: true } },
+  workspaceClaimedBy: { select: { fullName: true } },
 } satisfies Prisma.InteractionInclude;
 
 export const detailInclude = {
@@ -28,6 +29,10 @@ export function toListItem(row: ListRow): InteractionListItem {
     assignedBranchCode: row.assignedBranchCode,
     assignedSaleEmail: row.assignedSaleEmail,
     assignedSaleName: row.assignedSale?.fullName ?? null,
+    workspaceClaimedByEmail: row.workspaceClaimedByEmail,
+    workspaceClaimedByName: row.workspaceClaimedBy?.fullName ?? null,
+    consultantEmail: row.assignedSaleEmail ?? row.workspaceClaimedByEmail,
+    consultantName: row.assignedSale?.fullName ?? row.workspaceClaimedBy?.fullName ?? null,
     createdByEmail: row.createdByEmail,
     createdLeadAt: row.createdLeadAt.toISOString(),
     touchCount: row.touchCount,

@@ -13,6 +13,13 @@ export type InteractionListItem = {
   assignedBranchCode: string;
   assignedSaleEmail: string | null;
   assignedSaleName: string | null;
+  workspaceClaimedByEmail: string | null;
+  workspaceClaimedByName: string | null;
+  // "Tư vấn viên" hiển thị cho người dùng: assignedSaleEmail chỉ có giá trị
+  // từ khi Đủ tiêu chuẩn (SĐT), nên trước đó lấy theo người đang claim liên
+  // hệ vào Workspace của họ — xem autoClaimWorkspace() trong mutations.ts.
+  consultantEmail: string | null;
+  consultantName: string | null;
   createdByEmail: string;
   createdLeadAt: string; // ISO
   touchCount: number;

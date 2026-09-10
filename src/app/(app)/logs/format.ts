@@ -13,6 +13,7 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   CLEANUP_ADS_COST: "Dọn dẹp chi phí quảng cáo",
   ADD_TO_WORKSPACE: "Thêm liên hệ vào Workspace",
   RELEASE_FROM_WORKSPACE: "Giải phóng liên hệ khỏi Workspace",
+  FLAG_SLA_BREACH: "Đánh dấu quá SLA",
 };
 
 export function actionLabel(action: string) {

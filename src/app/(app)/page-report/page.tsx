@@ -1,12 +1,14 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/dal";
 import { ROLES } from "@/lib/interactions/constants";
 import { getPageReportRows } from "@/lib/marketing/page-report";
 import { PageReportDatePicker } from "@/app/(app)/page-report/page-report-date-picker";
 import { PageReportTable } from "@/app/(app)/page-report/page-report-table";
-import { CalendarCheck } from "lucide-react";
+import { CalendarCheck, ClipboardCheck } from "lucide-react";
 
 function todayStr() {
   const d = new Date();
@@ -36,7 +38,23 @@ export default async function PageReportPage({
         eyebrow="Marketing"
         title="Báo cáo Page hằng ngày"
         description="Tin nhắn nhận được và tỷ lệ xin SĐT theo từng Page, tính theo ngày TẠO lead. Chốt để giữ nguyên số liệu."
-        action={<PageReportDatePicker date={date} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {user.role === ROLES.ADMIN && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 rounded-full"
+                nativeButton={false}
+                render={<Link href="/page-report/closed" />}
+              >
+                <ClipboardCheck className="size-3.5" />
+                Tổng quan đã chốt
+              </Button>
+            )}
+            <PageReportDatePicker date={date} />
+          </div>
+        }
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

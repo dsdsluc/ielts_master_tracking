@@ -1,15 +1,9 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { RotateCcw, SlidersHorizontal } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-
-const GROUP_BY_OPTIONS = [
-  { value: "status", label: "Trạng thái" },
-  { value: "branch", label: "Cơ sở" },
-  { value: "source", label: "Nguồn" },
-];
 
 const DAYS_OPTIONS = [
   { value: "7", label: "7 ngày gần nhất" },
@@ -27,7 +21,6 @@ export function DashboardFilterBar({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const groupBy = searchParams.get("groupBy") ?? "status";
   const days = searchParams.get("days") ?? "30";
   const branch = searchParams.get("branch") ?? "all";
   const source = searchParams.get("source") ?? "all";
@@ -43,20 +36,6 @@ export function DashboardFilterBar({
 
   return (
     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:flex-wrap">
-      <Select value={groupBy} onValueChange={(v) => updateParams({ groupBy: v ?? "status" })}>
-        <SelectTrigger className="h-10 w-full rounded-xl bg-background sm:w-40">
-          <SlidersHorizontal className="size-3.5 text-muted-foreground" />
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {GROUP_BY_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              Nhóm theo {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
       <Select value={days} onValueChange={(v) => updateParams({ days: v ?? "30" })}>
         <SelectTrigger className="h-10 w-full rounded-xl bg-background sm:w-44">
           <SelectValue />

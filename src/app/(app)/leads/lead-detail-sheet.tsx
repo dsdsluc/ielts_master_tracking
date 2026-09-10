@@ -122,7 +122,7 @@ export function LeadDetailSheet({
                   <InfoRow label="Đối tượng" value={detail.customerObjectName} />
                   <InfoRow label="Cơ sở phụ trách" value={detail.assignedBranchCode} />
                   <InfoRow label="Cơ sở gợi ý" value={detail.suggestedBranchCode} />
-                  <InfoRow label="Tư vấn viên" value={detail.assignedSaleName ?? "Chưa gán"} />
+                  <InfoRow label="Tư vấn viên" value={detail.consultantName ?? "Chưa gán"} />
                   <InfoRow
                     label="SĐT"
                     value={

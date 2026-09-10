@@ -448,7 +448,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
             <div className="rounded-2xl border border-border bg-card p-5">
               <h2 className="mb-3 font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Thông tin khác</h2>
               <InfoRow label="Cơ sở gợi ý" value={detail.suggestedBranchCode} />
-              <InfoRow label="Tư vấn viên" value={detail.assignedSaleName ?? "Chưa gán"} />
+              <InfoRow label="Tư vấn viên" value={detail.consultantName ?? "Chưa gán"} />
               <InfoRow
                 label="SĐT"
                 value={

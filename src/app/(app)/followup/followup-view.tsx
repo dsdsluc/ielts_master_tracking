@@ -2,19 +2,34 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, Sparkles } from "lucide-react";
+import { CircleOff, ExternalLink, LoaderCircle, Sparkles } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogClose,
+} from "@/components/ui/alert-dialog";
 import { StatusPill } from "@/components/status-pill";
 import { PaginationBar } from "@/components/pagination-bar";
 import { FormMessage } from "@/components/form-message";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
+import { updateStatus } from "@/app/(app)/leads/leads-api";
+import { SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
+import { STATUS, SPAM_REASON } from "@/lib/interactions/constants";
 import { useToast } from "@/hooks/use-toast";
 
 export type FollowupCandidate = {
   interactionId: string;
+  version: number;
   customerName: string;
   status: string;
   sourceName: string;
@@ -23,7 +38,13 @@ export type FollowupCandidate = {
   assignedSaleName: string | null;
   createdLeadAt: string;
   lastActivityAt: string;
+  conversationLink: string | null;
+  rawLink: string;
 };
+
+// "Khách im lặng" cần đối chiếu số lần chăm sóc của Sale (recordTouch) — không
+// áp dụng khi Marketing tự đọc hội thoại và đóng Spam ngay tại đây.
+const MARKETING_SPAM_REASONS = SPAM_REASON_OPTIONS.filter((r) => r.code !== SPAM_REASON.NO_REPLY);
 
 const MAX_SELECTION = 50;
 const PAGE_SIZE = 15;
@@ -46,6 +67,10 @@ export function FollowupView({
   const [suggestion, setSuggestion] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [spamTarget, setSpamTarget] = useState<FollowupCandidate | null>(null);
+  const [spamReason, setSpamReason] = useState("");
+  const [spamPending, setSpamPending] = useState(false);
+  const [spamError, setSpamError] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE));
   const pagedItems = candidates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -113,6 +138,29 @@ export function FollowupView({
     }
   }
 
+  function openSpamDialog(item: FollowupCandidate) {
+    setSpamTarget(item);
+    setSpamReason("");
+    setSpamError(null);
+  }
+
+  async function handleMarkSpam() {
+    if (!spamTarget || !spamReason) return;
+    setSpamPending(true);
+    setSpamError(null);
+    try {
+      await updateStatus(spamTarget.interactionId, { status: STATUS.SPAM, expectedVersion: spamTarget.version, spamReason });
+      toast.success(`Đã chuyển "${spamTarget.customerName}" sang Spam — không cần chăm sóc lại nữa.`);
+      setSpamTarget(null);
+      setSpamReason("");
+      router.refresh();
+    } catch (err) {
+      setSpamError(err instanceof Error ? err.message : "Không đóng Spam được.");
+    } finally {
+      setSpamPending(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
@@ -135,6 +183,7 @@ export function FollowupView({
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Tư vấn viên</TableHead>
               <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Trạng thái</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Hoạt động gần nhất</TableHead>
+              <TableHead className="w-24 pr-5" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -164,6 +213,33 @@ export function FollowupView({
                   <TableCell className="hidden px-4 text-xs text-muted-foreground lg:table-cell">
                     {formatDateTime(item.lastActivityAt)} {idle > 0 && `(${idle} ngày trước)`}
                   </TableCell>
+                  <TableCell className="pr-5 pl-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      {(item.conversationLink || item.rawLink) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded-full text-muted-foreground hover:text-foreground"
+                          aria-label="Mở hội thoại"
+                          nativeButton={false}
+                          render={<a href={item.conversationLink || item.rawLink} target="_blank" rel="noopener noreferrer" />}
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Đánh dấu Spam"
+                        onClick={() => openSpamDialog(item)}
+                      >
+                        <CircleOff className="size-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -191,6 +267,59 @@ export function FollowupView({
           Gửi yêu cầu chăm sóc lại ({selected.size})
         </Button>
       </div>
+
+      <AlertDialog
+        open={!!spamTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSpamTarget(null);
+            setSpamError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Đánh dấu Spam?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Liên hệ <strong className="text-foreground">{spamTarget?.customerName}</strong> sẽ chuyển thẳng sang Spam — dùng khi đọc hội
+              thoại thấy rõ khách không có nhu cầu, khỏi cần gửi yêu cầu chăm sóc lại cho Sale nữa.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs text-muted-foreground">Lý do</Label>
+            <Select value={spamReason} onValueChange={(v) => setSpamReason(v ?? "")}>
+              <SelectTrigger className="h-10 w-full rounded-xl bg-background">
+                <SelectValue placeholder="Chọn lý do" />
+              </SelectTrigger>
+              <SelectContent>
+                {MARKETING_SPAM_REASONS.map((r) => (
+                  <SelectItem key={r.code} value={r.code}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {spamError && <FormMessage kind="error">{spamError}</FormMessage>}
+
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button type="button" variant="outline" className="rounded-full" disabled={spamPending} />}>
+              Huỷ
+            </AlertDialogClose>
+            <Button
+              type="button"
+              className="rounded-full bg-destructive text-white hover:bg-destructive/90"
+              disabled={!spamReason || spamPending}
+              onClick={handleMarkSpam}
+            >
+              {spamPending && <LoaderCircle className="animate-spin" />}
+              Chuyển Spam
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

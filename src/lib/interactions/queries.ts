@@ -17,6 +17,7 @@ import {
 import { Errors } from "@/lib/interactions/errors";
 import { canAccessBranch, canViewLead, isLeaderLike } from "@/lib/interactions/scope";
 import { detailInclude, listItemInclude, toDetail, toListItem } from "@/lib/interactions/serialize";
+import { getSlaHours } from "@/lib/interactions/settings";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { InteractionDetail, InteractionListItem, LeadQueue, LeadQueueGroup } from "@/lib/interactions/types";
 
@@ -224,8 +225,8 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
     return { groups: [], personalKpi: emptyPersonalKpi() };
   }
 
-  const [branches, openRows, personalKpi] = await Promise.all([
-    prisma.branch.findMany({ select: { code: true, slaReceiveMinutes: true, slaProcessHours: true } }),
+  const [slaHours, openRows, personalKpi] = await Promise.all([
+    getSlaHours(),
     prisma.interaction.findMany({
       where: { ...branchScopeWhere(actor), activeFlag: true, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
       include: listItemInclude,
@@ -234,7 +235,11 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
     computePersonalKpi(actor),
   ]);
 
-  const slaByBranch = new Map(branches.map((b) => [b.code, b]));
+  // SLA giờ là 1 mốc chung toàn hệ thống (Cấu hình hệ thống → "Ngưỡng SLA
+  // phản hồi liên hệ mới"), không còn cấu hình riêng theo Cơ sở. "Chưa được
+  // liên hệ" = còn ở trạng thái Chờ (chưa ai Chuyển Tiếp nhận) — lead đã sang
+  // Tiếp nhận coi như đã được liên hệ nên không tính quá SLA nữa.
+  const thresholdMinutes = slaHours * 60;
   const now = Date.now();
   const buckets: Record<(typeof QUEUE_ORDER)[number], InteractionListItem[]> = {
     new_waiting: [],
@@ -244,10 +249,8 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
   };
 
   for (const row of openRows) {
-    const sla = slaByBranch.get(row.assignedBranchCode);
     const elapsedMinutes = (now - row.createdLeadAt.getTime()) / 60000;
-    const thresholdMinutes = row.statusName === STATUS.WAITING ? (sla?.slaReceiveMinutes ?? Infinity) : (sla?.slaProcessHours ?? Infinity) * 60;
-    const isSlaBreaching = Number.isFinite(thresholdMinutes) && elapsedMinutes >= thresholdMinutes * SLA_APPROACH_RATIO;
+    const isSlaBreaching = row.statusName === STATUS.WAITING && elapsedMinutes >= thresholdMinutes * SLA_APPROACH_RATIO;
     const item = toListItem(row);
 
     if (row.statusName === STATUS.WAITING && !isSlaBreaching && !row.needsFollowup) buckets.new_waiting.push(item);

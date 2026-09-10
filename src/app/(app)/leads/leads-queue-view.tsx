@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileDown, Inbox, LoaderCircle, RotateCcw, Search, SlidersHorizontal, Sparkles, User } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { FormMessage } from "@/components/form-message";
 import { PaginationBar } from "@/components/pagination-bar";
@@ -20,16 +21,52 @@ type PageMeta = { page: number; totalPages: number; totalItems: number };
 
 const PAGE_SIZE = 20;
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "priority", label: "Hàng đợi ưu tiên" },
-  { key: "waiting", label: "Chờ" },
-  { key: "in_progress", label: "Tiếp nhận" },
-  { key: "followup", label: "Cần chăm sóc lại" },
-  { key: "closed", label: "Đã đóng" },
+const TABS: { key: TabKey; label: string; description: string }[] = [
+  {
+    key: "priority",
+    label: "Hàng đợi ưu tiên",
+    description: "Gợi ý liên hệ nên xử lý trước — sắp trễ SLA, được Marketing yêu cầu chăm sóc lại, hoặc mới tạo chưa ai xử lý.",
+  },
+  {
+    key: "waiting",
+    label: "Chờ",
+    description: "Khi mới tạo liên hệ — hệ thống tự gán trạng thái này, chưa Sale nào bắt đầu xử lý.",
+  },
+  {
+    key: "in_progress",
+    label: "Tiếp nhận",
+    description: "Sale đã bắt đầu trao đổi với khách nhưng chưa lấy được số điện thoại (chưa đủ tiêu chuẩn).",
+  },
+  {
+    key: "followup",
+    label: "Cần chăm sóc lại",
+    description: "Marketing yêu cầu Sale liên hệ lại khách — cần cập nhật trạng thái, nếu không sẽ tự động chuyển Spam sau vài lần nhắc.",
+  },
+  {
+    key: "closed",
+    label: "Đã đóng",
+    description: "Gộp 2 kết quả cuối cùng: Đủ tiêu chuẩn (đã lấy được số điện thoại) và Spam (không có nhu cầu hoặc tin nhắn rác).",
+  },
 ];
 
 function sampleItems(branchCode: string): InteractionListItem[] {
-  const base = { customerKey: "SAMPLE-CUSTOMER", sourceName: "Facebook", fanpageName: "IELTS Master", adId: null, assignedBranchCode: branchCode, assignedSaleEmail: "sale@example.com", assignedSaleName: "Nguyễn Minh Anh", createdByEmail: "sale@example.com", phoneNormalized: null, conversationLink: null, version: 1 };
+  const base = {
+    customerKey: "SAMPLE-CUSTOMER",
+    sourceName: "Facebook",
+    fanpageName: "IELTS Master",
+    adId: null,
+    assignedBranchCode: branchCode,
+    assignedSaleEmail: "sale@example.com",
+    assignedSaleName: "Nguyễn Minh Anh",
+    workspaceClaimedByEmail: "sale@example.com",
+    workspaceClaimedByName: "Nguyễn Minh Anh",
+    consultantEmail: "sale@example.com",
+    consultantName: "Nguyễn Minh Anh",
+    createdByEmail: "sale@example.com",
+    phoneNormalized: null,
+    conversationLink: null,
+    version: 1,
+  };
   return [
     { ...base, interactionId: "SAMPLE-001", customerKey: "SAMPLE-CUS-001", customerName: "Trần Gia Hân", status: "Chờ", createdLeadAt: "2026-09-07T08:15:00+07:00", touchCount: 1, needsFollowup: false },
     { ...base, interactionId: "SAMPLE-002", customerKey: "SAMPLE-CUS-002", customerName: "Lê Hoàng Nam", status: "Tiếp nhận", createdLeadAt: "2026-09-07T09:40:00+07:00", touchCount: 2, needsFollowup: true },
@@ -38,7 +75,15 @@ function sampleItems(branchCode: string): InteractionListItem[] {
   ];
 }
 
-export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFormOptions; currentUserEmail: string }) {
+export function LeadsQueueView({
+  options,
+  currentUserEmail,
+  currentUserName,
+}: {
+  options: LeadFormOptions;
+  currentUserEmail: string;
+  currentUserName: string;
+}) {
   const [tab, setTab] = useState<TabKey>("priority");
   const [queue, setQueue] = useState<QueueResponse | null>(null);
   const [flatItems, setFlatItems] = useState<InteractionListItem[]>([]);
@@ -134,11 +179,16 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
       <Tabs value={tab} onValueChange={(v) => changeTab(v as TabKey)}>
         <div className="mb-5 flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
           <TabsList className="max-w-full justify-start overflow-x-auto rounded-full bg-secondary/70 p-1">
-            {TABS.map((t) => (
-              <TabsTrigger key={t.key} value={t.key}>
-                {t.label}
-              </TabsTrigger>
-            ))}
+            <TooltipProvider delay={300}>
+              {TABS.map((t) => (
+                <TabsTrigger key={t.key} value={t.key}>
+                  <Tooltip>
+                    <TooltipTrigger render={<span />}>{t.label}</TooltipTrigger>
+                    <TooltipContent>{t.description}</TooltipContent>
+                  </Tooltip>
+                </TabsTrigger>
+              ))}
+            </TooltipProvider>
           </TabsList>
           <div className="flex shrink-0 items-center gap-2">
             {exportHref() && (
@@ -207,12 +257,26 @@ export function LeadsQueueView({ options, currentUserEmail }: { options: LeadFor
             {!loading && error && <FormMessage kind="error">{error}</FormMessage>}
 
             {!loading && !error && t.key === "priority" && queue && (
-              <PriorityGroups groups={queue.groups} samples={samples} matchesFilters={matchesFilters} onOpen={setSelectedId} />
+              <PriorityGroups
+                groups={queue.groups}
+                samples={samples}
+                matchesFilters={matchesFilters}
+                onOpen={setSelectedId}
+                currentUserEmail={currentUserEmail}
+                currentUserName={currentUserName}
+              />
             )}
 
             {!loading && !error && t.key !== "priority" && (
               <>
-                <FlatList items={flatItems} samples={samplesForTab(samples, t.key)} matchesFilters={matchesFilters} onOpen={setSelectedId} />
+                <FlatList
+                  items={flatItems}
+                  samples={samplesForTab(samples, t.key)}
+                  matchesFilters={matchesFilters}
+                  onOpen={setSelectedId}
+                  currentUserEmail={currentUserEmail}
+                  currentUserName={currentUserName}
+                />
                 {pageMeta && flatItems.length > 0 && (
                   <PaginationBar page={pageMeta.page} totalPages={pageMeta.totalPages} totalItems={pageMeta.totalItems} onPageChange={setPage} />
                 )}
@@ -257,11 +321,15 @@ function PriorityGroups({
   samples,
   matchesFilters,
   onOpen,
+  currentUserEmail,
+  currentUserName,
 }: {
   groups: QueueResponse["groups"];
   samples: InteractionListItem[];
   matchesFilters: (item: InteractionListItem) => boolean;
   onOpen: (id: string) => void;
+  currentUserEmail: string;
+  currentUserName: string;
 }) {
   const [groupPages, setGroupPages] = useState<Record<string, number>>({});
 
@@ -302,7 +370,13 @@ function PriorityGroups({
                 onPageChange={(next) => setGroupPages((prev) => ({ ...prev, [group.key]: next }))}
               />
             </div>
-            <LeadsTable items={pagedItems} onOpen={onOpen} isSample={!hasRealData} />
+            <LeadsTable
+              items={pagedItems}
+              onOpen={onOpen}
+              isSample={!hasRealData}
+              currentUserEmail={currentUserEmail}
+              currentUserName={currentUserName}
+            />
           </div>
         );
       })}
@@ -318,7 +392,21 @@ function samplesForTab(items: InteractionListItem[], tab: TabKey) {
   return items;
 }
 
-function FlatList({ items, samples, matchesFilters, onOpen }: { items: InteractionListItem[]; samples: InteractionListItem[]; matchesFilters: (item: InteractionListItem) => boolean; onOpen: (id: string) => void }) {
+function FlatList({
+  items,
+  samples,
+  matchesFilters,
+  onOpen,
+  currentUserEmail,
+  currentUserName,
+}: {
+  items: InteractionListItem[];
+  samples: InteractionListItem[];
+  matchesFilters: (item: InteractionListItem) => boolean;
+  onOpen: (id: string) => void;
+  currentUserEmail: string;
+  currentUserName: string;
+}) {
   const hasRealData = items.length > 0;
   const filteredItems = (hasRealData ? items : samples).filter(matchesFilters);
   if (filteredItems.length === 0) {
@@ -327,5 +415,13 @@ function FlatList({ items, samples, matchesFilters, onOpen }: { items: Interacti
     );
   }
 
-  return <LeadsTable items={filteredItems} onOpen={onOpen} isSample={!hasRealData} />;
+  return (
+    <LeadsTable
+      items={filteredItems}
+      onOpen={onOpen}
+      isSample={!hasRealData}
+      currentUserEmail={currentUserEmail}
+      currentUserName={currentUserName}
+    />
+  );
 }

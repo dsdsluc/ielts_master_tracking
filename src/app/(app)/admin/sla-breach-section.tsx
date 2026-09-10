@@ -53,7 +53,7 @@ export function SlaBreachSection({ items, branchNames }: { items: InteractionLis
                   <p className="truncate text-xs text-muted-foreground">{item.fanpageName}</p>
                 </TableCell>
                 <TableCell className="px-4 text-sm text-muted-foreground">{branchNames[item.assignedBranchCode] ?? item.assignedBranchCode}</TableCell>
-                <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">{item.assignedSaleName ?? "Chưa gán"}</TableCell>
+                <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">{item.consultantName ?? "Chưa gán"}</TableCell>
                 <TableCell className="px-4">
                   <StatusPill status={item.status} />
                 </TableCell>

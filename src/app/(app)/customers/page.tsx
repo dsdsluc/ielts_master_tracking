@@ -100,10 +100,37 @@ export default async function CustomersPage({
         />
       ) : (
         <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
-          <div className="flex items-center justify-between border-b border-border/70 bg-card px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-card px-5 py-3">
             <p className="text-xs text-muted-foreground">
+              {totalPages > 1 && (
+                <>
+                  Trang <strong className="font-mono text-foreground">{page}</strong>/{totalPages} ·{" "}
+                </>
+              )}
               <strong className="font-mono text-foreground">{totalItems}</strong> khách hàng
             </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                {page > 1 ? (
+                  <Button variant="outline" size="icon-sm" className="rounded-full" nativeButton={false} render={<Link href={pageHref(page - 1)} />} aria-label="Trang trước">
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="icon-sm" className="rounded-full" disabled aria-label="Trang trước">
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                )}
+                {page < totalPages ? (
+                  <Button variant="outline" size="icon-sm" className="rounded-full" nativeButton={false} render={<Link href={pageHref(page + 1)} />} aria-label="Trang sau">
+                    <ChevronRight className="size-4" />
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="icon-sm" className="rounded-full" disabled aria-label="Trang sau">
+                    <ChevronRight className="size-4" />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
           <Table className="sm:min-w-[720px]">
             <TableHeader className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-md">
@@ -125,8 +152,8 @@ export default async function CustomersPage({
                         <User className="size-3.5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{c.displayName}</p>
-                        <p className="truncate font-mono text-[11px] text-muted-foreground">{c.customerKey}</p>
+                        <p className="max-w-56 truncate font-medium text-foreground">{c.displayName}</p>
+                        <p className="max-w-56 truncate font-mono text-[11px] text-muted-foreground">{c.customerKey}</p>
                       </div>
                     </div>
                   </TableCell>
@@ -152,35 +179,6 @@ export default async function CustomersPage({
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex flex-col items-center justify-between gap-3 pt-4 sm:flex-row">
-          <p className="text-xs text-muted-foreground">
-            Trang <strong className="font-mono text-foreground">{page}</strong>/{totalPages} ·{" "}
-            <strong className="font-mono text-foreground">{totalItems}</strong> khách hàng
-          </p>
-          <div className="flex items-center gap-1">
-            {page > 1 ? (
-              <Button variant="outline" size="icon-sm" className="rounded-full" nativeButton={false} render={<Link href={pageHref(page - 1)} />} aria-label="Trang trước">
-                <ChevronLeft className="size-4" />
-              </Button>
-            ) : (
-              <Button variant="outline" size="icon-sm" className="rounded-full" disabled aria-label="Trang trước">
-                <ChevronLeft className="size-4" />
-              </Button>
-            )}
-            {page < totalPages ? (
-              <Button variant="outline" size="icon-sm" className="rounded-full" nativeButton={false} render={<Link href={pageHref(page + 1)} />} aria-label="Trang sau">
-                <ChevronRight className="size-4" />
-              </Button>
-            ) : (
-              <Button variant="outline" size="icon-sm" className="rounded-full" disabled aria-label="Trang sau">
-                <ChevronRight className="size-4" />
-              </Button>
-            )}
-          </div>
         </div>
       )}
     </>

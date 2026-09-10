@@ -14,7 +14,7 @@ export default async function LeadsPage() {
         title="Liên hệ"
         action={<LeadPriorityFlow />}
       />
-      <LeadsQueueView options={options} currentUserEmail={user.email} />
+      <LeadsQueueView options={options} currentUserEmail={user.email} currentUserName={user.fullName} />
     </>
   );
 }

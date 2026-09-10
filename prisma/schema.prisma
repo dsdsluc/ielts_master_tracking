@@ -128,6 +128,7 @@ model User {
   branch                  Branch?       @relation(fields: [branchCode], references: [code])
   assignedInteractions    Interaction[] @relation("AssignedSale")
   workspaceClaimedInteractions Interaction[] @relation("WorkspaceClaimedBy")
+  slaFlaggedInteractions Interaction[] @relation("SlaFlaggedBy")
   createdInteractions     Interaction[] @relation("CreatedBy")
   updatedInteractions     Interaction[] @relation("UpdatedBy")
   reassignedInteractions  Interaction[] @relation("ReassignedBy")
@@ -201,6 +202,13 @@ model Interaction {
   // liên hệ bị khoá khỏi Workspace của Sale khác cho đến khi được "Giải phóng".
   workspaceClaimedByEmail String? @map("workspace_claimed_by_email")
 
+  // Admin rà soát trang "Rà soát SLA" và tick đánh dấu ghi nhận — chỉ để theo
+  // dõi/báo cáo trách nhiệm, KHÔNG đổi trạng thái hay hành vi nào khác của
+  // liên hệ (xem lib/interactions/sla.ts).
+  slaFlagged        Boolean   @default(false) @map("sla_flagged")
+  slaFlaggedAt      DateTime? @map("sla_flagged_at")
+  slaFlaggedByEmail String?   @map("sla_flagged_by_email")
+
   receivedAt      DateTime? @map("received_at")
   phoneRaw        String?   @map("phone_raw")
   phoneNormalized String?   @map("phone_normalized")
@@ -246,6 +254,7 @@ model Interaction {
   status           Status          @relation(fields: [statusName], references: [name])
   assignedSale     User?           @relation("AssignedSale", fields: [assignedSaleEmail], references: [email])
   workspaceClaimedBy User?         @relation("WorkspaceClaimedBy", fields: [workspaceClaimedByEmail], references: [email])
+  slaFlaggedBy     User?           @relation("SlaFlaggedBy", fields: [slaFlaggedByEmail], references: [email])
   createdBy        User            @relation("CreatedBy", fields: [createdByEmail], references: [email])
   updatedBy        User?           @relation("UpdatedBy", fields: [updatedByEmail], references: [email])
   reassignedBy     User?           @relation("ReassignedBy", fields: [reassignedByEmail], references: [email])

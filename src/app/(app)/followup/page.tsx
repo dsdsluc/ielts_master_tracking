@@ -57,6 +57,7 @@ export default async function FollowupPage({
   const branchNames = Object.fromEntries(branches.map((b) => [b.code, b.name]));
   const candidates: FollowupCandidate[] = rows.map((r) => ({
     interactionId: r.interactionId,
+    version: r.version,
     customerName: r.customerName,
     status: r.statusName,
     sourceName: r.sourceName,
@@ -65,6 +66,8 @@ export default async function FollowupPage({
     assignedSaleName: r.assignedSale?.fullName ?? null,
     createdLeadAt: r.createdLeadAt.toISOString(),
     lastActivityAt: (r.updatedAt ?? r.createdLeadAt).toISOString(),
+    conversationLink: r.conversationLink,
+    rawLink: r.rawLink,
   }));
 
   return (

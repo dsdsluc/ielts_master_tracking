@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { ChevronRight, TrendingUp } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { TrendingUp } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PaginationBar } from "@/components/pagination-bar";
@@ -38,6 +38,7 @@ export function ConversionPill({ rate }: { rate: number }) {
 }
 
 export function AdsPerformanceTable({ rows }: { rows: AdPerfRow[] }) {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -72,13 +73,16 @@ export function AdsPerformanceTable({ rows }: { rows: AdPerfRow[] }) {
               <TableHead className="hidden px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Spam</TableHead>
               <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tỷ lệ chuyển đổi</TableHead>
               <TableHead className="hidden px-4 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Chi phí</TableHead>
-              <TableHead className="px-4 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">CP/liên hệ</TableHead>
-              <TableHead className="w-10 pr-4" />
+              <TableHead className="px-4 pr-5 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">CP/liên hệ</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pagedRows.map((row) => (
-              <TableRow key={row.adId} className="odd:bg-secondary/10">
+              <TableRow
+                key={row.adId}
+                className="cursor-pointer odd:bg-secondary/10 hover:bg-status-received-bg/45"
+                onClick={() => router.push(`/ads-performance/${encodeURIComponent(row.adId)}`)}
+              >
                 <TableCell className="px-5 py-3.5 font-mono text-xs text-foreground">{row.adId}</TableCell>
                 <TableCell className="min-w-40 px-4 text-sm text-foreground">
                   <p className="max-w-56 truncate">{row.adName ?? "—"}</p>
@@ -94,17 +98,8 @@ export function AdsPerformanceTable({ rows }: { rows: AdPerfRow[] }) {
                 <TableCell className="hidden px-4 text-right font-mono text-sm text-muted-foreground lg:table-cell">
                   {row.totalCost != null ? formatVnd(row.totalCost) : "—"}
                 </TableCell>
-                <TableCell className="px-4 text-right font-mono text-sm text-foreground">
+                <TableCell className="px-4 pr-5 text-right font-mono text-sm text-foreground">
                   {row.costPerLead != null ? formatVnd(Math.round(row.costPerLead)) : "—"}
-                </TableCell>
-                <TableCell className="pr-4 pl-1">
-                  <Link
-                    href={`/ads-performance/${encodeURIComponent(row.adId)}`}
-                    className="flex items-center justify-center text-muted-foreground hover:text-foreground"
-                    aria-label="Xem chi tiết"
-                  >
-                    <ChevronRight className="size-4" />
-                  </Link>
                 </TableCell>
               </TableRow>
             ))}

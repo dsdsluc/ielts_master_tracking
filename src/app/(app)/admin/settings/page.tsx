@@ -32,6 +32,14 @@ const KNOWN_SETTINGS = [
       "Mỗi lần Sale bấm \"Đánh dấu đã xử lý\" cho yêu cầu \"Chăm sóc lại\" của Marketing sẽ được đếm dồn cho liên hệ đó. Vượt quá số lần này mà liên hệ vẫn chưa đổi trạng thái, hệ thống tự động chuyển sang Spam.",
     fallback: "3",
   },
+  {
+    configGroup: "system",
+    key: "SLA_HOURS",
+    label: "Ngưỡng SLA phản hồi liên hệ mới (giờ)",
+    description:
+      "Liên hệ mới tạo quá số giờ này mà vẫn chưa được liên hệ (còn ở trạng thái Chờ) sẽ được tính là quá SLA — hiển thị ở \"Sắp/đã quá SLA\" trên trang Liên hệ và Giám sát.",
+    fallback: "24",
+  },
 ];
 
 export default async function SettingsPage() {

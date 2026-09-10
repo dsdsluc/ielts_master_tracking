@@ -33,3 +33,11 @@ export async function isAdsCostCleanupEnabled(): Promise<boolean> {
   const raw = await getAppSetting("system", "ADS_COST_CLEANUP_ENABLED");
   return raw === "true";
 }
+
+/** Ngưỡng SLA (giờ) — liên hệ mới tạo quá số giờ này mà vẫn chưa được liên hệ
+ * (còn ở trạng thái Chờ) thì tính là quá/sắp quá SLA — mặc định 24. */
+export async function getSlaHours(): Promise<number> {
+  const raw = await getAppSetting("system", "SLA_HOURS");
+  const v = Number(raw);
+  return Number.isFinite(v) && v > 0 ? v : 24;
+}

@@ -84,11 +84,11 @@ function WorkspaceTable({
                     </TableCell>
                   )}
                   <TableCell className="min-w-56 px-5 py-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-status-received-bg text-status-received transition-colors group-hover:bg-status-received group-hover:text-white">
                         <MessageCircleMore className="size-3.5" />
                       </span>
-                      <span className="truncate font-medium text-foreground">{item.customerName}</span>
+                      <span className="min-w-0 max-w-48 flex-1 truncate font-medium text-foreground">{item.customerName}</span>
                       {item.needsFollowup && (
                         <span className="flex shrink-0 items-center gap-1 rounded-full border border-gold/30 bg-accent px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-accent-foreground uppercase">
                           <Sparkles className="size-3" /> Cần chăm sóc lại

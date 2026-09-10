@@ -1,6 +1,4 @@
-import { Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
 import { requireRole } from "@/lib/auth/dal";
 import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
@@ -24,6 +22,10 @@ export default async function FollowupInboxPage() {
         mktPushedAt: true,
         mktPushedBy: { select: { fullName: true } },
         followupResolvedCount: true,
+        assignedSaleEmail: true,
+        assignedSale: { select: { fullName: true } },
+        workspaceClaimedByEmail: true,
+        workspaceClaimedBy: { select: { fullName: true } },
       },
       orderBy: { mktPushedAt: "asc" },
     }),
@@ -41,6 +43,8 @@ export default async function FollowupInboxPage() {
     mktPushedByName: r.mktPushedBy?.fullName ?? null,
     followupResolvedCount: r.followupResolvedCount,
     maxBeforeSpam,
+    consultantEmail: r.assignedSaleEmail ?? r.workspaceClaimedByEmail,
+    consultantName: r.assignedSale?.fullName ?? r.workspaceClaimedBy?.fullName ?? null,
   }));
 
   return (
@@ -51,15 +55,7 @@ export default async function FollowupInboxPage() {
         description="Các liên hệ Marketing yêu cầu bạn chăm sóc lại — xử lý xong thì đánh dấu để tắt nhắc."
       />
 
-      {items.length === 0 ? (
-        <EmptyState
-          icon={Sparkles}
-          title="Không có liên hệ nào cần chăm sóc lại"
-          description="Khi Marketing gửi yêu cầu chăm sóc lại, liên hệ sẽ xuất hiện ở đây."
-        />
-      ) : (
-        <FollowupInboxView items={items} />
-      )}
+      <FollowupInboxView items={items} currentUserEmail={user.email} currentUserName={user.fullName} />
     </>
   );
 }

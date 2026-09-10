@@ -55,6 +55,9 @@ export function PageReportTable({
   const [closingAll, setClosingAll] = useState(false);
 
   const openCount = rows.filter((r) => !r.closed).length;
+  // Đã chốt lên trước để thấy ngay những gì đã xong, phần còn cần xử lý
+  // (chưa chốt) dồn xuống dưới thay vì xen kẽ theo thứ tự Page.
+  const sortedRows = [...rows].sort((a, b) => Number(b.closed) - Number(a.closed));
 
   async function handleClose(fanpageName: string) {
     setPendingKey(fanpageName);
@@ -151,7 +154,7 @@ export function PageReportTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const pending = pendingKey === row.fanpageName;
               return (
                 <TableRow key={row.fanpageName} className="odd:bg-secondary/10">
