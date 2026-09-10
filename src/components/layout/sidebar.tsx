@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/layout/brand-mark";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { SidebarUser } from "@/components/layout/sidebar-user";
+import { ComposeMailButton } from "@/components/layout/compose-mail-button";
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { ROLES } from "@/lib/interactions/constants";
 import { cn } from "@/lib/utils";
 import type { CurrentUser } from "@/lib/auth/dal";
 
@@ -23,15 +25,18 @@ export function Sidebar({ user }: { user: CurrentUser }) {
       <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-3">
         <BrandMark collapsed={collapsed} />
         {!collapsed && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggle}
-            aria-label="Thu gọn sidebar"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <PanelLeftClose className="size-4" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {user.role === ROLES.ADMIN && <ComposeMailButton />}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggle}
+              aria-label="Thu gọn sidebar"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <PanelLeftClose className="size-4" />
+            </Button>
+          </div>
         )}
       </div>
 

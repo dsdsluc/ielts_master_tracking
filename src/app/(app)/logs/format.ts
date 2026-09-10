@@ -14,6 +14,7 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   ADD_TO_WORKSPACE: "Thêm liên hệ vào Workspace",
   RELEASE_FROM_WORKSPACE: "Giải phóng liên hệ khỏi Workspace",
   FLAG_SLA_BREACH: "Đánh dấu quá SLA",
+  SEND_BROADCAST_EMAIL: "Gửi email cho thành viên",
 };
 
 export function actionLabel(action: string) {

@@ -25,6 +25,7 @@ import { newInteractionId } from "@/lib/interactions/ids";
 import { logAction } from "@/lib/interactions/audit";
 import { getMaxFollowupBeforeSpam, getSpamNoReplyMinAttempts } from "@/lib/interactions/settings";
 import { detailInclude, toDetail } from "@/lib/interactions/serialize";
+import { appLink, sendEmail } from "@/lib/email";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { LeadInfoInput, StatusUpdateInput } from "@/lib/interactions/validation";
 import { getInteractionDetail } from "@/lib/interactions/queries";
@@ -397,9 +398,16 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
   let pushed = 0;
   let skipped = 0;
   const now = new Date();
+  // Gom lại để gửi mail SAU khi toàn bộ vòng lặp DB xong — gửi mail là I/O
+  // mạng, không nên giữ trong transaction, và lỗi gửi không được làm hỏng
+  // việc gắn cờ (xem sendEmail() trong lib/email.ts — không throw).
+  const notifyTargets: { email: string; name: string | null; customerName: string; interactionId: string }[] = [];
 
   for (const interactionId of interactionIds) {
-    const lead = await prisma.interaction.findUnique({ where: { interactionId } });
+    const lead = await prisma.interaction.findUnique({
+      where: { interactionId },
+      include: { assignedSale: { select: { fullName: true } }, workspaceClaimedBy: { select: { fullName: true } } },
+    });
     if (!lead || !canAccessBranch(actor, lead.assignedBranchCode)) {
       skipped++;
       continue;
@@ -426,6 +434,30 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
       await logAction(tx, actor, SYSTEM_LOG_ACTION.MKT_PUSH, interactionId, { status: lead.statusName }, { pushedBy: actor.email, suggestion: suggestion || null });
     });
     pushed++;
+
+    // "Tư vấn viên" hiện tại: assignedSaleEmail (Đủ tiêu chuẩn) hoặc người
+    // đang claim Workspace — chưa ai claim thì không có ai để báo, bỏ qua.
+    const consultantEmail = lead.assignedSaleEmail ?? lead.workspaceClaimedByEmail;
+    const consultantName = lead.assignedSale?.fullName ?? lead.workspaceClaimedBy?.fullName ?? null;
+    if (consultantEmail) {
+      notifyTargets.push({ email: consultantEmail, name: consultantName, customerName: lead.customerName, interactionId });
+    }
+  }
+
+  if (notifyTargets.length > 0) {
+    const suggestionHtml = suggestion ? `<p>Gợi ý từ Marketing: ${suggestion}</p>` : "";
+    await Promise.allSettled(
+      notifyTargets.map((t) => {
+        const link = appLink(`/leads/${t.interactionId}`);
+        return sendEmail({
+          to: t.email,
+          subject: `Cần chăm sóc lại: ${t.customerName}`,
+          html: `<p>Chào ${t.name ?? "bạn"},</p><p>Marketing vừa yêu cầu chăm sóc lại liên hệ <strong>${t.customerName}</strong>.</p>${suggestionHtml}${
+            link ? `<p><a href="${link}">Xem liên hệ</a></p>` : ""
+          }`,
+        });
+      })
+    );
   }
 
   return { pushed, skipped };

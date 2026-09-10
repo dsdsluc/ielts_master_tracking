@@ -84,6 +84,7 @@ export const SYSTEM_LOG_ACTION = {
   ADD_TO_WORKSPACE: "ADD_TO_WORKSPACE",
   RELEASE_FROM_WORKSPACE: "RELEASE_FROM_WORKSPACE",
   FLAG_SLA_BREACH: "FLAG_SLA_BREACH",
+  SEND_BROADCAST_EMAIL: "SEND_BROADCAST_EMAIL",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.
