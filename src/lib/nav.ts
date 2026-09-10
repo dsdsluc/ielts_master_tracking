@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   Sparkles,
   TrendingUp,
+  Briefcase,
 } from "lucide-react";
 import { ROLES, CAN_VIEW_LEAD, CAN_PUSH_FOLLOWUP, CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 
@@ -93,6 +94,12 @@ export const navGroups: NavGroup[] = [
     label: "Vận hành",
     items: [
       { title: "Liên hệ", href: "/leads", icon: Inbox, allowedRoles: LEAD_ROLES },
+      {
+        title: "Workspace của tôi",
+        href: "/workspace",
+        icon: Briefcase,
+        allowedRoles: SALE_WORKSPACE_ROLES,
+      },
       {
         title: "Khách hàng",
         href: "/customers",

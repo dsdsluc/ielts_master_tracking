@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   Download,
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { createAdsCost } from "@/app/(app)/ads-cost/actions";
 import { cn } from "@/lib/utils";
 
 type ImportRow = {
@@ -230,6 +232,7 @@ export function AdsCostImportView({
   fanpageOptions: { name: string; defaultSourceName: string }[];
   branchOptions: { code: string; name: string }[];
 }) {
+  const router = useRouter();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -237,6 +240,7 @@ export function AdsCostImportView({
   const [parsing, setParsing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [accepting, setAccepting] = useState(false);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
   async function handleFile(file: File) {
     setParsing(true);
@@ -258,6 +262,11 @@ export function AdsCostImportView({
 
   function updateRow<K extends keyof ImportRow>(id: string, key: K, value: ImportRow[K]) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+    setRowErrors((prev) => {
+      if (!prev[id]) return prev;
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
   }
 
   function removeRow(id: string) {
@@ -275,12 +284,35 @@ export function AdsCostImportView({
 
   async function handleAccept() {
     setAccepting(true);
+    const targets = validRows;
+    const nextErrors: Record<string, string> = {};
     try {
-      // TODO: nối API lưu hàng loạt vào hệ thống ở bước tiếp theo — hiện tại
-      // mới dừng ở khâu chuẩn bị/soát lỗi trên giao diện.
-      await new Promise((r) => setTimeout(r, 400));
-      console.log("Chi phí quảng cáo sẵn sàng để lưu:", validRows);
-      toast.success(`Đã chuẩn bị ${validRows.length} dòng hợp lệ. Bước lưu vào hệ thống sẽ được bổ sung sau.`);
+      for (const row of targets) {
+        try {
+          await createAdsCost({
+            periodStart: row.periodStart,
+            periodEnd: row.periodEnd,
+            adId: row.adId,
+            adName: row.adName,
+            sourceName: row.sourceName,
+            fanpageName: row.fanpageName,
+            branchCode: row.branchCode,
+            costVnd: row.costVnd,
+            note: row.note,
+          });
+        } catch (err) {
+          nextErrors[row.id] = err instanceof Error ? err.message : "Không lưu được.";
+        }
+      }
+      const successCount = targets.length - Object.keys(nextErrors).length;
+      setRows((prev) => prev.filter((r) => !targets.some((t) => t.id === r.id) || nextErrors[r.id]));
+      setRowErrors(nextErrors);
+      if (Object.keys(nextErrors).length === 0) {
+        toast.success(`Đã lưu ${successCount} dòng chi phí quảng cáo.`);
+      } else {
+        toast.error(`Đã lưu ${successCount}/${targets.length} dòng — ${Object.keys(nextErrors).length} dòng lỗi, vẫn giữ lại để bạn sửa.`);
+      }
+      router.refresh();
     } finally {
       setAccepting(false);
     }
@@ -403,6 +435,7 @@ export function AdsCostImportView({
                         onChange={(e) => updateRow(row.id, "adId", e.target.value)}
                         className={cn("h-9 rounded-lg", !row.adId.trim() && "border-destructive/50")}
                       />
+                      {rowErrors[row.id] && <p className="mt-1 text-[11px] text-destructive">{rowErrors[row.id]}</p>}
                     </TableCell>
                     <TableCell className="px-3 py-2.5">
                       <Input

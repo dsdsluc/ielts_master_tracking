@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   Download,
@@ -15,8 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { detectSourceName, type LeadFormOptions } from "@/app/(app)/leads/lead-form-options";
+import { createInteraction } from "@/app/(app)/leads/leads-api";
+import type { DuplicateConflict } from "@/app/(app)/leads/types";
 import { cn } from "@/lib/utils";
 
 type ImportRow = {
@@ -170,6 +174,7 @@ export function LeadsImportView({
   lockedBranchCode: string | null;
   lockedBranchName: string | null;
 }) {
+  const router = useRouter();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -178,6 +183,9 @@ export function LeadsImportView({
   const [dragOver, setDragOver] = useState(false);
   const [targetBranchCode, setTargetBranchCode] = useState(lockedBranchCode ?? options.branches[0]?.code ?? "");
   const [accepting, setAccepting] = useState(false);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [duplicates, setDuplicates] = useState<Record<string, DuplicateConflict["duplicate"]>>({});
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   async function handleFile(file: File) {
     setParsing(true);
@@ -199,6 +207,18 @@ export function LeadsImportView({
 
   function updateRow<K extends keyof ImportRow>(id: string, key: K, value: ImportRow[K]) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+    // Sửa dòng nghĩa là người dùng đang xử lý cảnh báo cũ (trùng/lỗi) —
+    // bỏ cảnh báo để tránh hiển thị thông tin không còn đúng với dữ liệu mới.
+    setRowErrors((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    setDuplicates((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
   }
 
   function removeRow(id: string) {
@@ -214,16 +234,83 @@ export function LeadsImportView({
   const validRows = rows.filter((r) => r.rawLink.trim() && r.customerName.trim() && r.fanpageName.trim());
   const invalidCount = rows.length - validRows.length;
 
+  function toPayload(row: ImportRow, duplicateReason?: string) {
+    return {
+      rawLink: row.rawLink,
+      customerName: row.customerName,
+      fanpageName: row.fanpageName,
+      adId: row.adId || undefined,
+      customerObjectName: row.customerObjectName,
+      assignedBranchCode: targetBranchCode,
+      conversationLink: row.conversationLink || undefined,
+      duplicateConfirmed: duplicateReason ? true : undefined,
+      duplicateReason,
+    };
+  }
+
+  // Xử lý tuần tự (không Promise.all) — 2 dòng import trùng link với nhau vẫn
+  // cần được đối chiếu nghi trùng với NHAU, không chỉ với dữ liệu đã có sẵn.
   async function handleAccept() {
     setAccepting(true);
+    const targets = validRows;
+    const nextErrors: Record<string, string> = {};
+    const nextDuplicates: Record<string, DuplicateConflict["duplicate"]> = {};
+    let successCount = 0;
     try {
-      // TODO: nối API lưu hàng loạt vào hệ thống ở bước tiếp theo — hiện tại
-      // mới dừng ở khâu chuẩn bị/soát lỗi trên giao diện.
-      await new Promise((r) => setTimeout(r, 400));
-      console.log("Liên hệ sẵn sàng để lưu:", { branchCode: targetBranchCode, rows: validRows });
-      toast.success(`Đã chuẩn bị ${validRows.length} liên hệ hợp lệ. Bước lưu vào hệ thống sẽ được bổ sung sau.`);
+      for (const row of targets) {
+        try {
+          const result = await createInteraction(toPayload(row));
+          if ("status" in result && result.status === 409) {
+            nextDuplicates[row.id] = result.duplicate;
+          } else {
+            successCount++;
+          }
+        } catch (err) {
+          nextErrors[row.id] = err instanceof Error ? err.message : "Không tạo được liên hệ.";
+        }
+      }
+      setRows((prev) => prev.filter((r) => !targets.some((t) => t.id === r.id) || nextErrors[r.id] || nextDuplicates[r.id]));
+      setRowErrors(nextErrors);
+      setDuplicates(nextDuplicates);
+
+      const dupCount = Object.keys(nextDuplicates).length;
+      const errCount = Object.keys(nextErrors).length;
+      if (dupCount === 0 && errCount === 0) {
+        toast.success(`Đã tạo ${successCount} liên hệ.`);
+      } else {
+        toast.error(
+          `Đã tạo ${successCount}/${targets.length} liên hệ` +
+            (dupCount > 0 ? ` — ${dupCount} dòng nghi trùng cần xác nhận` : "") +
+            (errCount > 0 ? ` — ${errCount} dòng lỗi` : "") +
+            "."
+        );
+      }
+      if (successCount > 0) router.refresh();
     } finally {
       setAccepting(false);
+    }
+  }
+
+  async function handleConfirmDuplicate(row: ImportRow) {
+    setConfirmingId(row.id);
+    try {
+      const result = await createInteraction(toPayload(row, "Nhập từ Excel, xác nhận vẫn tạo mới"));
+      if ("status" in result && result.status === 409) {
+        setDuplicates((prev) => ({ ...prev, [row.id]: result.duplicate }));
+        toast.error("Vẫn còn nghi trùng — vui lòng kiểm tra lại dòng này.");
+        return;
+      }
+      removeRow(row.id);
+      setDuplicates((prev) => {
+        const { [row.id]: _removed, ...rest } = prev;
+        return rest;
+      });
+      toast.success(`Đã tạo liên hệ cho ${row.customerName}.`);
+      router.refresh();
+    } catch (err) {
+      setRowErrors((prev) => ({ ...prev, [row.id]: err instanceof Error ? err.message : "Không tạo được liên hệ." }));
+    } finally {
+      setConfirmingId(null);
     }
   }
 
@@ -345,8 +432,11 @@ export function LeadsImportView({
               {rows.map((row) => {
                 const isValid = row.rawLink.trim() && row.customerName.trim() && row.fanpageName.trim();
                 const detectedSourceName = detectSourceName(row.rawLink, options.sourceDomains);
+                const duplicate = duplicates[row.id];
+                const rowError = rowErrors[row.id];
                 return (
-                  <TableRow key={row.id} className="odd:bg-secondary/10 align-top">
+                  <Fragment key={row.id}>
+                  <TableRow className="odd:bg-secondary/10 align-top">
                     <TableCell className="px-3 py-3">
                       {isValid ? (
                         <CheckCircle2 className="size-4 text-status-qualified" />
@@ -414,6 +504,38 @@ export function LeadsImportView({
                       </Button>
                     </TableCell>
                   </TableRow>
+                  {(duplicate || rowError) && (
+                    <TableRow className="bg-secondary/20 hover:bg-secondary/20">
+                      <TableCell />
+                      <TableCell colSpan={7} className="px-3 py-3">
+                        {duplicate ? (
+                          <Alert variant="destructive" className="py-2">
+                            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                              <span>
+                                Nghi trùng với liên hệ <strong className="text-foreground">{duplicate.customerName}</strong> tạo lúc{" "}
+                                {new Date(duplicate.createdLeadAt).toLocaleString("vi-VN")}
+                                {duplicate.assignedSaleName ? ` (${duplicate.assignedSaleName})` : ""}. Vẫn muốn tạo mới?
+                              </span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="glossy shrink-0 rounded-full border-gold/40 bg-accent px-4 text-accent-foreground hover:bg-accent/80"
+                                disabled={confirmingId === row.id}
+                                onClick={() => handleConfirmDuplicate(row)}
+                              >
+                                {confirmingId === row.id && <LoaderCircle className="animate-spin" />}
+                                Vẫn tạo liên hệ mới
+                              </Button>
+                            </AlertDescription>
+                          </Alert>
+                        ) : (
+                          <p className="text-xs text-destructive">{rowError}</p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
                 );
               })}
             </TableBody>

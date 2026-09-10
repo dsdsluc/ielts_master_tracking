@@ -127,6 +127,7 @@ model User {
 
   branch                  Branch?       @relation(fields: [branchCode], references: [code])
   assignedInteractions    Interaction[] @relation("AssignedSale")
+  workspaceClaimedInteractions Interaction[] @relation("WorkspaceClaimedBy")
   createdInteractions     Interaction[] @relation("CreatedBy")
   updatedInteractions     Interaction[] @relation("UpdatedBy")
   reassignedInteractions  Interaction[] @relation("ReassignedBy")
@@ -195,6 +196,11 @@ model Interaction {
 
   assignedSaleEmail String? @map("assigned_sale_email")
 
+  // Sale tự "thêm vào Workspace" từ hàng đợi chung (khác với assignedSaleEmail
+  // — chỉ được hệ thống tự gán khi liên hệ đạt Đủ tiêu chuẩn). Có giá trị thì
+  // liên hệ bị khoá khỏi Workspace của Sale khác cho đến khi được "Giải phóng".
+  workspaceClaimedByEmail String? @map("workspace_claimed_by_email")
+
   receivedAt      DateTime? @map("received_at")
   phoneRaw        String?   @map("phone_raw")
   phoneNormalized String?   @map("phone_normalized")
@@ -239,6 +245,7 @@ model Interaction {
   assignedBranch   Branch          @relation("AssignedBranch", fields: [assignedBranchCode], references: [code])
   status           Status          @relation(fields: [statusName], references: [name])
   assignedSale     User?           @relation("AssignedSale", fields: [assignedSaleEmail], references: [email])
+  workspaceClaimedBy User?         @relation("WorkspaceClaimedBy", fields: [workspaceClaimedByEmail], references: [email])
   createdBy        User            @relation("CreatedBy", fields: [createdByEmail], references: [email])
   updatedBy        User?           @relation("UpdatedBy", fields: [updatedByEmail], references: [email])
   reassignedBy     User?           @relation("ReassignedBy", fields: [reassignedByEmail], references: [email])
@@ -252,6 +259,7 @@ model Interaction {
   @@index([statusName])
   @@index([assignedBranchCode])
   @@index([createdLeadAt])
+  @@index([workspaceClaimedByEmail])
   @@map("interactions")
 }
 

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { createAdsCost } from "@/app/(app)/ads-cost/actions";
 import { formatDate } from "@/app/(app)/ads-cost/format";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +60,7 @@ export function NewAdIdsView({
   fanpageOptions: { name: string; defaultSourceName: string }[];
   branchOptions: { code: string; name: string }[];
 }) {
+  const router = useRouter();
   const { toast } = useToast();
   const [rows, setRows] = useState<EditableRow[]>(() => initialRows.map(toEditable));
   const [savingAll, setSavingAll] = useState(false);
@@ -77,14 +80,28 @@ export function NewAdIdsView({
 
   const validRows = rows.filter(isValid);
 
+  function toPayload(row: EditableRow) {
+    return {
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+      adId: row.adId,
+      adName: row.adName,
+      sourceName: row.sourceName,
+      fanpageName: row.fanpageName,
+      branchCode: row.branchCode,
+      costVnd: row.costVnd,
+    };
+  }
+
   async function handleSaveOne(row: EditableRow) {
     setSavingId(row.adId);
     try {
-      // TODO: nối API tạo bản ghi Chi phí quảng cáo thật ở bước tiếp theo.
-      await new Promise((r) => setTimeout(r, 300));
-      console.log("Sẽ lưu chi phí cho Ad ID:", row);
-      toast.success(`Đã chuẩn bị lưu chi phí cho Ad ID ${row.adId}.`);
+      await createAdsCost(toPayload(row));
+      toast.success(`Đã lưu chi phí cho Ad ID ${row.adId}.`);
       dismissRow(row.adId);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Không lưu được Ad ID ${row.adId}.`);
     } finally {
       setSavingId(null);
     }
@@ -92,10 +109,24 @@ export function NewAdIdsView({
 
   async function handleSaveAll() {
     setSavingAll(true);
+    const targets = validRows;
+    const failedIds = new Set<string>();
     try {
-      await new Promise((r) => setTimeout(r, 400));
-      console.log("Sẽ lưu chi phí cho các Ad ID:", validRows);
-      toast.success(`Đã chuẩn bị lưu ${validRows.length} Ad ID. Bước lưu vào hệ thống sẽ được bổ sung sau.`);
+      for (const row of targets) {
+        try {
+          await createAdsCost(toPayload(row));
+        } catch {
+          failedIds.add(row.adId);
+        }
+      }
+      const successCount = targets.length - failedIds.size;
+      setRows((prev) => prev.filter((r) => !targets.some((t) => t.adId === r.adId) || failedIds.has(r.adId)));
+      if (failedIds.size === 0) {
+        toast.success(`Đã lưu ${successCount} Ad ID.`);
+      } else {
+        toast.error(`Đã lưu ${successCount}/${targets.length} Ad ID — ${failedIds.size} dòng lỗi, vẫn giữ lại để bạn sửa.`);
+      }
+      router.refresh();
     } finally {
       setSavingAll(false);
     }

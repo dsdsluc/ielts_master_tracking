@@ -81,6 +81,8 @@ export const SYSTEM_LOG_ACTION = {
   MERGE_CUSTOMERS: "MERGE_CUSTOMERS",
   CLEANUP_SYSTEM_LOGS: "CLEANUP_SYSTEM_LOGS",
   CLEANUP_ADS_COST: "CLEANUP_ADS_COST",
+  ADD_TO_WORKSPACE: "ADD_TO_WORKSPACE",
+  RELEASE_FROM_WORKSPACE: "RELEASE_FROM_WORKSPACE",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.

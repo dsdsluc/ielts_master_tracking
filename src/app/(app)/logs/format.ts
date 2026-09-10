@@ -11,6 +11,8 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   MERGE_CUSTOMERS: "Gộp khách hàng trùng",
   CLEANUP_SYSTEM_LOGS: "Dọn dẹp System Log",
   CLEANUP_ADS_COST: "Dọn dẹp chi phí quảng cáo",
+  ADD_TO_WORKSPACE: "Thêm liên hệ vào Workspace",
+  RELEASE_FROM_WORKSPACE: "Giải phóng liên hệ khỏi Workspace",
 };
 
 export function actionLabel(action: string) {
