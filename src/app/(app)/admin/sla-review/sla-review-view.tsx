@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { PaginationBar } from "@/components/pagination-bar";
 import { FormMessage } from "@/components/form-message";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import type { InteractionListItem } from "@/lib/interactions/types";
 
@@ -83,19 +84,15 @@ export function SlaReviewView({
     setPending(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/sla/flag", {
+      const data = await apiFetch<{ flaggedCount: number }>("/api/admin/sla/flag", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interactionIds: [...selected] }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
-      toast.success(`Đã đánh dấu ${body.flaggedCount} liên hệ quá SLA.`);
+      toast.success(`Đã đánh dấu ${data.flaggedCount} liên hệ quá SLA.`);
       stopSelecting();
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không đánh dấu được.");
+      setError(apiErrorMessage(err));
     } finally {
       setPending(false);
     }

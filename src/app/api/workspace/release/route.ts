@@ -4,7 +4,7 @@ import { errorResponse } from "@/lib/interactions/errors";
 import { releaseFromWorkspace } from "@/lib/interactions/workspace";
 
 const schema = z.object({
-  interactionId: z.string().min(1),
+  interactionId: z.string().min(1, "Mã liên hệ không hợp lệ."),
 });
 
 export async function POST(request: Request) {

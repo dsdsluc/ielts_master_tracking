@@ -15,7 +15,7 @@ const fadeUp = {
   show: { opacity: 1, y: 0 },
 };
 
-export function LoginForm() {
+export function LoginForm({ sessionExpired = false }: { sessionExpired?: boolean }) {
   const [state, formAction, pending] = useActionState(login, undefined);
 
   return (
@@ -34,6 +34,14 @@ export function LoginForm() {
             Nhập email và mật khẩu tài khoản nội bộ của bạn.
           </p>
         </motion.div>
+
+        {sessionExpired && (
+          <motion.div variants={fadeUp} transition={{ duration: 0.5 }} className="mb-5">
+            <FormMessage kind="error" className="rounded-lg bg-destructive/10 px-3 py-2.5">
+              Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.
+            </FormMessage>
+          </motion.div>
+        )}
 
         <form action={formAction} className="flex flex-col gap-5">
           <motion.div variants={fadeUp} transition={{ duration: 0.5 }}>

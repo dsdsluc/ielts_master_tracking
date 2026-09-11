@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { ROLES } from "@/lib/interactions/constants";
-import { friendlyPrismaError } from "@/app/(app)/admin/prisma-error";
+import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
 /** Chặn Server Action nếu người gọi không phải Marketing/Admin — trang có thể
  * ẩn nav với vai trò khác, nhưng action ghi dữ liệu vẫn phải tự kiểm tra. */
@@ -56,7 +56,7 @@ function toWriteData(data: z.output<typeof adsCostSchema>, updatedByEmail: strin
 
 export async function createAdsCost(input: AdsCostInput) {
   const user = await requireAdsCostAccess();
-  const data = adsCostSchema.parse(input);
+  const data = parseOrThrow(adsCostSchema, input);
   await prisma.adsCost
     .create({ data: toWriteData(data, user.email) })
     .catch((err) => friendlyPrismaError(err, "Không tạo được chi phí quảng cáo."));
@@ -65,7 +65,7 @@ export async function createAdsCost(input: AdsCostInput) {
 
 export async function updateAdsCost(id: number, input: AdsCostInput) {
   const user = await requireAdsCostAccess();
-  const data = adsCostSchema.parse(input);
+  const data = parseOrThrow(adsCostSchema, input);
   await prisma.adsCost
     .update({ where: { id }, data: toWriteData(data, user.email) })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được chi phí quảng cáo."));

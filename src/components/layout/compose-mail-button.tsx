@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Label } from "@/components/ui/label";
 import { FormMessage } from "@/components/form-message";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 
 type Member = { email: string; fullName: string; role: string; branchName: string | null };
 
@@ -29,10 +30,9 @@ export function ComposeMailButton() {
   useEffect(() => {
     if (!open || members.length > 0) return;
     setLoadingMembers(true);
-    fetch("/api/admin/users/list", { credentials: "same-origin" })
-      .then((res) => res.json())
+    apiFetch<{ users: Member[] }>("/api/admin/users/list")
       .then((data) => setMembers(data.users ?? []))
-      .catch(() => toast.error("Không tải được danh sách thành viên."))
+      .catch((err) => toast.error(apiErrorMessage(err)))
       .finally(() => setLoadingMembers(false));
   }, [open, members.length, toast]);
 
@@ -80,19 +80,15 @@ export function ComposeMailButton() {
     setPending(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/broadcast-email", {
+      const data = await apiFetch<{ sent: number }>("/api/admin/broadcast-email", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subject: subject.trim(), body: body.trim(), recipientEmails: [...selected] }),
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? `Lỗi ${res.status}`);
       toast.success(`Đã gửi email cho ${data.sent} thành viên.`);
       setOpen(false);
       reset();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không gửi được email.");
+      setError(apiErrorMessage(err));
     } finally {
       setPending(false);
     }

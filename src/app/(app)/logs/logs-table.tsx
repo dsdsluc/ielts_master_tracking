@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FormMessage } from "@/components/form-message";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { actionLabel, buildDetailDiffRows, fieldLabel, formatDetailValue, resultLabel } from "@/app/(app)/logs/format";
 
@@ -101,20 +102,16 @@ export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: nu
     setPending(true);
     setError(null);
     try {
-      const res = await fetch("/api/logs/cleanup", {
+      const data = await apiFetch<{ deletedCount: number }>("/api/logs/cleanup", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logIds: [...selected] }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       setConfirmOpen(false);
       stopSelecting();
-      toast.success(`Đã xoá ${body.deletedCount} dòng nhật ký.`);
+      toast.success(`Đã xoá ${data.deletedCount} dòng nhật ký.`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không xoá được.");
+      setError(apiErrorMessage(err));
     } finally {
       setPending(false);
     }

@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import type { InteractionListItem } from "@/app/(app)/leads/types";
 
 function formatDate(iso: string) {
@@ -129,22 +130,18 @@ export function LeadsTable({
   async function handlePick(item: InteractionListItem) {
     setPickingId(item.interactionId);
     try {
-      const res = await fetch("/api/workspace/claim", {
+      const data = await apiFetch<{ conflicts?: string[] }>("/api/workspace/claim", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interactionIds: [item.interactionId] }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
-      if (body.conflicts?.length > 0) {
+      if (data.conflicts?.length) {
         toast.error(`${item.customerName} vừa được Sale khác nhận vào Workspace của họ trước.`);
       } else {
         setOverrides((prev) => ({ ...prev, [item.interactionId]: { email: currentUserEmail, name: currentUserName } }));
         toast.success(`Đã nhận ${item.customerName} vào Workspace của bạn.`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không nhận được liên hệ này.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setPickingId(null);
     }

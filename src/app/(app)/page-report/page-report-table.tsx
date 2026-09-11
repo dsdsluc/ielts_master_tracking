@@ -6,6 +6,7 @@ import { LoaderCircle, Lock, LockOpen } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 
 export type PageReportRow = {
@@ -62,18 +63,14 @@ export function PageReportTable({
   async function handleClose(fanpageName: string) {
     setPendingKey(fanpageName);
     try {
-      const res = await fetch("/api/marketing/page-report/close", {
+      await apiFetch("/api/marketing/page-report/close", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, fanpageName }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       toast.success(`Đã chốt báo cáo Page "${fanpageName}".`);
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không chốt được báo cáo.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setPendingKey(null);
     }
@@ -82,18 +79,14 @@ export function PageReportTable({
   async function handleReopen(fanpageName: string) {
     setPendingKey(fanpageName);
     try {
-      const res = await fetch("/api/marketing/page-report/reopen", {
+      await apiFetch("/api/marketing/page-report/reopen", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, fanpageName }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       toast.success(`Đã mở lại báo cáo Page "${fanpageName}".`);
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không mở lại được.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setPendingKey(null);
     }
@@ -102,18 +95,14 @@ export function PageReportTable({
   async function handleCloseAll() {
     setClosingAll(true);
     try {
-      const res = await fetch("/api/marketing/page-report/close-all", {
+      const data = await apiFetch<{ closed: number }>("/api/marketing/page-report/close-all", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
-      toast.success(`Đã chốt ${body.closed} Page.`);
+      toast.success(`Đã chốt ${data.closed} Page.`);
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không chốt được báo cáo.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setClosingAll(false);
     }

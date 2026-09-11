@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/app/(app)/admin/require-admin";
-import { friendlyPrismaError } from "@/app/(app)/admin/prisma-error";
+import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
 const fanpageSchema = z.object({
   defaultSourceName: z.string().trim().min(1, "Vui lòng chọn nguồn mặc định."),
@@ -17,7 +17,7 @@ export async function createFanpage(input: { name: string } & z.infer<typeof fan
   await requireAdmin();
   const name = input.name.trim();
   if (!name) throw new Error("Vui lòng nhập tên fanpage.");
-  const data = fanpageSchema.parse(input);
+  const data = parseOrThrow(fanpageSchema, input);
 
   const existing = await prisma.fanpage.findUnique({ where: { name } });
   if (existing) throw new Error("Đã có fanpage với tên này.");
@@ -31,7 +31,7 @@ export async function createFanpage(input: { name: string } & z.infer<typeof fan
 
 export async function updateFanpage(name: string, input: z.infer<typeof fanpageSchema>) {
   await requireAdmin();
-  const data = fanpageSchema.parse(input);
+  const data = parseOrThrow(fanpageSchema, input);
   await prisma.fanpage
     .update({ where: { name }, data: { ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được fanpage."));

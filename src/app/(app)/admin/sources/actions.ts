@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/app/(app)/admin/require-admin";
-import { friendlyPrismaError } from "@/app/(app)/admin/prisma-error";
+import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
 const sourceSchema = z.object({
   channelGroup: z.string().trim().min(1, "Vui lòng nhập nhóm kênh."),
@@ -17,7 +17,7 @@ export async function createSource(input: { name: string } & z.infer<typeof sour
   await requireAdmin();
   const name = input.name.trim();
   if (!name) throw new Error("Vui lòng nhập tên nguồn.");
-  const data = sourceSchema.parse(input);
+  const data = parseOrThrow(sourceSchema, input);
 
   const existing = await prisma.source.findUnique({ where: { name } });
   if (existing) throw new Error("Đã có nguồn với tên này.");
@@ -29,7 +29,7 @@ export async function createSource(input: { name: string } & z.infer<typeof sour
 
 export async function updateSource(name: string, input: z.infer<typeof sourceSchema>) {
   await requireAdmin();
-  const data = sourceSchema.parse(input);
+  const data = parseOrThrow(sourceSchema, input);
   await prisma.source
     .update({ where: { name }, data: { ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được nguồn."));

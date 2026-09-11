@@ -1,7 +1,7 @@
 "use client";
 
+import { apiFetch, apiRequest, ApiClientError } from "@/lib/api-client";
 import type {
-  ApiError,
   DuplicateConflict,
   InteractionDetail,
   LeadStatus,
@@ -9,21 +9,8 @@ import type {
   QueueResponse,
 } from "@/app/(app)/leads/types";
 
-async function parseJson<T>(res: Response): Promise<T> {
-  const body = await res.json().catch(() => null);
-  if (!res.ok) {
-    const err = (body as ApiError | null)?.error ?? `Lỗi ${res.status}`;
-    throw new Error(err);
-  }
-  return body as T;
-}
-
 export async function fetchQueue(): Promise<QueueResponse> {
-  const res = await fetch("/api/interactions/queue", {
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-  return parseJson<QueueResponse>(res);
+  return apiFetch<QueueResponse>("/api/interactions/queue", { cache: "no-store" });
 }
 
 export async function fetchInteractions(params: {
@@ -42,29 +29,18 @@ export async function fetchInteractions(params: {
   if (params.page) search.set("page", String(params.page));
   if (params.pageSize) search.set("pageSize", String(params.pageSize));
 
-  const res = await fetch(`/api/interactions?${search.toString()}`, {
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-  return parseJson(res);
+  return apiFetch<PagedInteractions>(`/api/interactions?${search.toString()}`, { cache: "no-store" });
 }
 
 export async function fetchInteractionDetail(id: string): Promise<InteractionDetail> {
-  const res = await fetch(`/api/interactions/${id}`, {
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-  return parseJson<InteractionDetail>(res);
+  return apiFetch<InteractionDetail>(`/api/interactions/${id}`, { cache: "no-store" });
 }
 
 export async function logTouch(id: string, note?: string): Promise<void> {
-  const res = await fetch(`/api/interactions/${id}/touches`, {
+  await apiFetch(`/api/interactions/${id}/touches`, {
     method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),
   });
-  await parseJson(res);
 }
 
 export async function updateStatus(
@@ -78,21 +54,14 @@ export async function updateStatus(
     note?: string;
   }
 ): Promise<void> {
-  const res = await fetch(`/api/interactions/${id}/status`, {
+  await apiFetch(`/api/interactions/${id}/status`, {
     method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  await parseJson(res);
 }
 
 export async function resolveFollowup(id: string): Promise<InteractionDetail> {
-  const res = await fetch(`/api/interactions/${id}/followup/resolve`, {
-    method: "POST",
-    credentials: "same-origin",
-  });
-  return parseJson<InteractionDetail>(res);
+  return apiFetch<InteractionDetail>(`/api/interactions/${id}/followup/resolve`, { method: "POST" });
 }
 
 export type LeadInfoPayload = {
@@ -115,32 +84,24 @@ export type CreateInteractionInput = LeadInfoPayload;
 export async function createInteraction(
   input: CreateInteractionInput
 ): Promise<{ interactionId: string } | ({ status: 409 } & DuplicateConflict)> {
-  const res = await fetch("/api/interactions", {
+  const { res, data } = await apiRequest<DuplicateConflict & { interactionId: string }>("/api/interactions", {
     method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (res.status === 409) {
-    const body = (await res.json()) as DuplicateConflict;
-    return { status: 409, ...body };
-  }
-  return parseJson(res);
+  if (res.status === 409) return { status: 409, ...(data as DuplicateConflict) };
+  if (!res.ok) throw new ApiClientError(data?.error ?? `Yêu cầu thất bại (mã lỗi ${res.status}).`, res.status);
+  return data as { interactionId: string };
 }
 
 export async function updateInteractionInfo(
   id: string,
   input: LeadInfoPayload & { expectedVersion: number }
 ): Promise<InteractionDetail | ({ status: 409 } & DuplicateConflict)> {
-  const res = await fetch(`/api/interactions/${id}`, {
+  const { res, data } = await apiRequest<DuplicateConflict & InteractionDetail>(`/api/interactions/${id}`, {
     method: "PATCH",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (res.status === 409) {
-    const body = (await res.json()) as DuplicateConflict;
-    return { status: 409, ...body };
-  }
-  return parseJson(res);
+  if (res.status === 409) return { status: 409, ...(data as DuplicateConflict) };
+  if (!res.ok) throw new ApiClientError(data?.error ?? `Yêu cầu thất bại (mã lỗi ${res.status}).`, res.status);
+  return data as InteractionDetail;
 }

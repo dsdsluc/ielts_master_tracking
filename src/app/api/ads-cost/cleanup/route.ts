@@ -4,7 +4,7 @@ import { errorResponse } from "@/lib/interactions/errors";
 import { deleteAdsCostRows } from "@/lib/ads-cost/cleanup";
 
 const schema = z.object({
-  ids: z.array(z.number().int().positive()).min(1),
+  ids: z.array(z.number().int().positive()).min(1, "Vui lòng chọn ít nhất 1 dòng."),
 });
 
 export async function POST(request: Request) {

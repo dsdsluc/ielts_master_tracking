@@ -4,8 +4,8 @@ import { errorResponse } from "@/lib/interactions/errors";
 import { mergeCustomers } from "@/lib/customers/merge";
 
 const schema = z.object({
-  keepCustomerKey: z.string().min(1),
-  removeCustomerKeys: z.array(z.string()).min(1),
+  keepCustomerKey: z.string().min(1, "Vui lòng chọn khách hàng giữ lại."),
+  removeCustomerKeys: z.array(z.string()).min(1, "Vui lòng chọn ít nhất 1 khách hàng để gộp."),
   displayName: z.string().trim().min(1, "Vui lòng nhập tên khách hàng."),
   phoneNormalized: z.string().trim().optional(),
   canonicalLink: z.string().trim().min(1, "Vui lòng nhập Link chuẩn."),

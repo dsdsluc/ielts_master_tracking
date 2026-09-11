@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
 import { requireAdmin } from "@/app/(app)/admin/require-admin";
-import { friendlyPrismaError } from "@/app/(app)/admin/prisma-error";
+import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 import { ROLES } from "@/lib/interactions/constants";
 
 const DEFAULT_PASSWORD = "12345678";
@@ -35,7 +35,7 @@ export async function createUser(input: { email: string; password?: string } & z
   await requireAdmin();
   const email = input.email.trim().toLowerCase();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Email không hợp lệ.");
-  const data = userSchema.parse(input);
+  const data = parseOrThrow(userSchema, input);
   const scope = normalizeBranchScope(data);
 
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -67,7 +67,7 @@ export async function updateUser(currentEmail: string, input: { email: string } 
   const actor = await requireAdmin();
   const newEmail = input.email.trim().toLowerCase();
   if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) throw new Error("Email không hợp lệ.");
-  const data = userSchema.parse(input);
+  const data = parseOrThrow(userSchema, input);
   const scope = normalizeBranchScope(data);
 
   if (currentEmail === actor.email && data.role !== ROLES.ADMIN) {

@@ -20,6 +20,7 @@ import {
 import { FormMessage } from "@/components/form-message";
 import { PaginationBar } from "@/components/pagination-bar";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { AdsCostDialog, type AdsCostRow } from "@/app/(app)/ads-cost/ads-cost-dialog";
 import { DeleteAdsCostDialog } from "@/app/(app)/ads-cost/delete-ads-cost-dialog";
 import { formatDate, formatVnd } from "@/app/(app)/ads-cost/format";
@@ -88,20 +89,16 @@ export function AdsCostTable({
     setPending(true);
     setError(null);
     try {
-      const res = await fetch("/api/ads-cost/cleanup", {
+      const data = await apiFetch<{ deletedCount: number }>("/api/ads-cost/cleanup", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [...selected] }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       setConfirmOpen(false);
       stopSelecting();
-      toast.success(`Đã xoá ${body.deletedCount} bản ghi chi phí quảng cáo.`);
+      toast.success(`Đã xoá ${data.deletedCount} bản ghi chi phí quảng cáo.`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không xoá được.");
+      setError(apiErrorMessage(err));
     } finally {
       setPending(false);
     }

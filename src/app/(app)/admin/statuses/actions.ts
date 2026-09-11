@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/app/(app)/admin/require-admin";
-import { friendlyPrismaError } from "@/app/(app)/admin/prisma-error";
+import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
 // Chỉ cho sửa sortOrder/note — 4 tên trạng thái (Chờ/Tiếp nhận/Đủ tiêu chuẩn/
 // Spam) được hardcode trong lib/interactions/constants.ts và toàn bộ luồng
@@ -18,7 +18,7 @@ const statusMetaSchema = z.object({
 
 export async function updateStatusMeta(name: string, input: z.input<typeof statusMetaSchema>) {
   await requireAdmin();
-  const data = statusMetaSchema.parse(input);
+  const data = parseOrThrow(statusMetaSchema, input);
   await prisma.status
     .update({ where: { name }, data: { sortOrder: data.sortOrder, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));

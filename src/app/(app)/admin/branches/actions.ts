@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/app/(app)/admin/require-admin";
-import { friendlyPrismaError } from "@/app/(app)/admin/prisma-error";
+import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
 const branchSchema = z.object({
   name: z.string().trim().min(1, "Vui lòng nhập tên cơ sở."),
@@ -17,7 +17,7 @@ export async function createBranch(input: { code: string } & z.input<typeof bran
   await requireAdmin();
   const code = input.code.trim();
   if (!code) throw new Error("Vui lòng nhập mã cơ sở.");
-  const data = branchSchema.parse(input);
+  const data = parseOrThrow(branchSchema, input);
 
   const existing = await prisma.branch.findUnique({ where: { code } });
   if (existing) throw new Error("Đã có cơ sở với mã này.");
@@ -31,7 +31,7 @@ export async function createBranch(input: { code: string } & z.input<typeof bran
 
 export async function updateBranch(code: string, input: z.input<typeof branchSchema>) {
   await requireAdmin();
-  const data = branchSchema.parse(input);
+  const data = parseOrThrow(branchSchema, input);
   await prisma.branch
     .update({ where: { code }, data: { ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được cơ sở."));

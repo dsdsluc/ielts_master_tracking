@@ -4,7 +4,7 @@ import { errorResponse } from "@/lib/interactions/errors";
 import { flagSlaBreaches } from "@/lib/interactions/sla";
 
 const schema = z.object({
-  interactionIds: z.array(z.string().min(1)).min(1),
+  interactionIds: z.array(z.string().min(1, "Mã liên hệ không hợp lệ.")).min(1, "Vui lòng chọn ít nhất 1 liên hệ."),
 });
 
 export async function POST(request: Request) {

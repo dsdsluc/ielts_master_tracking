@@ -23,6 +23,7 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { FormMessage } from "@/components/form-message";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { updateStatus } from "@/app/(app)/leads/leads-api";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
 import { STATUS, SPAM_REASON } from "@/lib/interactions/constants";
 import { useToast } from "@/hooks/use-toast";
@@ -116,21 +117,19 @@ export function FollowupView({
     setPending(true);
     setError(null);
     try {
-      const res = await fetch("/api/interactions/followup/push", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interactionIds: [...selected], suggestion: suggestion.trim() || undefined }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
-      const { pushed, skipped } = body as { pushed: number; skipped: number };
+      const { pushed, skipped } = await apiFetch<{ pushed: number; skipped: number }>(
+        "/api/interactions/followup/push",
+        {
+          method: "POST",
+          body: JSON.stringify({ interactionIds: [...selected], suggestion: suggestion.trim() || undefined }),
+        }
+      );
       toast.success(skipped > 0 ? `Đã gửi ${pushed} liên hệ — bỏ qua ${skipped} (đã đổi trạng thái/đã gắn cờ trước đó).` : `Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ.`);
       setSelected(new Set());
       setSuggestion("");
       router.refresh();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Không gửi được yêu cầu.";
+      const message = apiErrorMessage(err);
       setError(message);
       toast.error(message);
     } finally {
@@ -155,7 +154,7 @@ export function FollowupView({
       setSpamReason("");
       router.refresh();
     } catch (err) {
-      setSpamError(err instanceof Error ? err.message : "Không đóng Spam được.");
+      setSpamError(apiErrorMessage(err));
     } finally {
       setSpamPending(false);
     }

@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { LeadDetailSheet } from "@/app/(app)/leads/lead-detail-sheet";
 import type { InteractionListItem } from "@/app/(app)/leads/types";
 import { cn } from "@/lib/utils";
@@ -175,18 +176,14 @@ export function WorkspaceView({
   async function addToWorkspace(item: InteractionListItem) {
     markPending(item.interactionId, true);
     try {
-      const res = await fetch("/api/workspace/claim", {
+      const data = await apiFetch<{ conflicts?: string[] }>("/api/workspace/claim", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interactionIds: [item.interactionId] }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       // Dù thành công hay bị Sale khác giành mất, liên hệ này không còn khả
       // dụng nữa — luôn bỏ khỏi danh sách "Liên hệ khả dụng".
       setAvailable((prev) => prev.filter((r) => r.interactionId !== item.interactionId));
-      if (body.conflicts?.length > 0) {
+      if (data.conflicts?.length) {
         setNotice({
           title: "Chậm một chút rồi!",
           description: `${item.customerName} vừa được một Sale khác thêm vào Workspace của họ trước bạn. Liên hệ này đã được gỡ khỏi danh sách khả dụng — hãy chọn một liên hệ khác.`,
@@ -197,7 +194,7 @@ export function WorkspaceView({
       }
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không thêm được liên hệ này.");
+      toast.error(apiErrorMessage(err));
     } finally {
       markPending(item.interactionId, false);
     }
@@ -206,20 +203,16 @@ export function WorkspaceView({
   async function releaseFromWorkspace(item: InteractionListItem) {
     markPending(item.interactionId, true);
     try {
-      const res = await fetch("/api/workspace/release", {
+      await apiFetch("/api/workspace/release", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interactionId: item.interactionId }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       setWorkspace((prev) => prev.filter((r) => r.interactionId !== item.interactionId));
       setAvailable((prev) => [item, ...prev]);
       toast.success(`Đã giải phóng ${item.customerName} khỏi Workspace — Sale khác có thể thêm liên hệ này.`);
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không giải phóng được liên hệ này.");
+      toast.error(apiErrorMessage(err));
     } finally {
       markPending(item.interactionId, false);
     }
@@ -257,16 +250,12 @@ export function WorkspaceView({
     if (ids.length === 0) return;
     setBulkPending(true);
     try {
-      const res = await fetch("/api/workspace/claim", {
+      const data = await apiFetch<{ claimed?: string[]; conflicts?: string[] }>("/api/workspace/claim", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interactionIds: ids }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
-      const claimedSet = new Set<string>(body.claimed ?? []);
-      const conflictSet = new Set<string>(body.conflicts ?? []);
+      const claimedSet = new Set<string>(data.claimed ?? []);
+      const conflictSet = new Set<string>(data.conflicts ?? []);
       const claimedItems = available.filter((item) => claimedSet.has(item.interactionId));
       const conflictNames = available.filter((item) => conflictSet.has(item.interactionId)).map((item) => item.customerName);
       setAvailable((prev) => prev.filter((item) => !ids.includes(item.interactionId)));
@@ -281,7 +270,7 @@ export function WorkspaceView({
       }
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không thêm được các liên hệ đã chọn.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setBulkPending(false);
       stopSelectingAvailable();

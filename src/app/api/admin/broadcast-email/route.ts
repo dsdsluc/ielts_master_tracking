@@ -4,9 +4,11 @@ import { errorResponse } from "@/lib/interactions/errors";
 import { sendBroadcastEmail } from "@/lib/interactions/broadcast-email";
 
 const schema = z.object({
-  subject: z.string().trim().min(1),
-  body: z.string().trim().min(1),
-  recipientEmails: z.array(z.string().email()).min(1),
+  subject: z.string().trim().min(1, "Vui lòng nhập tiêu đề."),
+  body: z.string().trim().min(1, "Vui lòng nhập nội dung."),
+  recipientEmails: z
+    .array(z.string().email("Email người nhận không hợp lệ."))
+    .min(1, "Vui lòng chọn ít nhất 1 người nhận."),
 });
 
 export async function POST(request: Request) {

@@ -9,5 +9,5 @@ import { deleteSession } from "@/lib/auth/session";
 // "còn phiên" ở /login rồi đá ngược về trang cũ → lặp vô hạn (ERR_TOO_MANY_REDIRECTS).
 export async function GET(request: Request) {
   await deleteSession();
-  return NextResponse.redirect(new URL("/login", request.url));
+  return NextResponse.redirect(new URL("/login?reason=session-expired", request.url));
 }

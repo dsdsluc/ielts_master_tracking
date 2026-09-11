@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { resolveFollowup } from "@/app/(app)/leads/leads-api";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 
 export type FollowupInboxItem = {
   interactionId: string;
@@ -116,7 +117,7 @@ export function FollowupInboxView({
       setResolvedIds((prev) => new Set(prev).add(item.interactionId));
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không xử lý được.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setPendingId(null);
     }
@@ -125,15 +126,11 @@ export function FollowupInboxView({
   async function handlePick(item: FollowupInboxItem) {
     setPickingId(item.interactionId);
     try {
-      const res = await fetch("/api/workspace/claim", {
+      const data = await apiFetch<{ conflicts?: string[] }>("/api/workspace/claim", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interactionIds: [item.interactionId] }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
-      if (body.conflicts?.length > 0) {
+      if (data.conflicts?.length) {
         toast.error(`${item.customerName} vừa được Sale khác nhận vào Workspace của họ trước.`);
       } else {
         setPickedOverrides((prev) => ({ ...prev, [item.interactionId]: { email: currentUserEmail, name: currentUserName } }));
@@ -141,7 +138,7 @@ export function FollowupInboxView({
       }
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không nhận được liên hệ này.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setPickingId(null);
     }

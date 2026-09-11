@@ -4,7 +4,7 @@ import { errorResponse } from "@/lib/interactions/errors";
 import { deleteSystemLogs } from "@/lib/logs/cleanup";
 
 const schema = z.object({
-  logIds: z.array(z.string().min(1)).min(1),
+  logIds: z.array(z.string().min(1, "Mã nhật ký không hợp lệ.")).min(1, "Vui lòng chọn ít nhất 1 dòng."),
 });
 
 export async function POST(request: Request) {

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { STATUS } from "@/lib/interactions/constants";
 import { cn } from "@/lib/utils";
@@ -82,10 +83,8 @@ export function DuplicateMergeView({
   async function handleMerge() {
     setMerging(true);
     try {
-      const res = await fetch("/api/customers/merge", {
+      await apiFetch("/api/customers/merge", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           keepCustomerKey: primary.customerKey,
           removeCustomerKeys: others.map((c) => c.customerKey),
@@ -95,13 +94,11 @@ export function DuplicateMergeView({
           currentStatusName: mergedStatus,
         }),
       });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? `Lỗi ${res.status}`);
       toast.success(`Đã gộp ${others.length} bản ghi vào "${mergedName}".`);
       router.push("/customers/duplicates");
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không gộp được.");
+      toast.error(apiErrorMessage(err));
     } finally {
       setMerging(false);
     }
