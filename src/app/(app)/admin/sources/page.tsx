@@ -3,12 +3,15 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { SourceDialog } from "@/app/(app)/admin/sources/source-dialog";
 import { SourceDomains } from "@/app/(app)/admin/sources/source-domains";
 import { setSourceActive } from "@/app/(app)/admin/sources/actions";
 
 export default async function SourcesPage() {
+  await requireRole(ROLES.ADMIN);
   const sources = await prisma.source.findMany({
     orderBy: { name: "asc" },
     include: { domains: { orderBy: { domain: "asc" } } },

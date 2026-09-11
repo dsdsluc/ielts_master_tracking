@@ -4,9 +4,12 @@ import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { StatusDialog } from "@/app/(app)/admin/statuses/status-dialog";
 
 export default async function StatusesPage() {
+  await requireRole(ROLES.ADMIN);
   const statuses = await prisma.status.findMany({ orderBy: { sortOrder: "asc" } });
 
   return (

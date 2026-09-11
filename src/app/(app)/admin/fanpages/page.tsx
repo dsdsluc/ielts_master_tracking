@@ -3,11 +3,14 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { FanpageDialog } from "@/app/(app)/admin/fanpages/fanpage-dialog";
 import { setFanpageActive } from "@/app/(app)/admin/fanpages/actions";
 
 export default async function FanpagesPage() {
+  await requireRole(ROLES.ADMIN);
   // Lấy tất cả (không lọc active) — nếu chỉ lọc active thì fanpage đang gắn với
   // 1 nguồn/cơ sở đã bị ngừng sẽ không hiện được lựa chọn hiện tại trong dialog sửa.
   const [fanpages, sources, branches] = await Promise.all([

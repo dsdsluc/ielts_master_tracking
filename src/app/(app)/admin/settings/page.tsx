@@ -1,5 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { SettingCard } from "@/app/(app)/admin/settings/setting-card";
 import { AdsCostCleanupCard } from "@/app/(app)/admin/settings/ads-cost-cleanup-card";
 
@@ -43,6 +45,7 @@ const KNOWN_SETTINGS = [
 ];
 
 export default async function SettingsPage() {
+  await requireRole(ROLES.ADMIN);
   const rows = await prisma.appSetting.findMany();
   const valueByKey = new Map(rows.map((r) => [`${r.configGroup}.${r.key}`, r.value]));
   const adsCostCleanupEnabled = valueByKey.get("system.ADS_COST_CLEANUP_ENABLED") === "true";

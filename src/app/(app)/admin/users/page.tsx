@@ -4,14 +4,15 @@ import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { UserDialog } from "@/app/(app)/admin/users/user-dialog";
 import { ResetPasswordDialog } from "@/app/(app)/admin/users/reset-password-dialog";
 import { setUserActive } from "@/app/(app)/admin/users/actions";
 
 export default async function UsersPage() {
-  const actor = await getCurrentUser();
+  const actor = await requireRole(ROLES.ADMIN);
   const [users, branches] = await Promise.all([
     prisma.user.findMany({
       orderBy: [{ active: "desc" }, { fullName: "asc" }],

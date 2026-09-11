@@ -3,11 +3,14 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { BranchDialog } from "@/app/(app)/admin/branches/branch-dialog";
 import { setBranchActive } from "@/app/(app)/admin/branches/actions";
 
 export default async function BranchesPage() {
+  await requireRole(ROLES.ADMIN);
   const branches = await prisma.branch.findMany({ orderBy: { name: "asc" } });
 
   return (

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ArrowRight, GitMerge } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { requireRole } from "@/lib/auth/dal";
+import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 import { prisma } from "@/lib/prisma";
 import { customerScopeWhere } from "@/app/(app)/customers/customer-scope";
 
@@ -11,7 +12,7 @@ function formatDate(date: Date) {
 }
 
 export default async function DuplicateCustomersPage() {
-  const user = await getCurrentUser();
+  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
 
   // Tạm thời phát hiện trùng theo heuristic: cùng SĐT nhưng khác Link chuẩn
   // (khác customerKey) => nhiều khả năng là 1 người thật liên hệ qua 2 link

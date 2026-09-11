@@ -3,11 +3,14 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/dal";
+import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { ObjectDialog } from "@/app/(app)/admin/objects/object-dialog";
 import { setObjectActive } from "@/app/(app)/admin/objects/actions";
 
 export default async function ObjectsPage() {
+  await requireRole(ROLES.ADMIN);
   const objects = await prisma.customerObject.findMany({ orderBy: { sortOrder: "asc" } });
 
   return (

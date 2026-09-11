@@ -2,10 +2,11 @@ import { PageHeader } from "@/components/page-header";
 import { LeadPriorityFlow } from "@/app/(app)/leads/lead-priority-flow";
 import { LeadsQueueView } from "@/app/(app)/leads/leads-queue-view";
 import { getLeadFormOptions } from "@/app/(app)/leads/get-lead-form-options";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { requireRole } from "@/lib/auth/dal";
+import { CAN_VIEW_LEAD } from "@/lib/interactions/constants";
 
 export default async function LeadsPage() {
-  const [user, options] = await Promise.all([getCurrentUser(), getLeadFormOptions()]);
+  const [user, options] = await Promise.all([requireRole(...CAN_VIEW_LEAD), getLeadFormOptions()]);
 
   return (
     <>

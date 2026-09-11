@@ -14,7 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { requireRole } from "@/lib/auth/dal";
+import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 import { CustomersFilterBar } from "@/app/(app)/customers/customers-filter-bar";
 import { customerScopeWhere, customerSearchWhere } from "@/app/(app)/customers/customer-scope";
 
@@ -29,7 +30,7 @@ export default async function CustomersPage({
 }: {
   searchParams: Promise<{ page?: string; q?: string; status?: string }>;
 }) {
-  const user = await getCurrentUser();
+  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
   const { page: pageParam, q, status } = await searchParams;
   const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
   const hasFilters = !!q?.trim() || !!status;

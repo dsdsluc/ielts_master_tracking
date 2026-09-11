@@ -7,8 +7,8 @@ import { StatusPill } from "@/components/status-pill";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendChart } from "@/app/(app)/dashboard-sale/trend-chart";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/dal";
-import { STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { requireRole } from "@/lib/auth/dal";
+import { CAN_CREATE_OR_EDIT_LEAD, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { branchScopeWhere, getQueue } from "@/lib/interactions/queries";
 import { dayKey } from "@/lib/day-key";
 
@@ -20,7 +20,7 @@ function formatDate(iso: string) {
 }
 
 export default async function DashboardSalePage() {
-  const user = await getCurrentUser();
+  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
