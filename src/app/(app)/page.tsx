@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { ROLES, STATUS, STUDENT_STAGE, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { cached } from "@/lib/cache";
@@ -158,6 +158,31 @@ async function computeSalePerformance(
     .slice(0, 10);
 }
 
+type FunnelSummary = { assigned: number; enrolled: number };
+
+// Ghép tiếp nối phễu tư vấn ghi danh (StudentProfile, xem lib/students/*) vào
+// sau phễu lead (Interaction) ở trên — 2 hệ thống tách biệt hoàn toàn nên
+// không có sẵn 1 truy vấn nào nối chúng lại; đây là nơi Leader/Admin thấy
+// toàn mạch "lead vào -> đủ tiêu chuẩn -> phân bổ tư vấn -> chốt" mà không
+// phải mở 2 trang riêng để tự cộng trừ. Chỉ Leader/Admin gọi hàm này (luôn
+// thấy toàn bộ chi nhánh — mirror branchScopeWhere trả {} cho isLeaderLike ở
+// trên) nên không cần tự áp lại phạm vi cơ sở của actor, chỉ áp bộ lọc cơ sở
+// đang chọn trên thanh filter nếu có.
+async function computeFunnelSummary(windowStart: Date, branchCode?: string): Promise<FunnelSummary> {
+  const where: Prisma.StudentProfileWhereInput = { assignedAt: { gte: windowStart } };
+  if (branchCode) where.interaction = { assignedBranchCode: branchCode };
+
+  const [assigned, enrolled] = await Promise.all([
+    prisma.studentProfile.count({ where }),
+    prisma.studentProfile.count({ where: { ...where, stage: STUDENT_STAGE.ENROLLED } }),
+  ]);
+  return { assigned, enrolled };
+}
+
+function funnelRate(part: number, total: number): string {
+  return total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : "—";
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -210,12 +235,15 @@ export default async function DashboardPage({
   const canSeeSaleOps = user.role === ROLES.LEADER || user.role === ROLES.ADMIN;
   const canSeeMarketingOps = user.role === ROLES.MARKETING || user.role === ROLES.ADMIN;
 
-  const [kpi, topAds, salePerf] = await Promise.all([
+  const [kpi, topAds, salePerf, funnel] = await Promise.all([
     cached(cacheKey, 90, () => computeDashboardKpi(where)),
     canSeeMarketingOps ? cached(`${cacheKey}:top-ads`, 90, () => computeTopAds(where)) : Promise.resolve([]),
     canSeeSaleOps
       ? cached(`${cacheKey}:sale-perf`, 90, () => computeSalePerformance(scopeWithBranch, windowStart, branchNameByCode))
       : Promise.resolve([]),
+    canSeeSaleOps
+      ? cached(`${cacheKey}:funnel`, 90, () => computeFunnelSummary(windowStart, branchParam && branchParam !== "all" ? branchParam : undefined))
+      : Promise.resolve({ assigned: 0, enrolled: 0 }),
   ]);
 
   return (
@@ -286,6 +314,37 @@ export default async function DashboardPage({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {canSeeSaleOps && (
+        <div className="mb-6">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <TrendingUp className="size-3.5" />
+              Toàn phễu: lead → đủ tiêu chuẩn → phân bổ tư vấn → chốt ({days} ngày)
+            </p>
+            <Link href="/student-assignment/stats" className="text-xs font-medium text-status-received hover:underline">
+              Xem chi tiết tư vấn
+            </Link>
+          </div>
+          <div className="shadow-bubble flex flex-wrap items-stretch gap-2 overflow-hidden rounded-2xl border border-border/70 bg-card p-2">
+            {[
+              { label: "Lead nhận", value: kpi.total, rate: null },
+              { label: "Đủ tiêu chuẩn", value: kpi.qualified, rate: funnelRate(kpi.qualified, kpi.total) },
+              { label: "Đã phân bổ tư vấn", value: funnel.assigned, rate: funnelRate(funnel.assigned, kpi.qualified) },
+              { label: "Đã chốt", value: funnel.enrolled, rate: funnelRate(funnel.enrolled, funnel.assigned) },
+            ].map((step, i, arr) => (
+              <div key={step.label} className="flex flex-1 items-center gap-2">
+                <div className="flex min-w-32 flex-1 flex-col gap-0.5 rounded-xl px-3 py-2">
+                  <span className="font-heading text-xl font-semibold tabular-nums text-foreground">{step.value}</span>
+                  <span className="text-xs text-muted-foreground">{step.label}</span>
+                  {step.rate && <span className="text-[11px] font-medium text-status-received">{step.rate} bước trước</span>}
+                </div>
+                {i < arr.length - 1 && <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

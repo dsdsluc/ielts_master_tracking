@@ -15,7 +15,7 @@ export default function NotFound() {
             Trang bạn vừa mở không tồn tại, hoặc đường dẫn đã thay đổi. Hãy quay lại trang chủ để tiếp tục.
           </p>
         </div>
-        <Button type="button" className="glossy shadow-bubble mt-2 rounded-full px-5" render={<Link href="/" />}>
+        <Button type="button" nativeButton={false} className="glossy shadow-bubble mt-2 rounded-full px-5" render={<Link href="/" />}>
           Về trang chủ
         </Button>
       </div>

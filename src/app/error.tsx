@@ -39,6 +39,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           <Button
             type="button"
             variant="outline"
+            nativeButton={false}
             className="rounded-full px-5"
             render={<Link href="/" />}
           >
