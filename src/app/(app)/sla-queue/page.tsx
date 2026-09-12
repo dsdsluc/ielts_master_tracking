@@ -5,35 +5,42 @@ import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireRole } from "@/lib/auth/dal";
 import { CAN_REASSIGN, STATUS } from "@/lib/interactions/constants";
-import { getSlaHours } from "@/lib/interactions/settings";
 import { listItemInclude, toListItem } from "@/lib/interactions/serialize";
-import { branchScopeWhere } from "@/lib/interactions/queries";
+import { branchScopeWhere, getBranchSlaMap } from "@/lib/interactions/queries";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 
-function hoursSince(iso: string) {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+function elapsedLabel(iso: string) {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 60) return `${minutes} phút trước`;
+  return `${Math.floor(minutes / 60)} giờ trước`;
 }
 
 // Leader/Admin nhìn thấy CỤ THỂ liên hệ nào đang trễ (không chỉ số trung bình
 // avgQualifyHours ở dashboard "/") để có thể nhắc trực tiếp Sale phụ trách
 // hoặc tự can thiệp — mirror /admin/sla-review nhưng chỉ đọc (không có bước
 // "đánh dấu" — đó vẫn là công cụ audit riêng của Admin) và lọc theo phạm vi
-// cơ sở của actor thay vì luôn toàn hệ thống.
+// cơ sở của actor thay vì luôn toàn hệ thống. Ngưỡng "SLA nhận" lấy riêng theo
+// từng cơ sở (Branch.slaReceiveMinutes, sửa ở /admin/branches).
 export default async function SlaQueuePage() {
   const actor = await requireRole(...CAN_REASSIGN);
-  const slaHours = await getSlaHours();
-  const cutoff = new Date(Date.now() - slaHours * 3600_000);
+  const { byCode: slaByBranch, fallback: slaFallback } = await getBranchSlaMap();
 
-  const [rows, branches] = await Promise.all([
+  const now = Date.now();
+  const [allWaiting, branches] = await Promise.all([
     prisma.interaction.findMany({
-      where: { ...branchScopeWhere(actor), activeFlag: true, statusName: STATUS.WAITING, createdLeadAt: { lte: cutoff } },
+      where: { ...branchScopeWhere(actor), activeFlag: true, statusName: STATUS.WAITING },
       include: listItemInclude,
       orderBy: { createdLeadAt: "asc" },
     }),
     prisma.branch.findMany({ select: { code: true, name: true } }),
   ]);
   const branchNames = Object.fromEntries(branches.map((b) => [b.code, b.name]));
+
+  const rows = allWaiting.filter((r) => {
+    const sla = slaByBranch.get(r.assignedBranchCode) ?? slaFallback;
+    return r.createdLeadAt.getTime() <= now - sla.slaReceiveMinutes * 60_000;
+  });
   const items = rows.map(toListItem);
 
   return (
@@ -41,7 +48,7 @@ export default async function SlaQueuePage() {
       <PageHeader
         eyebrow="Vận hành"
         title="Liên hệ chờ phản hồi quá lâu"
-        description={`Liên hệ tạo hơn ${slaHours} giờ trước mà vẫn chưa được Sale nào liên hệ (còn ở trạng thái Chờ) — nhắc trực tiếp Sale phụ trách hoặc tự xử lý nếu cần. Ngưỡng chỉnh ở "Cấu hình hệ thống".`}
+        description='Liên hệ vẫn chưa được Sale nào liên hệ (còn ở trạng thái Chờ) quá "SLA nhận" của cơ sở phụ trách — nhắc trực tiếp Sale hoặc tự xử lý nếu cần. Ngưỡng chỉnh theo từng cơ sở ở "Cơ sở".'
       />
 
       {items.length === 0 ? (
@@ -84,7 +91,7 @@ export default async function SlaQueuePage() {
                     <TableCell className="px-4 text-xs">
                       <span className="text-muted-foreground">{formatDateTime(item.createdLeadAt)}</span>
                       <br />
-                      <span className="font-medium text-destructive">{hoursSince(item.createdLeadAt)} giờ trước</span>
+                      <span className="font-medium text-destructive">{elapsedLabel(item.createdLeadAt)}</span>
                     </TableCell>
                     <TableCell className="pr-4 pl-1 text-right">
                       <Link href={`/leads/${item.interactionId}`} className="text-xs font-medium text-status-received hover:underline">

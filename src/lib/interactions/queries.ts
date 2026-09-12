@@ -17,11 +17,24 @@ import {
 import { Errors } from "@/lib/interactions/errors";
 import { canAccessBranch, canViewLead, isLeaderLike } from "@/lib/interactions/scope";
 import { detailInclude, listItemInclude, toDetail, toListItem } from "@/lib/interactions/serialize";
-import { getSlaHours } from "@/lib/interactions/settings";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { InteractionDetail, InteractionListItem, LeadQueue, LeadQueueGroup } from "@/lib/interactions/types";
 
 type Tx = Prisma.TransactionClient | PrismaClient;
+
+export type BranchSla = { slaReceiveMinutes: number; slaProcessHours: number };
+
+/** Ngưỡng SLA nhận (phút) / xử lý (giờ) theo TỪNG cơ sở — đúng như Admin cấu
+ * hình ở /admin/branches (`Branch.slaReceiveMinutes`/`slaProcessHours`), thay
+ * cho 1 mốc chung toàn hệ thống trước đây. Trả kèm 1 ngưỡng mặc định (30
+ * phút/24 giờ) cho liên hệ không xác định được cơ sở. */
+export async function getBranchSlaMap(): Promise<{ byCode: Map<string, BranchSla>; fallback: BranchSla }> {
+  const branches = await prisma.branch.findMany({ select: { code: true, slaReceiveMinutes: true, slaProcessHours: true } });
+  return {
+    byCode: new Map(branches.map((b) => [b.code, { slaReceiveMinutes: b.slaReceiveMinutes, slaProcessHours: b.slaProcessHours }])),
+    fallback: { slaReceiveMinutes: 30, slaProcessHours: 24 },
+  };
+}
 
 /**
  * Phạm vi cơ sở actor được xem, dùng làm điều kiện WHERE cho list/queue —
@@ -228,17 +241,20 @@ async function computePersonalKpi(actor: CurrentUser): Promise<LeadQueue["person
  * ĐÚNG 1 nhóm — nhóm đầu tiên khớp theo thứ tự trên thắng, để không hiển thị
  * trùng lặp giữa các nhóm.
  *
- * Lưu ý SLA xử lý (Tiếp nhận): schema không có mốc "vào Tiếp nhận" riêng, nên
- * dùng createdLeadAt (giờ tạo lead) làm gốc đo cho cả 2 trạng thái — chấp
- * nhận đây là ước lượng, không phải SLA xử lý tuyệt đối chính xác.
+ * SLA tính theo TỪNG cơ sở (Branch.slaReceiveMinutes/slaProcessHours, sửa ở
+ * /admin/branches) — không còn 1 mốc chung toàn hệ thống. "Chờ" quá
+ * slaReceiveMinutes = chưa ai liên hệ kịp; "Tiếp nhận" quá slaProcessHours =
+ * đã liên hệ nhưng xử lý (xin SĐT) quá lâu. Lưu ý: schema không có mốc "vào
+ * Tiếp nhận" riêng, nên dùng createdLeadAt (giờ tạo lead) làm gốc đo cho cả 2
+ * trạng thái — chấp nhận đây là ước lượng, không phải SLA xử lý tuyệt đối chính xác.
  */
 export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
   if (actor.role === ROLES.BOARD) {
     return { groups: [], personalKpi: emptyPersonalKpi() };
   }
 
-  const [slaHours, openRows, personalKpi] = await Promise.all([
-    getSlaHours(),
+  const [{ byCode: slaByBranch, fallback: slaFallback }, openRows, personalKpi] = await Promise.all([
+    getBranchSlaMap(),
     prisma.interaction.findMany({
       where: { ...branchScopeWhere(actor), activeFlag: true, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
       include: listItemInclude,
@@ -247,11 +263,6 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
     computePersonalKpi(actor),
   ]);
 
-  // SLA giờ là 1 mốc chung toàn hệ thống (Cấu hình hệ thống → "Ngưỡng SLA
-  // phản hồi liên hệ mới"), không còn cấu hình riêng theo Cơ sở. "Chưa được
-  // liên hệ" = còn ở trạng thái Chờ (chưa ai Chuyển Tiếp nhận) — lead đã sang
-  // Tiếp nhận coi như đã được liên hệ nên không tính quá SLA nữa.
-  const thresholdMinutes = slaHours * 60;
   const now = Date.now();
   const buckets: Record<(typeof QUEUE_ORDER)[number], InteractionListItem[]> = {
     new_waiting: [],
@@ -261,8 +272,11 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
   };
 
   for (const row of openRows) {
+    const sla = slaByBranch.get(row.assignedBranchCode) ?? slaFallback;
     const elapsedMinutes = (now - row.createdLeadAt.getTime()) / 60000;
-    const isSlaBreaching = row.statusName === STATUS.WAITING && elapsedMinutes >= thresholdMinutes * SLA_APPROACH_RATIO;
+    const isReceiveBreaching = row.statusName === STATUS.WAITING && elapsedMinutes >= sla.slaReceiveMinutes * SLA_APPROACH_RATIO;
+    const isProcessBreaching = row.statusName === STATUS.PROCESSING && elapsedMinutes >= sla.slaProcessHours * 60 * SLA_APPROACH_RATIO;
+    const isSlaBreaching = isReceiveBreaching || isProcessBreaching;
     const item = toListItem(row);
 
     if (row.statusName === STATUS.WAITING && !isSlaBreaching && !row.needsFollowup) buckets.new_waiting.push(item);
