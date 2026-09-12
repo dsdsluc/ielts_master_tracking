@@ -20,6 +20,9 @@ export async function GET(request: Request) {
     const q = url.searchParams.get("q") ?? undefined;
     const source = url.searchParams.get("source") ?? undefined;
     const branch = url.searchParams.get("branch") ?? undefined;
+    const period = url.searchParams.get("period") ?? undefined;
+    const costMin = url.searchParams.get("costMin") ?? undefined;
+    const costMax = url.searchParams.get("costMax") ?? undefined;
 
     const where: Prisma.AdsCostWhereInput = {};
     if (source && source !== "all") where.sourceName = source;
@@ -30,6 +33,20 @@ export async function GET(request: Request) {
         { adId: { contains: term, mode: "insensitive" } },
         { adName: { contains: term, mode: "insensitive" } },
       ];
+    }
+    if (period) {
+      const [start, end] = period.split("_");
+      if (start && end) {
+        where.periodStart = new Date(start);
+        where.periodEnd = new Date(end);
+      }
+    }
+    const costMinNum = costMin ? Number(costMin) : undefined;
+    const costMaxNum = costMax ? Number(costMax) : undefined;
+    if (costMinNum !== undefined || costMaxNum !== undefined) {
+      where.costVnd = {};
+      if (costMinNum !== undefined && !Number.isNaN(costMinNum)) where.costVnd.gte = costMinNum;
+      if (costMaxNum !== undefined && !Number.isNaN(costMaxNum)) where.costVnd.lte = costMaxNum;
     }
 
     const rows = await prisma.adsCost.findMany({

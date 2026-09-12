@@ -19,6 +19,12 @@ async function requireAdsCostAccess() {
 
 const NONE = "none";
 
+const optionalIntString = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.trim() ? Number(v.replace(/[^\d.-]/g, "")) : undefined))
+  .pipe(z.number().int().nonnegative().optional());
+
 const adsCostSchema = z
   .object({
     periodStart: z.string().min(1, "Vui lòng chọn ngày bắt đầu."),
@@ -30,6 +36,19 @@ const adsCostSchema = z
     branchCode: z.string().optional(),
     costVnd: z.coerce.number().min(0, "Chi phí phải >= 0."),
     note: z.string().trim().optional(),
+    // Từ file report Facebook Ads Manager — tuỳ chọn, chỉ có khi nhập qua
+    // Excel đúng định dạng export của Ads Manager.
+    campaignName: z.string().trim().optional(),
+    adSetName: z.string().trim().optional(),
+    mediaType: z.string().trim().optional(),
+    resultType: z.string().trim().optional(),
+    results: optionalIntString,
+    resultsInitial: optionalIntString,
+    impressions: optionalIntString,
+    postEngagements: optionalIntString,
+    linkClicks: optionalIntString,
+    messagingConversations: optionalIntString,
+    thruPlays: optionalIntString,
   })
   .refine((data) => new Date(data.periodEnd) >= new Date(data.periodStart), {
     message: "Ngày kết thúc phải sau ngày bắt đầu.",
@@ -49,6 +68,17 @@ function toWriteData(data: z.output<typeof adsCostSchema>, updatedByEmail: strin
     branchCode: !data.branchCode || data.branchCode === NONE ? null : data.branchCode,
     costVnd: data.costVnd,
     note: data.note || null,
+    campaignName: data.campaignName || null,
+    adSetName: data.adSetName || null,
+    mediaType: data.mediaType || null,
+    resultType: data.resultType || null,
+    results: data.results ?? null,
+    resultsInitial: data.resultsInitial ?? null,
+    impressions: data.impressions ?? null,
+    postEngagements: data.postEngagements ?? null,
+    linkClicks: data.linkClicks ?? null,
+    messagingConversations: data.messagingConversations ?? null,
+    thruPlays: data.thruPlays ?? null,
     updatedByEmail,
     updatedAt: new Date(),
   };

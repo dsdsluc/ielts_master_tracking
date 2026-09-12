@@ -30,6 +30,19 @@ type ImportRow = {
   periodEnd: string;
   costVnd: string;
   note: string;
+  // Từ file report Facebook Ads Manager — không hiện ô sửa riêng trong bảng
+  // review (đỡ rối), chỉ đọc từ file rồi lưu thẳng kèm dòng chi phí.
+  campaignName: string;
+  adSetName: string;
+  mediaType: string;
+  resultType: string;
+  results: string;
+  resultsInitial: string;
+  impressions: string;
+  postEngagements: string;
+  linkClicks: string;
+  messagingConversations: string;
+  thruPlays: string;
 };
 
 type FieldKey = keyof Omit<ImportRow, "id">;
@@ -53,8 +66,7 @@ const HEADER_FIELD_MAP: Record<string, FieldKey> = {
   adid: "adId",
   "tên quảng cáo": "adName",
   "ten quang cao": "adName",
-  "tên chiến dịch": "adName",
-  "ten chien dich": "adName",
+  "ad name": "adName",
   "nguồn": "sourceName",
   nguon: "sourceName",
   fanpage: "fanpageName",
@@ -64,16 +76,35 @@ const HEADER_FIELD_MAP: Record<string, FieldKey> = {
   "bat dau ky": "periodStart",
   "ngày bắt đầu": "periodStart",
   "ngay bat dau": "periodStart",
+  "reporting starts": "periodStart",
   "kết thúc kỳ": "periodEnd",
   "ket thuc ky": "periodEnd",
   "ngày kết thúc": "periodEnd",
   "ngay ket thuc": "periodEnd",
+  "reporting ends": "periodEnd",
   "chi phí (vnd)": "costVnd",
   "chi phi (vnd)": "costVnd",
   "chi phí": "costVnd",
   "chi phi": "costVnd",
+  "amount spent (vnd)": "costVnd",
   "ghi chú": "note",
   "ghi chu": "note",
+  // Report Facebook Ads Manager — tên cột export nguyên bản (tiếng Anh).
+  "campaign name": "campaignName",
+  "tên chiến dịch": "campaignName",
+  "ten chien dich": "campaignName",
+  "ad set name": "adSetName",
+  "tên nhóm quảng cáo": "adSetName",
+  "media type": "mediaType",
+  "result type": "resultType",
+  results: "results",
+  "results (initial)": "resultsInitial",
+  impressions: "impressions",
+  "post engagements": "postEngagements",
+  "link clicks": "linkClicks",
+  "messaging conversations": "messagingConversations",
+  "messaging conversations started": "messagingConversations",
+  thruplays: "thruPlays",
 };
 const POSITIONAL_FIELDS: FieldKey[] = [
   "adId",
@@ -85,6 +116,27 @@ const POSITIONAL_FIELDS: FieldKey[] = [
   "periodEnd",
   "costVnd",
   "note",
+  "campaignName",
+  "adSetName",
+  "mediaType",
+  "resultType",
+  "results",
+  "resultsInitial",
+  "impressions",
+  "postEngagements",
+  "linkClicks",
+  "messagingConversations",
+  "thruPlays",
+];
+const NUMERIC_FIELDS: FieldKey[] = [
+  "costVnd",
+  "results",
+  "resultsInitial",
+  "impressions",
+  "postEngagements",
+  "linkClicks",
+  "messagingConversations",
+  "thruPlays",
 ];
 
 function cellText(value: unknown): string {
@@ -188,7 +240,7 @@ async function parseWorkbook(
       const raw = row.getCell(colNumber).value;
       if (field === "periodStart" || field === "periodEnd") {
         draft[field] = toDateInputValue(raw);
-      } else if (field === "costVnd") {
+      } else if (NUMERIC_FIELDS.includes(field)) {
         draft[field] = toNumberText(raw);
       } else {
         draft[field] = cellText(raw);
@@ -207,6 +259,17 @@ async function parseWorkbook(
       periodEnd: draft.periodEnd ?? "",
       costVnd: draft.costVnd ?? "",
       note: draft.note ?? "",
+      campaignName: draft.campaignName ?? "",
+      adSetName: draft.adSetName ?? "",
+      mediaType: draft.mediaType ?? "",
+      resultType: draft.resultType ?? "",
+      results: draft.results ?? "",
+      resultsInitial: draft.resultsInitial ?? "",
+      impressions: draft.impressions ?? "",
+      postEngagements: draft.postEngagements ?? "",
+      linkClicks: draft.linkClicks ?? "",
+      messagingConversations: draft.messagingConversations ?? "",
+      thruPlays: draft.thruPlays ?? "",
     });
   });
   return rows;
@@ -299,6 +362,17 @@ export function AdsCostImportView({
             branchCode: row.branchCode,
             costVnd: row.costVnd,
             note: row.note,
+            campaignName: row.campaignName || undefined,
+            adSetName: row.adSetName || undefined,
+            mediaType: row.mediaType || undefined,
+            resultType: row.resultType || undefined,
+            results: row.results || undefined,
+            resultsInitial: row.resultsInitial || undefined,
+            impressions: row.impressions || undefined,
+            postEngagements: row.postEngagements || undefined,
+            linkClicks: row.linkClicks || undefined,
+            messagingConversations: row.messagingConversations || undefined,
+            thruPlays: row.thruPlays || undefined,
           });
         } catch (err) {
           nextErrors[row.id] = err instanceof Error ? err.message : "Không lưu được.";
@@ -368,6 +442,12 @@ export function AdsCostImportView({
         </div>
         <p className="text-xs text-muted-foreground">
           File cần có các cột: {TEMPLATE_HEADERS.join(", ")}. Nếu tên cột không khớp, hệ thống sẽ đọc theo đúng thứ tự cột như file mẫu.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Cũng có thể kéo thả thẳng file xuất từ <strong>Facebook Ads Manager</strong> (Campaign name, Ad set name,
+          Media type, Result type, Results, Impressions, Post engagements, Link clicks, Messaging conversations,
+          ThruPlays, Reporting starts/ends...) — hệ thống tự nhận cột, các số liệu hiệu suất sẽ được lưu kèm để xem
+          ở trang &quot;Hiệu quả quảng cáo&quot;. Riêng Nguồn/Fanpage/Cơ sở vẫn cần chọn tay vì Facebook không xuất các cột này.
         </p>
       </div>
     );

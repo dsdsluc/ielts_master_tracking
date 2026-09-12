@@ -15,10 +15,10 @@ import { formatVnd } from "@/app/(app)/ads-cost/format";
 export default async function AdsCostPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; source?: string; branch?: string }>;
+  searchParams: Promise<{ q?: string; source?: string; branch?: string; period?: string; costMin?: string; costMax?: string }>;
 }) {
   await requireRole(ROLES.MARKETING, ROLES.ADMIN);
-  const { q, source, branch } = await searchParams;
+  const { q, source, branch, period, costMin, costMax } = await searchParams;
 
   const where: Prisma.AdsCostWhereInput = {};
   if (source && source !== "all") where.sourceName = source;
@@ -30,15 +30,44 @@ export default async function AdsCostPage({
       { adName: { contains: term, mode: "insensitive" } },
     ];
   }
+  // "period" mã hoá "periodStartISO_periodEndISO" — khớp đúng 1 kỳ báo cáo cụ
+  // thể, vì dữ liệu luôn nhập theo từng đợt (vd. mỗi tuần 1 kỳ) chứ không phải
+  // ngày lẻ, nên chọn đúng theo cặp ngày có sẵn dễ dùng hơn range tự do.
+  if (period) {
+    const [start, end] = period.split("_");
+    if (start && end) {
+      where.periodStart = new Date(start);
+      where.periodEnd = new Date(end);
+    }
+  }
+  const costMinNum = costMin ? Number(costMin) : undefined;
+  const costMaxNum = costMax ? Number(costMax) : undefined;
+  if (costMinNum !== undefined || costMaxNum !== undefined) {
+    where.costVnd = {};
+    if (costMinNum !== undefined && !Number.isNaN(costMinNum)) where.costVnd.gte = costMinNum;
+    if (costMaxNum !== undefined && !Number.isNaN(costMaxNum)) where.costVnd.lte = costMaxNum;
+  }
 
-  const [adsCosts, totalAgg, sources, fanpages, branches, cleanupEnabled] = await Promise.all([
+  const [adsCosts, totalAgg, sources, fanpages, branches, cleanupEnabled, periodRows] = await Promise.all([
     prisma.adsCost.findMany({ where, orderBy: [{ periodStart: "desc" }, { id: "desc" }] }),
     prisma.adsCost.aggregate({ where, _sum: { costVnd: true } }),
     prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
     prisma.fanpage.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
     prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
     isAdsCostCleanupEnabled(),
+    // Danh sách kỳ báo cáo có sẵn — luôn lấy TOÀN BỘ (không áp where hiện tại)
+    // để bộ lọc kỳ không tự thu hẹp theo chính nó.
+    prisma.adsCost.findMany({
+      distinct: ["periodStart", "periodEnd"],
+      select: { periodStart: true, periodEnd: true },
+      orderBy: { periodStart: "desc" },
+    }),
   ]);
+  const periodOptions = periodRows.map((p) => ({
+    value: `${p.periodStart.toISOString()}_${p.periodEnd.toISOString()}`,
+    periodStart: p.periodStart.toISOString(),
+    periodEnd: p.periodEnd.toISOString(),
+  }));
 
   const branchNames = Object.fromEntries(branches.map((b) => [b.code, b.name]));
   const rows = adsCosts.map((c) => ({
@@ -53,13 +82,17 @@ export default async function AdsCostPage({
     costVnd: c.costVnd.toString(),
     note: c.note,
   }));
-  const hasFilters = !!q?.trim() || (!!source && source !== "all") || (!!branch && branch !== "all");
+  const hasFilters =
+    !!q?.trim() || (!!source && source !== "all") || (!!branch && branch !== "all") || !!period || !!costMin || !!costMax;
   const totalCost = totalAgg._sum.costVnd?.toString() ?? "0";
 
   const exportParams = new URLSearchParams();
   if (q?.trim()) exportParams.set("q", q.trim());
   if (source && source !== "all") exportParams.set("source", source);
   if (branch && branch !== "all") exportParams.set("branch", branch);
+  if (period) exportParams.set("period", period);
+  if (costMin) exportParams.set("costMin", costMin);
+  if (costMax) exportParams.set("costMax", costMax);
   const exportHref = `/api/ads-cost/export?${exportParams.toString()}`;
 
   return (
@@ -106,6 +139,10 @@ export default async function AdsCostPage({
         branchOptions={branches}
         hasFilters={hasFilters}
         cleanupEnabled={cleanupEnabled}
+        periodOptions={periodOptions}
+        currentPeriod={period ?? "all"}
+        currentCostMin={costMin ?? ""}
+        currentCostMax={costMax ?? ""}
       />
     </>
   );

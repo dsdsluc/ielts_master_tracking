@@ -62,6 +62,22 @@ export default async function AdPerformanceDetailPage({
   const adName = costRows[0]?.adName ?? null;
   const sourceName = items[0]?.sourceName ?? costRows[0]?.sourceName ?? null;
   const fanpageName = items[0]?.fanpageName ?? costRows[0]?.fanpageName ?? null;
+  const campaignName = costRows[0]?.campaignName ?? null;
+  const adSetName = costRows[0]?.adSetName ?? null;
+  const mediaType = costRows[0]?.mediaType ?? null;
+
+  // Số liệu thô từ report Facebook Ads Manager — cộng dồn nếu có nhiều kỳ.
+  // Có thì hiện phễu thật của Facebook (Impressions -> Click -> Nhắn tin)
+  // cạnh phễu của hệ thống (Liên hệ -> Đủ tiêu chuẩn), để thấy ngay chỗ nào
+  // đang rơi rớt (nhắn tin nhiều nhưng lead vào hệ thống ít -> có thể lỗi
+  // tích hợp, không hẳn do quảng cáo kém).
+  const sumField = (key: "impressions" | "linkClicks" | "messagingConversations" | "postEngagements" | "thruPlays") =>
+    costRows.reduce((sum, c) => sum + (c[key] ?? 0), 0);
+  const totalImpressions = sumField("impressions");
+  const totalLinkClicks = sumField("linkClicks");
+  const totalMessagingConversations = sumField("messagingConversations");
+  const hasFacebookMetrics = totalImpressions > 0 || totalLinkClicks > 0 || totalMessagingConversations > 0;
+  const messagingToLeadRate = totalMessagingConversations > 0 ? (totalLeads / totalMessagingConversations) * 100 : null;
 
   return (
     <>
@@ -83,6 +99,13 @@ export default async function AdPerformanceDetailPage({
             Ad ID: {adId}
             {fanpageName ? ` · ${fanpageName}` : ""}
           </p>
+          {(campaignName || adSetName || mediaType) && (
+            <p className="text-xs text-muted-foreground">
+              {campaignName && <>Chiến dịch: {campaignName}</>}
+              {adSetName && <> · Nhóm QC: {adSetName}</>}
+              {mediaType && <> · Loại: {mediaType}</>}
+            </p>
+          )}
         </div>
       </div>
 
@@ -95,6 +118,28 @@ export default async function AdPerformanceDetailPage({
         <KpiCard label="CP/liên hệ" value={costPerLead != null ? formatVnd(Math.round(costPerLead)) : "—"} accentClassName="bg-accent" />
         <KpiCard label="CP/liên hệ đủ tiêu chuẩn" value={costPerQualified != null ? formatVnd(Math.round(costPerQualified)) : "—"} accentClassName="bg-accent" />
       </div>
+
+      {hasFacebookMetrics && (
+        <div className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Phễu thật trên Facebook (theo report Ads Manager)</h2>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiCard label="Lượt hiển thị" value={totalImpressions.toLocaleString("vi-VN")} accentClassName="bg-foreground/30" />
+            <KpiCard label="Lượt click link" value={totalLinkClicks.toLocaleString("vi-VN")} accentClassName="bg-status-received" />
+            <KpiCard label="Cuộc trò chuyện nhắn tin" value={totalMessagingConversations.toLocaleString("vi-VN")} accentClassName="bg-status-waiting" />
+            <KpiCard
+              label="Tỷ lệ nhắn tin → vào hệ thống"
+              value={messagingToLeadRate != null ? `${messagingToLeadRate.toFixed(0)}%` : "—"}
+              accentClassName="bg-primary"
+            />
+          </div>
+          {messagingToLeadRate != null && messagingToLeadRate < 80 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Facebook ghi nhận nhiều cuộc trò chuyện hơn số liên hệ thực có trong hệ thống — có thể do khách nhắn
+              tin nhưng chưa được tạo liên hệ (chậm nhập tay/lỗi tích hợp), không hẳn do quảng cáo kém.
+            </p>
+          )}
+        </div>
+      )}
 
       <h2 className="mb-3 text-sm font-semibold text-foreground">Danh sách liên hệ</h2>
       <AdLeadsTable items={items} branchNames={branchNames} />

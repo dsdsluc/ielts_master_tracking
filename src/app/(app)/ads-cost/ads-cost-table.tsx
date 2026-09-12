@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Megaphone, SearchX, LoaderCircle, Trash2, X } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Filter, Megaphone, SearchX, LoaderCircle, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -27,6 +29,8 @@ import { formatDate, formatVnd } from "@/app/(app)/ads-cost/format";
 
 const PAGE_SIZE = 15;
 
+type PeriodOption = { value: string; periodStart: string; periodEnd: string };
+
 export function AdsCostTable({
   rows,
   branchNames,
@@ -35,6 +39,10 @@ export function AdsCostTable({
   branchOptions,
   hasFilters = false,
   cleanupEnabled = false,
+  periodOptions = [],
+  currentPeriod = "all",
+  currentCostMin = "",
+  currentCostMax = "",
 }: {
   rows: AdsCostRow[];
   branchNames: Record<string, string>;
@@ -43,8 +51,13 @@ export function AdsCostTable({
   branchOptions: { code: string; name: string }[];
   hasFilters?: boolean;
   cleanupEnabled?: boolean;
+  periodOptions?: PeriodOption[];
+  currentPeriod?: string;
+  currentCostMin?: string;
+  currentCostMax?: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [selecting, setSelecting] = useState(false);
@@ -52,6 +65,34 @@ export function AdsCostTable({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [periodPopoverOpen, setPeriodPopoverOpen] = useState(false);
+  const [costPopoverOpen, setCostPopoverOpen] = useState(false);
+  const [costMinDraft, setCostMinDraft] = useState(currentCostMin);
+  const [costMaxDraft, setCostMaxDraft] = useState(currentCostMax);
+
+  function updateParams(next: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(next)) {
+      if (!value || value === "all") params.delete(key);
+      else params.set(key, value);
+    }
+    router.push(`/ads-cost?${params.toString()}`);
+  }
+
+  function applyCostFilter() {
+    updateParams({ costMin: costMinDraft, costMax: costMaxDraft });
+    setCostPopoverOpen(false);
+  }
+
+  function clearCostFilter() {
+    setCostMinDraft("");
+    setCostMaxDraft("");
+    updateParams({ costMin: null, costMax: null });
+    setCostPopoverOpen(false);
+  }
+
+  const hasPeriodFilter = currentPeriod !== "all";
+  const hasCostFilter = !!currentCostMin || !!currentCostMax;
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -208,13 +249,104 @@ export function AdsCostTable({
                   <Checkbox checked={allPagedSelected} onCheckedChange={toggleAllOnPage} aria-label="Chọn tất cả đang hiển thị" />
                 </TableHead>
               )}
-              <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Kỳ báo cáo</TableHead>
+              <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">
+                <div className="flex items-center gap-1">
+                  <span>Kỳ báo cáo</span>
+                  <Popover open={periodPopoverOpen} onOpenChange={setPeriodPopoverOpen}>
+                    <PopoverTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Lọc theo kỳ báo cáo"
+                          className={`rounded-full p-0.5 normal-case ${hasPeriodFilter ? "text-primary" : "text-muted-foreground/60 hover:text-foreground"}`}
+                        />
+                      }
+                    >
+                      <Filter className="size-3" fill={hasPeriodFilter ? "currentColor" : "none"} />
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-2">
+                      <div className="max-h-64 overflow-y-auto">
+                        <button
+                          type="button"
+                          className={`block w-full rounded-lg px-2.5 py-1.5 text-left text-xs normal-case hover:bg-secondary/60 ${currentPeriod === "all" ? "bg-secondary font-medium text-foreground" : "text-muted-foreground"}`}
+                          onClick={() => {
+                            updateParams({ period: null });
+                            setPeriodPopoverOpen(false);
+                          }}
+                        >
+                          Tất cả kỳ báo cáo
+                        </button>
+                        {periodOptions.map((p) => (
+                          <button
+                            key={p.value}
+                            type="button"
+                            className={`block w-full rounded-lg px-2.5 py-1.5 text-left text-xs normal-case hover:bg-secondary/60 ${currentPeriod === p.value ? "bg-secondary font-medium text-foreground" : "text-muted-foreground"}`}
+                            onClick={() => {
+                              updateParams({ period: p.value });
+                              setPeriodPopoverOpen(false);
+                            }}
+                          >
+                            {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </TableHead>
               <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Ad ID</TableHead>
               <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tên quảng cáo</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Nguồn</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Fanpage</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Cơ sở</TableHead>
-              <TableHead className="px-4 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Chi phí (VND)</TableHead>
+              <TableHead className="px-4 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">
+                <div className="flex items-center justify-end gap-1">
+                  <Popover open={costPopoverOpen} onOpenChange={setCostPopoverOpen}>
+                    <PopoverTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Lọc theo chi phí"
+                          className={`rounded-full p-0.5 normal-case ${hasCostFilter ? "text-primary" : "text-muted-foreground/60 hover:text-foreground"}`}
+                        />
+                      }
+                    >
+                      <Filter className="size-3" fill={hasCostFilter ? "currentColor" : "none"} />
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3" align="end">
+                      <p className="mb-2 text-left text-xs font-medium text-foreground normal-case">Lọc theo chi phí (VNĐ)</p>
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={costMinDraft}
+                          onChange={(e) => setCostMinDraft(e.target.value)}
+                          placeholder="Từ"
+                          className="h-9 rounded-lg text-left normal-case"
+                        />
+                        <span className="text-xs text-muted-foreground">–</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={costMaxDraft}
+                          onChange={(e) => setCostMaxDraft(e.target.value)}
+                          placeholder="Đến"
+                          className="h-9 rounded-lg text-left normal-case"
+                        />
+                      </div>
+                      <div className="mt-2 flex justify-end gap-1.5">
+                        <Button type="button" variant="ghost" size="sm" className="h-7 rounded-full text-xs normal-case" onClick={clearCostFilter}>
+                          Xoá
+                        </Button>
+                        <Button type="button" size="sm" className="h-7 rounded-full text-xs normal-case" onClick={applyCostFilter}>
+                          Áp dụng
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <span>Chi phí (VND)</span>
+                </div>
+              </TableHead>
               <TableHead className="w-20 pr-4" />
             </TableRow>
           </TableHeader>
@@ -224,8 +356,8 @@ export function AdsCostTable({
               return (
                 <TableRow
                   key={row.id}
-                  className={`odd:bg-secondary/10 ${selecting ? "cursor-pointer" : ""} ${checked ? "bg-accent/30" : ""}`}
-                  onClick={selecting ? () => toggleOne(row.id) : undefined}
+                  className={`cursor-pointer odd:bg-secondary/10 hover:bg-status-received-bg/45 ${checked ? "bg-accent/30" : ""}`}
+                  onClick={() => (selecting ? toggleOne(row.id) : router.push(`/ads-cost/${row.id}`))}
                 >
                   {selecting && (
                     <TableCell className="pl-5" onClick={(e) => e.stopPropagation()}>
@@ -247,7 +379,7 @@ export function AdsCostTable({
                     {row.branchCode ? (branchNames[row.branchCode] ?? row.branchCode) : "—"}
                   </TableCell>
                   <TableCell className="px-4 text-right font-mono text-sm text-foreground">{formatVnd(row.costVnd)}</TableCell>
-                  <TableCell className="pr-4 pl-1">
+                  <TableCell className="pr-4 pl-1" onClick={(e) => e.stopPropagation()}>
                     {!selecting && (
                       <div className="flex items-center justify-end gap-0.5">
                         <AdsCostDialog
