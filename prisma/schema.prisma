@@ -137,6 +137,11 @@ model User {
   systemLogs              SystemLog[]
   closedMktPageReports    MktPageReport[] @relation("ClosedMktPageReport")
 
+  studentProfilesAssignedTo StudentProfile[]  @relation("StudentAssignedTo")
+  studentProfilesAssignedBy StudentProfile[]  @relation("StudentAssignedBy")
+  studentProfilesUpdatedBy  StudentProfile[]  @relation("StudentUpdatedBy")
+  studentCareLogs           StudentCareLog[]
+
   @@map("users")
 }
 
@@ -261,7 +266,8 @@ model Interaction {
   followupHandledBy User?          @relation("FollowupHandledBy", fields: [followupHandledByEmail], references: [email])
   mktPushedBy      User?           @relation("MktPushedBy", fields: [mktPushedByEmail], references: [email])
 
-  migrationMeta InteractionMigrationMeta?
+  migrationMeta   InteractionMigrationMeta?
+  studentProfiles StudentProfile[]
   systemLogs    SystemLog[]
 
   @@index([customerKey])
@@ -301,6 +307,25 @@ model AdsCost {
   note           String?
   updatedByEmail String?  @map("updated_by_email")
   updatedAt      DateTime @map("updated_at")
+
+  // Từ file report Facebook Ads Manager (Campaign name/Ad set name/Media
+  // type/Result type/Results/Impressions/Post engagements/Link clicks/
+  // Messaging conversations/ThruPlays) — chỉ điền được qua "Nhập chi phí từ
+  // Excel" khi nhập đúng file export từ Ads Manager; nhập tay thủ công thì để
+  // trống. "results"/"resultType" chỉ mang tính tham khảo hiển thị vì ý
+  // nghĩa "Results" đổi theo mục tiêu tối ưu của từng quảng cáo, không dùng
+  // để tính toán gì cứng.
+  campaignName           String? @map("campaign_name")
+  adSetName              String? @map("ad_set_name")
+  mediaType              String? @map("media_type")
+  resultType             String? @map("result_type")
+  results                Int?
+  resultsInitial         Int?    @map("results_initial")
+  impressions            Int?
+  postEngagements        Int?    @map("post_engagements")
+  linkClicks             Int?    @map("link_clicks")
+  messagingConversations Int?    @map("messaging_conversations")
+  thruPlays              Int?    @map("thru_plays")
 
   source  Source?  @relation(fields: [sourceName], references: [name])
   fanpage Fanpage? @relation(fields: [fanpageName], references: [name])
@@ -354,4 +379,81 @@ model SystemLog {
   @@index([loggedAt])
   @@index([interactionId])
   @@map("system_log")
+}
+
+// ---------------------------------------------------------------------------
+// 5. TƯ VẤN HỌC VIÊN — Hướng A: tách hoàn toàn khỏi Interaction, KHÔNG đụng
+// field/logic sẵn có (statusName, assignedSaleEmail, workspaceClaimedByEmail...).
+// Leader phân bổ 1 liên hệ Đủ tiêu chuẩn cho 1 Sale để gọi điện tư vấn ghi
+// danh; interactionId chỉ là liên kết MỀM để tra lại lead gốc khi cần.
+// ---------------------------------------------------------------------------
+
+model StudentProfile {
+  id            String   @id @default(cuid())
+  interactionId String?  @map("interaction_id")
+
+  studentName   String   @map("student_name")
+  age           Int?
+  dateOfBirth   DateTime? @map("date_of_birth")
+  gender        String?
+  parentName    String?  @map("parent_name")
+  phone         String
+  address       String?
+  level         String?
+  trainingTrack String?  @map("training_track")
+  school        String?
+  aspiration    String?
+
+  // Mốc xa nhất Sale đã đạt được trong phễu tư vấn (Đã gọi/Quan tâm/Không
+  // quan tâm/Đặt lịch test/Đã test/Đặt lịch học thử/Đã học thử/Đã chốt) —
+  // xem STUDENT_STAGE trong lib/interactions/constants.ts. null = chưa gọi
+  // lần nào. stageReason tuỳ chọn, mở cho nhập ở bất kỳ mốc nào để giải
+  // thích vì sao hồ sơ đang dừng ở đó (không đến test, do giá, do giáo viên...).
+  stage       String?
+  stageReason String? @map("stage_reason")
+  // Case đang kẹt (mở rộng từ stageReason, mirror sheet "Khách kẹt"): hạn xử
+  // lý tiếp theo Sale tự đặt, và cờ Sale bật khi cần Leader can thiệp — Leader
+  // lọc được ngay ở trang Thống kê thay vì phải đọc từng dòng lý do.
+  caseDeadline       DateTime? @map("case_deadline")
+  needsLeaderSupport Boolean   @default(false) @map("needs_leader_support")
+  // Ngày hẹn cụ thể — chỉ có ý nghĩa khi stage = "Đặt lịch test"/"Đặt lịch học
+  // thử", cho phép tự phát hiện "quá hạn hẹn mà chưa cập nhật kết quả".
+  appointmentAt DateTime? @map("appointment_at")
+
+  assignedToEmail String   @map("assigned_to_email")
+  assignedByEmail String   @map("assigned_by_email")
+  assignedAt      DateTime @map("assigned_at")
+
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedByEmail String?   @map("updated_by_email")
+  updatedAt      DateTime? @map("updated_at")
+
+  interaction Interaction? @relation(fields: [interactionId], references: [interactionId])
+  assignedTo  User         @relation("StudentAssignedTo", fields: [assignedToEmail], references: [email])
+  assignedBy  User         @relation("StudentAssignedBy", fields: [assignedByEmail], references: [email])
+  updatedBy   User?        @relation("StudentUpdatedBy", fields: [updatedByEmail], references: [email])
+  careLogs    StudentCareLog[]
+
+  @@index([assignedToEmail])
+  @@index([interactionId])
+  @@map("student_profiles")
+}
+
+// Nhật ký chăm sóc — mỗi lần Sale gọi điện là 1 dòng, tách riêng khỏi
+// StudentProfile vì là dữ liệu lặp theo thời gian (không dùng chung SystemLog
+// của Interaction — giữ đúng tinh thần tách biệt khỏi hạ tầng cũ).
+model StudentCareLog {
+  id               String   @id @default(cuid())
+  studentProfileId String   @map("student_profile_id")
+  loggedAt         DateTime @default(now()) @map("logged_at")
+  loggedByEmail    String   @map("logged_by_email")
+  content          String
+  stageAtLogTime   String?  @map("stage_at_log_time")
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id])
+  loggedBy       User           @relation(fields: [loggedByEmail], references: [email])
+
+  @@index([studentProfileId])
+  @@map("student_care_logs")
 }
