@@ -31,9 +31,13 @@ type ImportRow = {
   adId: string;
   customerObjectName: string;
   conversationLink: string;
+  // Có giá trị thì liên hệ được tạo thẳng ở trạng thái "Đủ tiêu chuẩn" thay
+  // vì "Chờ" — dùng để nhập lại các liên hệ cũ đã có SĐT (tổng hợp từ nhiều
+  // nguồn) để đưa thẳng vào hàng chờ phân bổ ở "Phân bổ học viên".
+  phone: string;
 };
 
-const TEMPLATE_HEADERS = ["Link khách hàng", "Tên khách", "Fanpage", "Ad ID", "Đối tượng", "Link hội thoại"] as const;
+const TEMPLATE_HEADERS = ["Link khách hàng", "Tên khách", "Fanpage", "Ad ID", "Đối tượng", "Link hội thoại", "SĐT"] as const;
 
 // Khớp tên cột linh hoạt (thường/hoa, khoảng trắng thừa) — nếu file không khớp
 // tên cột nào cả thì rơi về đúng thứ tự cột như file mẫu.
@@ -50,6 +54,11 @@ const HEADER_FIELD_MAP: Record<string, keyof Omit<ImportRow, "id">> = {
   "doi tuong": "customerObjectName",
   "link hội thoại": "conversationLink",
   "link hoi thoai": "conversationLink",
+  "sđt": "phone",
+  "sdt": "phone",
+  "số điện thoại": "phone",
+  "so dien thoai": "phone",
+  phone: "phone",
 };
 const POSITIONAL_FIELDS: (keyof Omit<ImportRow, "id">)[] = [
   "rawLink",
@@ -58,6 +67,7 @@ const POSITIONAL_FIELDS: (keyof Omit<ImportRow, "id">)[] = [
   "adId",
   "customerObjectName",
   "conversationLink",
+  "phone",
 ];
 
 function cellText(value: unknown): string {
@@ -80,7 +90,7 @@ async function downloadTemplate() {
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("Liên hệ");
   sheet.addRow([...TEMPLATE_HEADERS]);
-  sheet.addRow(["https://facebook.com/vidu.khach", "Nguyễn Văn A", "", "", "", ""]);
+  sheet.addRow(["https://facebook.com/vidu.khach", "Nguyễn Văn A", "", "", "", "", ""]);
   sheet.getRow(1).font = { bold: true };
   sheet.columns.forEach((c) => (c.width = 26));
   const buffer = await wb.xlsx.writeBuffer();
@@ -130,6 +140,7 @@ async function parseWorkbook(file: File): Promise<ImportRow[]> {
       adId: draft.adId ?? "",
       customerObjectName: draft.customerObjectName ?? "",
       conversationLink: draft.conversationLink ?? "",
+      phone: draft.phone ?? "",
     });
   });
   return rows;
@@ -243,6 +254,7 @@ export function LeadsImportView({
       customerObjectName: row.customerObjectName,
       assignedBranchCode: targetBranchCode,
       conversationLink: row.conversationLink || undefined,
+      phoneRaw: row.phone || undefined,
       duplicateConfirmed: duplicateReason ? true : undefined,
       duplicateReason,
     };
@@ -364,6 +376,7 @@ export function LeadsImportView({
         </div>
         <p className="text-xs text-muted-foreground">
           File cần có các cột: {TEMPLATE_HEADERS.join(", ")}. Nếu tên cột không khớp, hệ thống sẽ đọc theo đúng thứ tự cột như file mẫu.
+          Dòng nào có điền cột SĐT sẽ được tạo thẳng ở trạng thái &quot;Đủ tiêu chuẩn&quot; (dùng cho liên hệ cũ đã có SĐT, tổng hợp từ nhiều nguồn) — dòng không có SĐT vẫn tạo bình thường ở trạng thái &quot;Chờ&quot;.
         </p>
       </div>
     );
@@ -425,6 +438,7 @@ export function LeadsImportView({
                 <TableHead className="min-w-32 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Ad ID</TableHead>
                 <TableHead className="min-w-36 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Đối tượng</TableHead>
                 <TableHead className="min-w-48 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Link hội thoại</TableHead>
+                <TableHead className="min-w-36 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">SĐT (nếu có)</TableHead>
                 <TableHead className="w-10 pr-3" />
               </TableRow>
             </TableHeader>
@@ -491,6 +505,14 @@ export function LeadsImportView({
                         className="h-9 rounded-lg"
                       />
                     </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Input
+                        value={row.phone}
+                        onChange={(e) => updateRow(row.id, "phone", e.target.value)}
+                        placeholder="Có SĐT → Đủ tiêu chuẩn"
+                        className="h-9 rounded-lg font-mono"
+                      />
+                    </TableCell>
                     <TableCell className="pr-3 pl-1 py-2.5">
                       <Button
                         type="button"
@@ -507,7 +529,7 @@ export function LeadsImportView({
                   {(duplicate || rowError) && (
                     <TableRow className="bg-secondary/20 hover:bg-secondary/20">
                       <TableCell />
-                      <TableCell colSpan={7} className="px-3 py-3">
+                      <TableCell colSpan={8} className="px-3 py-3">
                         {duplicate ? (
                           <Alert variant="destructive" className="py-2">
                             <AlertDescription className="flex flex-wrap items-center justify-between gap-3">

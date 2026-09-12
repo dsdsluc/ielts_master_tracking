@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileDown, Inbox, LoaderCircle, RotateCcw, Search, SlidersHorizontal, Sparkles, User } from "lucide-react";
+import { FileDown, Inbox, ListChecks, LoaderCircle, RotateCcw, Search, SlidersHorizontal, Sparkles, User, UserCog, X } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/empty-state";
@@ -10,9 +10,10 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LeadsTable } from "@/app/(app)/leads/lead-row";
+import { LeadsTable, type LeadSelection } from "@/app/(app)/leads/lead-row";
 import { LeadDetailSheet } from "@/app/(app)/leads/lead-detail-sheet";
 import { NewLeadDialog, type LeadFormOptions } from "@/app/(app)/leads/new-lead-dialog";
+import { BulkReassignDialog } from "@/app/(app)/leads/bulk-reassign-dialog";
 import { fetchInteractions, fetchQueue } from "@/app/(app)/leads/leads-api";
 import type { InteractionListItem, LeadStatus, QueueResponse } from "@/app/(app)/leads/types";
 
@@ -79,10 +80,12 @@ export function LeadsQueueView({
   options,
   currentUserEmail,
   currentUserName,
+  canReassign = false,
 }: {
   options: LeadFormOptions;
   currentUserEmail: string;
   currentUserName: string;
+  canReassign?: boolean;
 }) {
   const [tab, setTab] = useState<TabKey>("priority");
   const [queue, setQueue] = useState<QueueResponse | null>(null);
@@ -97,6 +100,36 @@ export function LeadsQueueView({
   const [branch, setBranch] = useState("all");
   const [followupOnly, setFollowupOnly] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
+
+  // Điều chuyển hàng loạt — chỉ áp dụng cho tab "Đã đóng" (chỉ liên hệ Đủ tiêu
+  // chuẩn mới điều chuyển được, xem reassignInteractions() ở backend).
+  const [bulkSelecting, setBulkSelecting] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+
+  const isReassignable = useCallback((item: InteractionListItem) => item.status === "Đủ tiêu chuẩn", []);
+
+  function toggleBulkOne(item: InteractionListItem) {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.interactionId)) next.delete(item.interactionId);
+      else next.add(item.interactionId);
+      return next;
+    });
+  }
+
+  function stopBulkSelecting() {
+    setBulkSelecting(false);
+    setBulkSelected(new Set());
+  }
+
+  const bulkSelection: LeadSelection | undefined = bulkSelecting
+    ? { selectedIds: bulkSelected, onToggle: toggleBulkOne, isSelectable: isReassignable }
+    : undefined;
+
+  const bulkItemsForDialog = flatItems
+    .filter((i) => bulkSelected.has(i.interactionId))
+    .map((i) => ({ interactionId: i.interactionId, expectedVersion: i.version }));
 
   const samples = useMemo(() => sampleItems(options.branches[0]?.code ?? "TDM"), [options.branches]);
 
@@ -156,6 +189,7 @@ export function LeadsQueueView({
   function changeTab(next: TabKey) {
     setTab(next);
     setPage(1);
+    stopBulkSelecting();
   }
 
   function refreshCurrentTab() {
@@ -191,18 +225,47 @@ export function LeadsQueueView({
             </TooltipProvider>
           </TabsList>
           <div className="flex shrink-0 items-center gap-2">
-            {exportHref() && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-10 rounded-full"
-                nativeButton={false}
-                render={<a href={exportHref() ?? undefined} />}
-              >
-                <FileDown className="size-3.5" /> Xuất Excel
-              </Button>
+            {tab === "closed" && canReassign && bulkSelecting ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Đã chọn <strong className="font-mono text-foreground">{bulkSelected.size}</strong> liên hệ
+                </p>
+                <Button type="button" variant="ghost" size="sm" className="rounded-full text-muted-foreground" onClick={stopBulkSelecting}>
+                  <X className="size-3.5" /> Huỷ
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="glossy rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90"
+                  disabled={bulkSelected.size === 0}
+                  onClick={() => setBulkDialogOpen(true)}
+                >
+                  <UserCog className="size-3.5" />
+                  Điều chuyển ({bulkSelected.size})
+                </Button>
+              </>
+            ) : (
+              <>
+                {tab === "closed" && canReassign && (
+                  <Button variant="outline" size="sm" className="h-10 rounded-full" onClick={() => setBulkSelecting(true)}>
+                    <ListChecks className="size-3.5" />
+                    Chọn để điều chuyển
+                  </Button>
+                )}
+                {exportHref() && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 rounded-full"
+                    nativeButton={false}
+                    render={<a href={exportHref() ?? undefined} />}
+                  >
+                    <FileDown className="size-3.5" /> Xuất Excel
+                  </Button>
+                )}
+                <NewLeadDialog options={options} onCreated={refreshCurrentTab} />
+              </>
             )}
-            <NewLeadDialog options={options} onCreated={refreshCurrentTab} />
           </div>
         </div>
 
@@ -276,6 +339,7 @@ export function LeadsQueueView({
                   onOpen={setSelectedId}
                   currentUserEmail={currentUserEmail}
                   currentUserName={currentUserName}
+                  selection={t.key === "closed" ? bulkSelection : undefined}
                 />
                 {pageMeta && flatItems.length > 0 && (
                   <PaginationBar page={pageMeta.page} totalPages={pageMeta.totalPages} totalItems={pageMeta.totalItems} onPageChange={setPage} />
@@ -291,6 +355,18 @@ export function LeadsQueueView({
         onOpenChange={(open) => !open && setSelectedId(null)}
         onChanged={refreshCurrentTab}
       />
+
+      {canReassign && (
+        <BulkReassignDialog
+          open={bulkDialogOpen}
+          onOpenChange={setBulkDialogOpen}
+          items={bulkItemsForDialog}
+          onDone={() => {
+            stopBulkSelecting();
+            refreshCurrentTab();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -399,6 +475,7 @@ function FlatList({
   onOpen,
   currentUserEmail,
   currentUserName,
+  selection,
 }: {
   items: InteractionListItem[];
   samples: InteractionListItem[];
@@ -406,6 +483,7 @@ function FlatList({
   onOpen: (id: string) => void;
   currentUserEmail: string;
   currentUserName: string;
+  selection?: LeadSelection;
 }) {
   const hasRealData = items.length > 0;
   const filteredItems = (hasRealData ? items : samples).filter(matchesFilters);
@@ -422,6 +500,7 @@ function FlatList({
       isSample={!hasRealData}
       currentUserEmail={currentUserEmail}
       currentUserName={currentUserName}
+      selection={hasRealData ? selection : undefined}
     />
   );
 }

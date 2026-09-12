@@ -68,20 +68,30 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
   const touch = await getCustomerTouch(customerKey, info.adId);
   const interactionType = dup.requiresConfirmation ? dup.confirmedClassification : dup.classification;
 
+  // Nhập kèm sẵn SĐT (vd. Excel tổng hợp liên hệ cũ) — tạo thẳng ở trạng thái
+  // "Đủ tiêu chuẩn" thay vì "Chờ", đúng ý nghĩa nghiệp vụ (Đủ tiêu chuẩn = đã
+  // có SĐT hợp lệ) — mirror đúng field set của updateStatus() khi chuyển
+  // WAITING/PROCESSING -> PHONE lần đầu.
+  const phoneNorm = input.phoneRaw ? normalizePhone(input.phoneRaw) : "";
+  if (input.phoneRaw && !phoneNorm) {
+    throw new ApiError(422, "VALIDATION_ERROR", "SĐT không hợp lệ — cần đúng định dạng số Việt Nam 10 chữ số.");
+  }
+  const initialStatus = phoneNorm ? STATUS.PHONE : STATUS.WAITING;
+
   const now = new Date();
   const interactionId = newInteractionId();
 
   const detail = await prisma.$transaction(async (tx) => {
     await tx.customer.upsert({
       where: { customerKey },
-      update: { displayName: info.customerName, lastTouchAt: now, currentStatusName: STATUS.WAITING },
+      update: { displayName: info.customerName, lastTouchAt: now, currentStatusName: initialStatus },
       create: {
         customerKey,
         displayName: info.customerName,
         canonicalLink: info.canonicalLink,
         firstTouchAt: now,
         lastTouchAt: now,
-        currentStatusName: STATUS.WAITING,
+        currentStatusName: initialStatus,
       },
     });
 
@@ -103,7 +113,7 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
         customerObjectName: info.customerObjectName,
         suggestedBranchCode: info.suggestedBranchCode,
         assignedBranchCode: info.assignedBranchCode,
-        statusName: STATUS.WAITING,
+        statusName: initialStatus,
         interactionType,
         touchCount: touch.sequence,
         createdByEmail: actor.email,
@@ -117,6 +127,16 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
         // thêm thủ công. Luôn hợp lệ vì đây là dòng Interaction vừa tạo mới,
         // không thể đã bị ai khác claim trước.
         workspaceClaimedByEmail: actor.email,
+        ...(phoneNorm
+          ? {
+              phoneRaw: input.phoneRaw,
+              phoneNormalized: phoneNorm,
+              phoneCapturedAt: now,
+              closedAt: now,
+              assignedSaleEmail: actor.email,
+              receivedAt: now,
+            }
+          : {}),
       },
     });
 
@@ -542,14 +562,15 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string)
 // ---------------------------------------------------------------------------
 // Leader/Admin điều chuyển người phụ trách — chỉ áp dụng lead đã Đủ tiêu chuẩn.
 // ---------------------------------------------------------------------------
-export async function reassignInteraction(actor: CurrentUser, interactionId: string, targetEmail: string, reason: string, expectedVersion: number) {
-  requireRole(actor, CAN_REASSIGN);
-
+async function validateReassignTarget(targetEmail: string) {
   const target = await prisma.user.findUnique({ where: { email: targetEmail } });
   if (!target || !target.active || ![ROLES.SALES, ROLES.LEADER, ROLES.ADMIN].includes(target.role as never)) {
     throw new ApiError(422, "VALIDATION_ERROR", "Người phụ trách mới chưa hoạt động hoặc không có vai trò phù hợp.");
   }
+  return target;
+}
 
+async function applyReassign(actor: CurrentUser, interactionId: string, targetEmail: string, reason: string, expectedVersion: number) {
   const lead = await loadInteractionOr404(interactionId);
   if (canonicalStatusKey(lead.statusName) !== "PHONE") {
     throw new ApiError(422, "VALIDATION_ERROR", "Chỉ điều chỉnh người phụ trách sau khi lead đã đủ tiêu chuẩn và có SĐT.");
@@ -572,8 +593,40 @@ export async function reassignInteraction(actor: CurrentUser, interactionId: str
     });
     if (result.count === 0) throw Errors.staleVersion();
     await logAction(tx, actor, SYSTEM_LOG_ACTION.REASSIGN_PHONE_LEAD, interactionId, { assignedSaleEmail: lead.assignedSaleEmail }, { assignedSaleEmail: targetEmail }, "SUCCESS", reason);
-    return getInteractionDetail(actor, interactionId, tx);
   });
+}
+
+export async function reassignInteraction(actor: CurrentUser, interactionId: string, targetEmail: string, reason: string, expectedVersion: number) {
+  requireRole(actor, CAN_REASSIGN);
+  await validateReassignTarget(targetEmail);
+  await applyReassign(actor, interactionId, targetEmail, reason, expectedVersion);
+  return getInteractionDetail(actor, interactionId);
+}
+
+// Điều chuyển hàng loạt — Leader/Admin chọn nhiều liên hệ Đủ tiêu chuẩn cùng
+// lúc, giao hết cho 1 Sale khác. Xử lý tuần tự, bỏ qua liên hệ nào lỗi (đổi
+// trạng thái/version từ lúc chọn đến lúc gửi) thay vì huỷ toàn bộ — mirror
+// đúng pattern createStudentAssignments() (lib/students/mutations.ts).
+export async function reassignInteractions(
+  actor: CurrentUser,
+  items: { interactionId: string; expectedVersion: number }[],
+  targetEmail: string,
+  reason: string
+): Promise<{ reassigned: string[]; skipped: string[] }> {
+  requireRole(actor, CAN_REASSIGN);
+  await validateReassignTarget(targetEmail);
+
+  const reassigned: string[] = [];
+  const skipped: string[] = [];
+  for (const { interactionId, expectedVersion } of items) {
+    try {
+      await applyReassign(actor, interactionId, targetEmail, reason, expectedVersion);
+      reassigned.push(interactionId);
+    } catch {
+      skipped.push(interactionId);
+    }
+  }
+  return { reassigned, skipped };
 }
 
 export { detailInclude, toDetail };

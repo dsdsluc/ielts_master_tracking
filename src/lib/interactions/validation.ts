@@ -11,6 +11,9 @@ export const leadInfoSchema = z.object({
   customerObjectName: z.string().trim().optional(),
   assignedBranchCode: z.string().trim().optional(),
   conversationLink: z.string().trim().optional(),
+  // Nhập kèm SĐT (vd. từ Excel nhập liên hệ cũ) — có giá trị thì tạo thẳng ở
+  // trạng thái "Đủ tiêu chuẩn" thay vì "Chờ". Xem createInteraction().
+  phoneRaw: z.string().trim().optional(),
   duplicateConfirmed: z.boolean().optional(),
   duplicateReason: z.string().trim().optional(),
 });
@@ -62,4 +65,13 @@ export const reassignSchema = z.object({
   targetEmail: z.string().trim().email("Email người phụ trách mới không hợp lệ."),
   reason: z.string().trim().min(1, "Vui lòng nhập lý do điều chỉnh."),
   expectedVersion: z.number().int().min(1),
+});
+
+export const bulkReassignSchema = z.object({
+  items: z
+    .array(z.object({ interactionId: z.string().trim().min(1), expectedVersion: z.number().int().min(1) }))
+    .min(1, "Vui lòng chọn ít nhất một liên hệ.")
+    .max(50, "Mỗi lần chỉ điều chuyển tối đa 50 liên hệ."),
+  targetEmail: z.string().trim().email("Email người phụ trách mới không hợp lệ."),
+  reason: z.string().trim().min(1, "Vui lòng nhập lý do điều chỉnh."),
 });

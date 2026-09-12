@@ -36,6 +36,18 @@ export function branchScopeWhere(actor: CurrentUser): Prisma.InteractionWhereInp
   return actor.branchCode ? { assignedBranchCode: actor.branchCode } : {};
 }
 
+/** Sale/Leader/Admin đang hoạt động — danh sách cho Leader/Admin chọn khi
+ * điều chuyển người phụ trách (reassignInteraction). Chỉ Leader/Admin mới gọi
+ * được (route tự kiểm tra CAN_REASSIGN), và cả 2 vai trò này đã thấy toàn bộ
+ * chi nhánh (isLeaderLike ở scope.ts) nên không cần lọc theo cơ sở actor. */
+export async function getAssignableSalesForReassign() {
+  return prisma.user.findMany({
+    where: { role: { in: [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] }, active: true },
+    select: { email: true, fullName: true },
+    orderBy: { fullName: "asc" },
+  });
+}
+
 function buildPermissions(actor: CurrentUser, lead: { statusName: string; assignedBranchCode: string; needsFollowup: boolean }): InteractionDetail["permissions"] {
   const accessible = canAccessBranch(actor, lead.assignedBranchCode);
   const open = isOpenStatus(lead.statusName);

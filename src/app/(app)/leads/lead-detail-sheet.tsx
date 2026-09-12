@@ -10,6 +10,7 @@ import {
   MessageCircleMore,
   PhoneCall,
   Sparkles,
+  UserCog,
 } from "lucide-react";
 import {
   Sheet,
@@ -30,6 +31,7 @@ import { InfoRow } from "@/app/(app)/leads/info-row";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { QualifyDialog } from "@/app/(app)/leads/qualify-dialog";
 import { SpamDialog } from "@/app/(app)/leads/spam-dialog";
+import { ReassignDialog } from "@/app/(app)/leads/reassign-dialog";
 
 export function LeadDetailSheet({
   interactionId,
@@ -53,9 +55,11 @@ export function LeadDetailSheet({
   } = useInteractionDetail(interactionId, onChanged);
   const [qualifyOpen, setQualifyOpen] = useState(false);
   const [spamOpen, setSpamOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
 
   const open = interactionId !== null;
   const isOpenStatus = detail?.status === "Chờ" || detail?.status === "Tiếp nhận";
+  const canReassign = detail?.permissions.canReassign ?? false;
 
   return (
     <>
@@ -123,6 +127,9 @@ export function LeadDetailSheet({
                   <InfoRow label="Cơ sở phụ trách" value={detail.assignedBranchCode} />
                   <InfoRow label="Cơ sở gợi ý" value={detail.suggestedBranchCode} />
                   <InfoRow label="Tư vấn viên" value={detail.consultantName ?? "Chưa gán"} />
+                  {detail.reassignedByName && (
+                    <InfoRow label="Điều chuyển bởi" value={`${detail.reassignedByName}${detail.reassignReason ? ` — ${detail.reassignReason}` : ""}`} />
+                  )}
                   <InfoRow
                     label="SĐT"
                     value={
@@ -207,21 +214,35 @@ export function LeadDetailSheet({
                 {error && <FormMessage kind="error" className="mt-4">{error}</FormMessage>}
               </div>
 
-              {isOpenStatus && (
+              {(isOpenStatus || canReassign) && (
                 <SheetFooter className="flex-row flex-wrap gap-2 border-t border-border bg-muted/40 px-6 py-4">
-                  <TouchLogDialog onSubmit={handleLogTouch} pending={touchPending} className="rounded-full border-status-received/25 bg-status-received-bg/50 px-4 text-status-received hover:bg-status-received-bg" />
-                  {detail.status === "Chờ" && (
-                    <Button variant="secondary" size="sm" className="rounded-full bg-status-received-bg px-4 text-status-received hover:bg-status-received-bg/70" onClick={handleMoveToInProgress} disabled={touchPending}>
-                      Chuyển Tiếp nhận
-                    </Button>
+                  {isOpenStatus && (
+                    <>
+                      <TouchLogDialog onSubmit={handleLogTouch} pending={touchPending} className="rounded-full border-status-received/25 bg-status-received-bg/50 px-4 text-status-received hover:bg-status-received-bg" />
+                      {detail.status === "Chờ" && (
+                        <Button variant="secondary" size="sm" className="rounded-full bg-status-received-bg px-4 text-status-received hover:bg-status-received-bg/70" onClick={handleMoveToInProgress} disabled={touchPending}>
+                          Chuyển Tiếp nhận
+                        </Button>
+                      )}
+                    </>
                   )}
                   <div className="ml-auto flex gap-2">
-                    <Button variant="destructive" size="sm" className="rounded-full border border-destructive/20 bg-destructive/10 px-4 text-destructive hover:bg-destructive/20" onClick={() => setSpamOpen(true)}>
-                      Spam
-                    </Button>
-                    <Button size="sm" className="glossy shadow-bubble rounded-full bg-status-qualified px-4 text-white hover:bg-status-qualified/90" onClick={() => setQualifyOpen(true)}>
-                      Đủ tiêu chuẩn
-                    </Button>
+                    {canReassign && (
+                      <Button variant="outline" size="sm" className="rounded-full border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground" onClick={() => setReassignOpen(true)}>
+                        <UserCog className="size-3.5" />
+                        Điều chuyển
+                      </Button>
+                    )}
+                    {isOpenStatus && (
+                      <>
+                        <Button variant="destructive" size="sm" className="rounded-full border border-destructive/20 bg-destructive/10 px-4 text-destructive hover:bg-destructive/20" onClick={() => setSpamOpen(true)}>
+                          Spam
+                        </Button>
+                        <Button size="sm" className="glossy shadow-bubble rounded-full bg-status-qualified px-4 text-white hover:bg-status-qualified/90" onClick={() => setQualifyOpen(true)}>
+                          Đủ tiêu chuẩn
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </SheetFooter>
               )}
@@ -245,6 +266,14 @@ export function LeadDetailSheet({
             interactionId={detail.interactionId}
             expectedVersion={detail.version}
             touchCount={detail.touchCount}
+            onDone={refresh}
+          />
+          <ReassignDialog
+            open={reassignOpen}
+            onOpenChange={setReassignOpen}
+            interactionId={detail.interactionId}
+            expectedVersion={detail.version}
+            currentAssignedEmail={detail.assignedSaleEmail}
             onDone={refresh}
           />
         </>

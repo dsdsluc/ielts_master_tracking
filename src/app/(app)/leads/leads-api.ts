@@ -64,6 +64,33 @@ export async function resolveFollowup(id: string): Promise<InteractionDetail> {
   return apiFetch<InteractionDetail>(`/api/interactions/${id}/followup/resolve`, { method: "POST" });
 }
 
+export type AssignableSale = { email: string; fullName: string };
+
+export async function fetchAssignableSales(): Promise<AssignableSale[]> {
+  return apiFetch<AssignableSale[]>("/api/interactions/assignable-sales", { cache: "no-store" });
+}
+
+export async function reassignInteraction(
+  id: string,
+  payload: { targetEmail: string; reason: string; expectedVersion: number }
+): Promise<InteractionDetail> {
+  return apiFetch<InteractionDetail>(`/api/interactions/${id}/reassign`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function reassignInteractionsBulk(payload: {
+  items: { interactionId: string; expectedVersion: number }[];
+  targetEmail: string;
+  reason: string;
+}): Promise<{ reassigned: string[]; skipped: string[] }> {
+  return apiFetch("/api/interactions/reassign-bulk", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export type LeadInfoPayload = {
   rawLink: string;
   customerName: string;
@@ -72,6 +99,9 @@ export type LeadInfoPayload = {
   customerObjectName: string;
   assignedBranchCode: string;
   conversationLink?: string;
+  // Có giá trị thì tạo thẳng ở trạng thái "Đủ tiêu chuẩn" thay vì "Chờ" — xem
+  // createInteraction() (mutations.ts).
+  phoneRaw?: string;
   // Xác nhận vẫn tạo/lưu dù hệ thống nghi trùng với 1 hội thoại gần đây —
   // đúng tên field server mong đợi (resolveLeadInfo đọc duplicateConfirmed/
   // duplicateReason, KHÔNG có field "overrideReason" nào cả).
