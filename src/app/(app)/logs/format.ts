@@ -15,6 +15,9 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   RELEASE_FROM_WORKSPACE: "Giải phóng liên hệ khỏi Workspace",
   FLAG_SLA_BREACH: "Đánh dấu quá SLA",
   SEND_BROADCAST_EMAIL: "Gửi email cho thành viên",
+  ASSIGN_STUDENT: "Phân bổ học viên",
+  UPDATE_STUDENT_STAGE: "Cập nhật tiến trình tư vấn học viên",
+  TRANSFER_STUDENT: "Chuyển giao học viên",
 };
 
 export function actionLabel(action: string) {

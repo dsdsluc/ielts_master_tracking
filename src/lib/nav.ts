@@ -24,8 +24,16 @@ import {
   Briefcase,
   ClipboardCheck,
   TimerOff,
+  UserRoundPlus,
+  GraduationCap,
 } from "lucide-react";
-import { ROLES, CAN_VIEW_LEAD, CAN_PUSH_FOLLOWUP, CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
+import {
+  ROLES,
+  CAN_VIEW_LEAD,
+  CAN_PUSH_FOLLOWUP,
+  CAN_CREATE_OR_EDIT_LEAD,
+  CAN_REASSIGN,
+} from "@/lib/interactions/constants";
 
 type AppRole = (typeof ROLES)[keyof typeof ROLES];
 
@@ -97,6 +105,12 @@ export const navGroups: NavGroup[] = [
     items: [
       { title: "Liên hệ", href: "/leads", icon: Inbox, allowedRoles: LEAD_ROLES },
       {
+        title: "Liên hệ chờ phản hồi quá lâu",
+        href: "/sla-queue",
+        icon: TimerOff,
+        allowedRoles: CAN_REASSIGN,
+      },
+      {
         title: "Workspace của tôi",
         href: "/workspace",
         icon: Briefcase,
@@ -115,6 +129,18 @@ export const navGroups: NavGroup[] = [
         allowedRoles: SALE_WORKSPACE_ROLES,
       },
       {
+        title: "Chăm sóc lại",
+        href: "/followup",
+        icon: Sparkles,
+        allowedRoles: CAN_PUSH_FOLLOWUP,
+      },
+      {
+        title: "Theo dõi hiệu quả chăm sóc lại",
+        href: "/followup-tracking",
+        icon: History,
+        allowedRoles: CAN_PUSH_FOLLOWUP,
+      },
+      {
         title: "Nhập từ Excel",
         href: "/leads/import",
         icon: FileSpreadsheet,
@@ -124,6 +150,18 @@ export const navGroups: NavGroup[] = [
         title: "Khách hàng trùng",
         href: "/customers/duplicates",
         icon: GitMerge,
+        allowedRoles: SALE_WORKSPACE_ROLES,
+      },
+      {
+        title: "Phân bổ học viên",
+        href: "/student-assignment",
+        icon: UserRoundPlus,
+        allowedRoles: CAN_REASSIGN,
+      },
+      {
+        title: "Học viên đang tư vấn",
+        href: "/students",
+        icon: GraduationCap,
         allowedRoles: SALE_WORKSPACE_ROLES,
       },
     ],
@@ -166,18 +204,6 @@ export const navGroups: NavGroup[] = [
         href: "/new-ad-ids",
         icon: ListPlus,
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
-      },
-      {
-        title: "Chăm sóc lại",
-        href: "/followup",
-        icon: Sparkles,
-        allowedRoles: CAN_PUSH_FOLLOWUP,
-      },
-      {
-        title: "Theo dõi hiệu quả chăm sóc lại",
-        href: "/followup-tracking",
-        icon: History,
-        allowedRoles: CAN_PUSH_FOLLOWUP,
       },
     ],
   },

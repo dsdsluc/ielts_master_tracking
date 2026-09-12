@@ -85,6 +85,9 @@ export const SYSTEM_LOG_ACTION = {
   RELEASE_FROM_WORKSPACE: "RELEASE_FROM_WORKSPACE",
   FLAG_SLA_BREACH: "FLAG_SLA_BREACH",
   SEND_BROADCAST_EMAIL: "SEND_BROADCAST_EMAIL",
+  ASSIGN_STUDENT: "ASSIGN_STUDENT",
+  UPDATE_STUDENT_STAGE: "UPDATE_STUDENT_STAGE",
+  TRANSFER_STUDENT: "TRANSFER_STUDENT",
 } as const;
 
 // Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.
@@ -94,3 +97,21 @@ export const CAN_REASSIGN = [ROLES.LEADER, ROLES.ADMIN] as const;
 export const IS_LEADER_LIKE = [ROLES.LEADER, ROLES.ADMIN] as const;
 // BGĐ chỉ xem báo cáo tổng hợp (xem canViewLead trong scope.ts) — không có mặt ở đây.
 export const CAN_VIEW_LEAD = [ROLES.SALES, ROLES.LEADER, ROLES.MARKETING, ROLES.ADMIN] as const;
+
+// Phễu tư vấn ghi danh học viên (Hướng A — tách khỏi STATUS của Interaction).
+// Đại diện cho MỐC XA NHẤT Sale đã đạt được; null (chưa gán giá trị) nghĩa là
+// chưa gọi lần nào. Không có "trạng thái rớt" riêng — dùng stageReason (trên
+// StudentProfile) để giải thích vì sao hồ sơ đang dừng ở 1 mốc bất kỳ.
+export const STUDENT_STAGE = {
+  CALLED: "Đã gọi",
+  INTERESTED: "Quan tâm",
+  NOT_INTERESTED: "Không quan tâm",
+  TEST_SCHEDULED: "Đặt lịch test",
+  TESTED: "Đã test",
+  TRIAL_SCHEDULED: "Đặt lịch học thử",
+  TRIALED: "Đã học thử",
+  ENROLLED: "Đã chốt",
+} as const;
+
+export const STUDENT_STAGE_VALUES = Object.values(STUDENT_STAGE);
+export type StudentStage = (typeof STUDENT_STAGE)[keyof typeof STUDENT_STAGE];
