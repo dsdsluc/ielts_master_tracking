@@ -89,13 +89,15 @@ type SalePerfRow = {
 async function computeSalePerformance(
   scope: Prisma.InteractionWhereInput,
   windowStart: Date,
+  windowEnd: Date | undefined,
   branchNameByCode: Map<string, string>
 ): Promise<SalePerfRow[]> {
+  const createdWindow = windowEnd ? { gte: windowStart, lt: windowEnd } : { gte: windowStart };
   const [sales, createdGroups, closedGroups, touchGroups, qualifyRows] = await Promise.all([
     prisma.user.findMany({ where: { role: ROLES.SALES, active: true }, select: { email: true, fullName: true, branchCode: true } }),
     prisma.interaction.groupBy({
       by: ["createdByEmail"],
-      where: { ...scope, activeFlag: true, createdLeadAt: { gte: windowStart } },
+      where: { ...scope, activeFlag: true, createdLeadAt: createdWindow },
       _count: { _all: true },
     }),
     prisma.interaction.groupBy({
@@ -103,15 +105,15 @@ async function computeSalePerformance(
       where: {
         ...scope,
         activeFlag: true,
-        closedAt: { gte: windowStart },
+        closedAt: createdWindow,
         statusName: { in: [STATUS.PHONE, STATUS.SPAM] },
         updatedByEmail: { not: null },
       },
       _count: { _all: true },
     }),
-    prisma.systemLog.groupBy({ by: ["actorEmail"], where: { action: SYSTEM_LOG_ACTION.TOUCH, loggedAt: { gte: windowStart } }, _count: { _all: true } }),
+    prisma.systemLog.groupBy({ by: ["actorEmail"], where: { action: SYSTEM_LOG_ACTION.TOUCH, loggedAt: createdWindow }, _count: { _all: true } }),
     prisma.interaction.findMany({
-      where: { ...scope, activeFlag: true, assignedSaleEmail: { not: null }, receivedAt: { not: null }, createdLeadAt: { gte: windowStart } },
+      where: { ...scope, activeFlag: true, assignedSaleEmail: { not: null }, receivedAt: { not: null }, createdLeadAt: createdWindow },
       select: { assignedSaleEmail: true, createdLeadAt: true, receivedAt: true },
     }),
   ]);
@@ -168,9 +170,15 @@ type FunnelSummary = { assigned: number; enrolled: number };
 // thấy toàn bộ chi nhánh — mirror branchScopeWhere trả {} cho isLeaderLike ở
 // trên) nên không cần tự áp lại phạm vi cơ sở của actor, chỉ áp bộ lọc cơ sở
 // đang chọn trên thanh filter nếu có.
-async function computeFunnelSummary(windowStart: Date, branchCode?: string): Promise<FunnelSummary> {
-  const where: Prisma.StudentProfileWhereInput = { assignedAt: { gte: windowStart } };
-  if (branchCode) where.interaction = { assignedBranchCode: branchCode };
+async function computeFunnelSummary(
+  windowStart: Date,
+  windowEnd: Date | undefined,
+  interactionFilter: Prisma.InteractionWhereInput
+): Promise<FunnelSummary> {
+  const where: Prisma.StudentProfileWhereInput = {
+    assignedAt: windowEnd ? { gte: windowStart, lt: windowEnd } : { gte: windowStart },
+  };
+  if (Object.keys(interactionFilter).length > 0) where.interaction = interactionFilter;
 
   const [assigned, enrolled] = await Promise.all([
     prisma.studentProfile.count({ where }),
@@ -186,42 +194,70 @@ function funnelRate(part: number, total: number): string {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string; branch?: string; source?: string }>;
+  searchParams: Promise<{ days?: string; branch?: string; source?: string; fanpage?: string; adId?: string; from?: string; to?: string }>;
 }) {
   const user = await requireRole(...REPORT_ROLES);
-  const { days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
+  const {
+    days: daysParam,
+    branch: branchParam,
+    source: sourceParam,
+    fanpage: fanpageParam,
+    adId: adIdParam,
+    from: fromParam,
+    to: toParam,
+  } = await searchParams;
 
   const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
 
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - (days - 1));
-  windowStart.setHours(0, 0, 0, 0);
+  // Khoảng ngày cụ thể (Từ ngày/Đến ngày) ưu tiên hơn preset nếu cả 2 giá trị
+  // hợp lệ — mirror đúng "BỘ LỌC BÁO CÁO" ở bản Google Sheets gốc, vốn dùng
+  // Từ ngày/Đến ngày làm bộ lọc chính chứ không phải preset số ngày.
+  const customFrom = fromParam ? new Date(fromParam) : null;
+  const customTo = toParam ? new Date(toParam) : null;
+  const hasCustomRange = !!(customFrom && !Number.isNaN(customFrom.getTime()) && customTo && !Number.isNaN(customTo.getTime()));
 
-  const [branches, sourceRows] = await Promise.all([
+  let windowStart: Date;
+  let windowEnd: Date | undefined;
+  if (hasCustomRange) {
+    windowStart = new Date(customFrom!);
+    windowStart.setHours(0, 0, 0, 0);
+    windowEnd = new Date(customTo!);
+    windowEnd.setHours(0, 0, 0, 0);
+    windowEnd.setDate(windowEnd.getDate() + 1); // chặn trên loại trừ — bao trọn hết ngày "Đến"
+  } else {
+    windowStart = new Date();
+    windowStart.setDate(windowStart.getDate() - (days - 1));
+    windowStart.setHours(0, 0, 0, 0);
+    windowEnd = undefined;
+  }
+  const createdWindow = windowEnd ? { gte: windowStart, lt: windowEnd } : { gte: windowStart };
+
+  const [branches, sourceRows, fanpageRows] = await Promise.all([
     prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
     prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
+    prisma.fanpage.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
   ]);
   const branchNameByCode = new Map(branches.map((b) => [b.code, b.name]));
 
   const scope = branchScopeWhere(user);
   const branchFilter: Prisma.InteractionWhereInput =
     branchParam && branchParam !== "all" && canAccessBranch(user, branchParam) ? { assignedBranchCode: branchParam } : {};
-  // Chỉ phạm vi cơ sở (+ bộ lọc cơ sở đang chọn) — KHÔNG kèm createdLeadAt, vì
-  // computeSalePerformance tự áp field ngày khác nhau cho từng truy vấn con
-  // (tạo mới theo createdLeadAt, đóng theo closedAt) — gộp sẵn createdLeadAt
-  // vào đây sẽ vô tình lọc nhầm cả những lead tạo trước cửa sổ nhưng đóng
-  // trong cửa sổ.
-  const scopeWithBranch: Prisma.InteractionWhereInput = { ...scope, ...branchFilter };
+  const sourceFilter: Prisma.InteractionWhereInput = sourceParam && sourceParam !== "all" ? { sourceName: sourceParam } : {};
+  const fanpageFilter: Prisma.InteractionWhereInput = fanpageParam && fanpageParam !== "all" ? { fanpageName: fanpageParam } : {};
+  const adIdFilter: Prisma.InteractionWhereInput = adIdParam?.trim() ? { adId: { contains: adIdParam.trim(), mode: "insensitive" } } : {};
+  // Phạm vi cơ sở + mọi chiều lọc khác (Nguồn/Fanpage/Ad ID) — KHÔNG kèm
+  // createdLeadAt, vì computeSalePerformance tự áp field ngày khác nhau cho
+  // từng truy vấn con (tạo mới theo createdLeadAt, đóng theo closedAt) — gộp
+  // sẵn createdLeadAt vào đây sẽ vô tình lọc nhầm cả những lead tạo trước cửa
+  // sổ nhưng đóng trong cửa sổ.
+  const scopeWithFilters: Prisma.InteractionWhereInput = { ...scope, ...branchFilter, ...sourceFilter, ...fanpageFilter, ...adIdFilter };
   const where: Prisma.InteractionWhereInput = {
-    ...scopeWithBranch,
+    ...scopeWithFilters,
     activeFlag: true,
-    createdLeadAt: { gte: windowStart },
+    createdLeadAt: createdWindow,
   };
-  if (sourceParam && sourceParam !== "all") {
-    where.sourceName = sourceParam;
-  }
 
-  const cacheKey = `dash:overview:v2:${JSON.stringify(scope)}:${days}:${branchParam ?? "all"}:${sourceParam ?? "all"}`;
+  const cacheKey = `dash:overview:v3:${JSON.stringify(scope)}:${days}:${branchParam ?? "all"}:${sourceParam ?? "all"}:${fanpageParam ?? "all"}:${adIdParam ?? ""}:${fromParam ?? ""}:${toParam ?? ""}`;
 
   // Điều hướng sang /customers lọc theo trạng thái — nơi duy nhất Sale/Leader/
   // Admin có thể xem danh sách khách theo trạng thái hiện có sẵn URL param.
@@ -235,14 +271,20 @@ export default async function DashboardPage({
   const canSeeSaleOps = user.role === ROLES.LEADER || user.role === ROLES.ADMIN;
   const canSeeMarketingOps = user.role === ROLES.MARKETING || user.role === ROLES.ADMIN;
 
+  const rangeLabel = hasCustomRange
+    ? `${windowStart.toLocaleDateString("vi-VN")} – ${customTo!.toLocaleDateString("vi-VN")}`
+    : `${days} ngày`;
+
   const [kpi, topAds, salePerf, funnel] = await Promise.all([
     cached(cacheKey, 90, () => computeDashboardKpi(where)),
     canSeeMarketingOps ? cached(`${cacheKey}:top-ads`, 90, () => computeTopAds(where)) : Promise.resolve([]),
     canSeeSaleOps
-      ? cached(`${cacheKey}:sale-perf`, 90, () => computeSalePerformance(scopeWithBranch, windowStart, branchNameByCode))
+      ? cached(`${cacheKey}:sale-perf`, 90, () => computeSalePerformance(scopeWithFilters, windowStart, windowEnd, branchNameByCode))
       : Promise.resolve([]),
     canSeeSaleOps
-      ? cached(`${cacheKey}:funnel`, 90, () => computeFunnelSummary(windowStart, branchParam && branchParam !== "all" ? branchParam : undefined))
+      ? cached(`${cacheKey}:funnel`, 90, () =>
+          computeFunnelSummary(windowStart, windowEnd, { ...branchFilter, ...sourceFilter, ...fanpageFilter, ...adIdFilter })
+        )
       : Promise.resolve({ assigned: 0, enrolled: 0 }),
   ]);
 
@@ -252,7 +294,7 @@ export default async function DashboardPage({
         eyebrow="Tổng quan"
         title="Dashboard"
         description="Theo dõi chất lượng nguồn và kết quả chuyển đổi thực tế."
-        action={<DashboardFilterBar branches={branches} sources={sourceRows.map((s) => s.name)} />}
+        action={<DashboardFilterBar branches={branches} sources={sourceRows.map((s) => s.name)} fanpages={fanpageRows.map((f) => f.name)} />}
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -275,7 +317,7 @@ export default async function DashboardPage({
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <TrendingUp className="size-3.5" />
-              Quảng cáo thu hút nhiều liên hệ nhất ({days} ngày)
+              Quảng cáo thu hút nhiều liên hệ nhất ({rangeLabel})
             </p>
             <Link href="/ads-performance" className="text-xs font-medium text-status-received hover:underline">
               Xem tất cả
@@ -322,7 +364,7 @@ export default async function DashboardPage({
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <TrendingUp className="size-3.5" />
-              Toàn phễu: lead → đủ tiêu chuẩn → phân bổ tư vấn → chốt ({days} ngày)
+              Toàn phễu: lead → đủ tiêu chuẩn → phân bổ tư vấn → chốt ({rangeLabel})
             </p>
             <Link href="/student-assignment/stats" className="text-xs font-medium text-status-received hover:underline">
               Xem chi tiết tư vấn
@@ -352,7 +394,7 @@ export default async function DashboardPage({
         <div className="mb-6">
           <p className="mb-3 flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             <Users className="size-3.5" />
-            Hiệu suất theo Tư vấn viên ({days} ngày)
+            Hiệu suất theo Tư vấn viên ({rangeLabel})
           </p>
           {salePerf.length === 0 ? (
             <EmptyState icon={Users} title="Chưa có dữ liệu" description="Chưa có Sale nào hoạt động trong khoảng thời gian này." />
