@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Briefcase, LoaderCircle, MessageCircleMore, Unlock } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
@@ -97,14 +97,13 @@ function WorkspaceTable({
 export function WorkspaceView({ initialWorkspace }: { initialWorkspace: InteractionListItem[] }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [workspace, setWorkspace] = useState<InteractionListItem[]>(initialWorkspace);
+  const [releasedIds, setReleasedIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-
-  // Đồng bộ lại theo dữ liệu thật mỗi khi router.refresh() làm page.tsx chạy
-  // lại (sau khi giải phóng, hoặc do sửa liên hệ trong panel chi tiết) —
-  // useState chỉ nhận initial value ở lần mount đầu nên cần effect để cập nhật.
-  useEffect(() => setWorkspace(initialWorkspace), [initialWorkspace]);
+  const workspace = useMemo(
+    () => initialWorkspace.filter((item) => !releasedIds.has(item.interactionId)),
+    [initialWorkspace, releasedIds],
+  );
 
   function markPending(id: string, pending: boolean) {
     setPendingIds((prev) => {
@@ -122,7 +121,7 @@ export function WorkspaceView({ initialWorkspace }: { initialWorkspace: Interact
         method: "POST",
         body: JSON.stringify({ interactionId: item.interactionId }),
       });
-      setWorkspace((prev) => prev.filter((r) => r.interactionId !== item.interactionId));
+      setReleasedIds((prev) => new Set(prev).add(item.interactionId));
       toast.success(`Đã giải phóng ${item.customerName} khỏi Workspace — Sale khác có thể thêm liên hệ này.`);
       router.refresh();
     } catch (err) {

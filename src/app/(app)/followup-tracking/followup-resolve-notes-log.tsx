@@ -3,6 +3,8 @@ import { StatusPill } from "@/components/status-pill";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import type { FollowupTrackingRow } from "@/app/(app)/followup-tracking/followup-tracking-table";
 
+/* eslint-disable react/no-unescaped-entities -- Quotation marks are intentional in the Vietnamese UI label. */
+
 /** Liệt kê thẳng nội dung Sale ghi khi "Đánh dấu đã xử lý" (hoặc khi đổi
  * trạng thái lúc đang có yêu cầu chăm sóc lại) — đặt ngay dưới section thống
  * kê để Leader/Marketing xem nhanh không cần bấm vào từng dòng trong bảng. */

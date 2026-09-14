@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { LoaderCircle, Mail, Search, Send } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -27,14 +27,20 @@ export function ComposeMailButton() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open || members.length > 0) return;
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      reset();
+      return;
+    }
+    if (members.length > 0) return;
+
     setLoadingMembers(true);
-    apiFetch<{ users: Member[] }>("/api/admin/users/list")
+    void apiFetch<{ users: Member[] }>("/api/admin/users/list")
       .then((data) => setMembers(data.users ?? []))
       .catch((err) => toast.error(apiErrorMessage(err)))
       .finally(() => setLoadingMembers(false));
-  }, [open, members.length, toast]);
+  }
 
   const filteredMembers = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("vi");
@@ -97,10 +103,7 @@ export function ComposeMailButton() {
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) reset();
-      }}
+      onOpenChange={handleOpenChange}
     >
       <DialogTrigger
         render={
