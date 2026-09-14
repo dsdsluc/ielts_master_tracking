@@ -49,8 +49,10 @@ export function SlaBreachSection({ items, branchNames }: { items: InteractionLis
             {pagedItems.map((item) => (
               <TableRow key={item.interactionId} className="odd:bg-secondary/10">
                 <TableCell className="min-w-40 px-5 py-3.5">
-                  <p className="truncate font-medium text-foreground">{item.customerName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{item.fanpageName}</p>
+                  <p className="max-w-56 truncate font-medium text-foreground" title={item.customerName}>
+                    {item.customerName}
+                  </p>
+                  <p className="max-w-56 truncate text-xs text-muted-foreground">{item.fanpageName}</p>
                 </TableCell>
                 <TableCell className="px-4 text-sm text-muted-foreground">{branchNames[item.assignedBranchCode] ?? item.assignedBranchCode}</TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">{item.consultantName ?? "Chưa gán"}</TableCell>

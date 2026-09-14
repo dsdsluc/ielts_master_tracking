@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
 
     const result = await listInteractions(actor, {
       status: query.status,
-      needsFollowup: query.needsFollowup === "true",
       mine: query.mine === "true",
       branch: query.branch,
       search: query.search,

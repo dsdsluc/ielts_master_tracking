@@ -1,19 +1,19 @@
 import { Workbook } from "exceljs";
 import { requireApiUser } from "@/lib/auth/api";
 import { errorResponse } from "@/lib/interactions/errors";
-import { customerScopeWhere, customerSearchWhere } from "@/app/(app)/customers/customer-scope";
+import { customerScopeWhere, qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
 import { prisma } from "@/lib/prisma";
 
 const EXPORT_LIMIT = 5000;
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const actor = await requireApiUser();
-    const url = new URL(request.url);
-    const q = url.searchParams.get("q") ?? undefined;
-    const status = url.searchParams.get("status") ?? undefined;
 
-    const where = { ...customerScopeWhere(actor), ...customerSearchWhere(q, status) };
+    const where = {
+      ...customerScopeWhere(actor),
+      ...qualifiedCustomerWhere(),
+    };
 
     const customers = await prisma.customer.findMany({
       where,

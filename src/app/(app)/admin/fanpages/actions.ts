@@ -25,7 +25,7 @@ export async function createFanpage(input: { name: string } & z.infer<typeof fan
   await prisma.fanpage
     .create({ data: { name, ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không tạo được fanpage."));
-  revalidatePath("/admin/fanpages");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
@@ -35,13 +35,13 @@ export async function updateFanpage(name: string, input: z.infer<typeof fanpageS
   await prisma.fanpage
     .update({ where: { name }, data: { ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được fanpage."));
-  revalidatePath("/admin/fanpages");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
 export async function setFanpageActive(name: string, active: boolean) {
   await requireAdmin();
   await prisma.fanpage.update({ where: { name }, data: { active } }).catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));
-  revalidatePath("/admin/fanpages");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }

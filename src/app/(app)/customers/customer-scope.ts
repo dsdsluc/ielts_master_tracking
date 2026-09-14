@@ -1,6 +1,6 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
-import { ROLES } from "@/lib/interactions/constants";
+import { ROLES, STATUS } from "@/lib/interactions/constants";
 import { isLeaderLike } from "@/lib/interactions/scope";
 import type { CurrentUser } from "@/lib/auth/dal";
 
@@ -17,16 +17,8 @@ export function customerScopeWhere(actor: CurrentUser): Prisma.CustomerWhereInpu
   return actor.branchCode ? { interactions: { some: { assignedBranchCode: actor.branchCode } } } : {};
 }
 
-export function customerSearchWhere(q: string | undefined, status: string | undefined): Prisma.CustomerWhereInput {
-  const where: Prisma.CustomerWhereInput = {};
-  if (status) where.currentStatusName = status;
-  if (q?.trim()) {
-    const needle = q.trim();
-    where.OR = [
-      { displayName: { contains: needle, mode: "insensitive" } },
-      { phoneNormalized: { contains: needle, mode: "insensitive" } },
-      { customerKey: { contains: needle, mode: "insensitive" } },
-    ];
-  }
-  return where;
+/** Trang "Khách hàng" chỉ hiển thị khách đã Đủ tiêu chuẩn (có SĐT) — dùng
+ * chung giữa trang /customers và route export để 2 nơi luôn khớp nhau. */
+export function qualifiedCustomerWhere(): Prisma.CustomerWhereInput {
+  return { currentStatusName: STATUS.PHONE, phoneNormalized: { not: null } };
 }

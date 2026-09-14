@@ -27,6 +27,9 @@ export type InteractionListItem = {
   phoneNormalized: string | null;
   conversationLink: string | null;
   version: number;
+  // Đang "Chờ" và đã quá "SLA nhận" của cơ sở phụ trách — cùng ngưỡng với
+  // trang /sla-queue ("Liên hệ chờ phản hồi quá lâu"), xem computeSlaOverdue().
+  slaOverdue: boolean;
 };
 
 export type InteractionDetail = InteractionListItem & {
@@ -60,7 +63,7 @@ export type InteractionDetail = InteractionListItem & {
 };
 
 export type LeadQueueGroup = {
-  key: "new_waiting" | "sla_breaching" | "followup_requested" | "processing_no_phone" | "recently_closed";
+  key: "new_waiting" | "sla_breaching" | "processing_no_phone" | "recently_closed";
   label: string;
   items: InteractionListItem[];
   total: number;

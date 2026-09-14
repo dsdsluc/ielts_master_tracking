@@ -6,7 +6,7 @@ import { requireRole } from "@/lib/auth/dal";
 import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
 import { prisma } from "@/lib/prisma";
 import { customerScopeWhere } from "@/app/(app)/customers/customer-scope";
-import { DuplicateMergeView, type DuplicateCandidate } from "@/app/(app)/customers/duplicates/[phone]/duplicate-merge-view";
+import { DuplicateMergeView, type DuplicateCandidate } from "@/app/(app)/sale-overview/[phone]/duplicate-merge-view";
 
 export default async function DuplicateCustomerDetailPage({
   params,
@@ -50,7 +50,7 @@ export default async function DuplicateCustomerDetailPage({
   const branchNames = Object.fromEntries(branches.map((b) => [b.code, b.name]));
 
   const backLink = (
-    <Button variant="outline" size="icon-sm" className="rounded-full" nativeButton={false} render={<Link href="/customers/duplicates" />} aria-label="Quay lại danh sách trùng">
+    <Button variant="outline" size="icon-sm" className="rounded-full" nativeButton={false} render={<Link href="/sale-overview" />} aria-label="Quay lại Tổng quan Sale">
       <ArrowLeft className="size-4" />
     </Button>
   );

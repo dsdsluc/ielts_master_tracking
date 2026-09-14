@@ -32,6 +32,7 @@ import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { QualifyDialog } from "@/app/(app)/leads/qualify-dialog";
 import { SpamDialog } from "@/app/(app)/leads/spam-dialog";
 import { ReassignDialog } from "@/app/(app)/leads/reassign-dialog";
+import { ResolveFollowupDialog } from "@/app/(app)/leads/resolve-followup-dialog";
 
 export function LeadDetailSheet({
   interactionId,
@@ -56,6 +57,7 @@ export function LeadDetailSheet({
   const [qualifyOpen, setQualifyOpen] = useState(false);
   const [spamOpen, setSpamOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
+  const [resolveFollowupOpen, setResolveFollowupOpen] = useState(false);
 
   const open = interactionId !== null;
   const isOpenStatus = detail?.status === "Chờ" || detail?.status === "Tiếp nhận";
@@ -113,7 +115,7 @@ export function LeadDetailSheet({
                       size="sm"
                       variant="secondary"
                       className="mt-1 w-fit rounded-full border border-gold/30 bg-accent px-4 text-accent-foreground hover:bg-accent/80"
-                      onClick={handleResolveFollowup}
+                      onClick={() => setResolveFollowupOpen(true)}
                       disabled={followupPending}
                     >
                       {followupPending && <LoaderCircle className="animate-spin" />}
@@ -276,6 +278,7 @@ export function LeadDetailSheet({
             currentAssignedEmail={detail.assignedSaleEmail}
             onDone={refresh}
           />
+          <ResolveFollowupDialog open={resolveFollowupOpen} onOpenChange={setResolveFollowupOpen} onConfirm={handleResolveFollowup} />
         </>
       )}
     </>

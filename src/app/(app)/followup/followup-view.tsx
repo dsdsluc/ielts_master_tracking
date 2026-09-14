@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { CircleOff, ExternalLink, LoaderCircle, Sparkles } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,6 +26,7 @@ import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
 import { STATUS, SPAM_REASON } from "@/lib/interactions/constants";
 import { useToast } from "@/hooks/use-toast";
+import { PushFollowupDialog } from "@/app/(app)/followup/push-followup-dialog";
 
 export type FollowupCandidate = {
   interactionId: string;
@@ -41,6 +41,7 @@ export type FollowupCandidate = {
   lastActivityAt: string;
   conversationLink: string | null;
   rawLink: string;
+  needsSaleAssignment: boolean;
 };
 
 // "Khách im lặng" cần đối chiếu số lần chăm sóc của Sale (recordTouch) — không
@@ -65,9 +66,7 @@ export function FollowupView({
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [suggestion, setSuggestion] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pushDialogOpen, setPushDialogOpen] = useState(false);
   const [spamTarget, setSpamTarget] = useState<FollowupCandidate | null>(null);
   const [spamReason, setSpamReason] = useState("");
   const [spamPending, setSpamPending] = useState(false);
@@ -112,29 +111,21 @@ export function FollowupView({
     });
   }
 
-  async function handleSubmit() {
-    if (selected.size === 0) return;
-    setPending(true);
-    setError(null);
-    try {
-      const { pushed, skipped } = await apiFetch<{ pushed: number; skipped: number }>(
-        "/api/interactions/followup/push",
-        {
-          method: "POST",
-          body: JSON.stringify({ interactionIds: [...selected], suggestion: suggestion.trim() || undefined }),
-        }
-      );
-      toast.success(skipped > 0 ? `Đã gửi ${pushed} liên hệ — bỏ qua ${skipped} (đã đổi trạng thái/đã gắn cờ trước đó).` : `Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ.`);
-      setSelected(new Set());
-      setSuggestion("");
-      router.refresh();
-    } catch (err) {
-      const message = apiErrorMessage(err);
-      setError(message);
-      toast.error(message);
-    } finally {
-      setPending(false);
-    }
+  async function handlePush(targetSaleEmail: string, suggestion: string) {
+    const { pushed, skipped } = await apiFetch<{ pushed: number; skipped: number }>(
+      "/api/interactions/followup/push",
+      {
+        method: "POST",
+        body: JSON.stringify({ interactionIds: [...selected], targetSaleEmail, suggestion: suggestion || undefined }),
+      }
+    );
+    toast.success(
+      skipped > 0
+        ? `Đã gửi ${pushed} liên hệ — bỏ qua ${skipped} (đã đổi trạng thái/đã có Sale khác nhận trước đó).`
+        : `Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ.`
+    );
+    setSelected(new Set());
+    router.refresh();
   }
 
   function openSpamDialog(item: FollowupCandidate) {
@@ -199,7 +190,14 @@ export function FollowupView({
                     <Checkbox checked={checked} onCheckedChange={() => toggleOne(item.interactionId)} aria-label={`Chọn ${item.customerName}`} />
                   </TableCell>
                   <TableCell className="min-w-40 px-4 py-3.5">
-                    <p className="truncate font-medium text-foreground">{item.customerName}</p>
+                    <p className="max-w-56 truncate font-medium text-foreground" title={item.customerName}>
+                      {item.customerName}
+                    </p>
+                    {item.needsSaleAssignment && (
+                      <span className="mt-1 inline-flex items-center rounded-full bg-status-waiting-bg px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-status-waiting uppercase">
+                        Cần gắn Sale
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">
                     {item.sourceName} · {item.fanpageName}
@@ -246,26 +244,22 @@ export function FollowupView({
         </Table>
       </div>
 
-      <div className="shadow-bubble sticky bottom-3 z-30 flex flex-col gap-2 rounded-2xl border border-border bg-card/95 p-3 backdrop-blur-md sm:flex-row sm:items-end">
-        <div className="flex flex-1 flex-col gap-1.5">
-          <Textarea
-            value={suggestion}
-            onChange={(e) => setSuggestion(e.target.value)}
-            placeholder="Gợi ý gửi kèm cho Sale (tuỳ chọn)…"
-            className="h-16 resize-none rounded-xl"
-          />
-          {error && <FormMessage kind="error">{error}</FormMessage>}
-        </div>
+      <div className="shadow-bubble sticky bottom-3 z-30 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/95 p-3 backdrop-blur-md">
+        <p className="text-xs text-muted-foreground">
+          Chọn Sale sẽ nhận yêu cầu cho <strong className="font-mono text-foreground">{selected.size}</strong> liên hệ đã chọn.
+        </p>
         <Button
           type="button"
           className="glossy shadow-bubble h-11 shrink-0 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary/90"
-          disabled={selected.size === 0 || pending}
-          onClick={handleSubmit}
+          disabled={selected.size === 0}
+          onClick={() => setPushDialogOpen(true)}
         >
-          {pending ? <LoaderCircle className="animate-spin" /> : <Sparkles className="size-4" />}
+          <Sparkles className="size-4" />
           Gửi yêu cầu chăm sóc lại ({selected.size})
         </Button>
       </div>
+
+      <PushFollowupDialog open={pushDialogOpen} onOpenChange={setPushDialogOpen} selectedCount={selected.size} onConfirm={handlePush} />
 
       <AlertDialog
         open={!!spamTarget}

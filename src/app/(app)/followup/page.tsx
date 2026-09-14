@@ -30,7 +30,9 @@ export default async function FollowupPage({
   const where: Prisma.InteractionWhereInput = {
     ...branchScopeWhere(user),
     activeFlag: true,
-    needsFollowup: false,
+    // Đủ điều kiện = CHƯA gắn cờ (push mới), HOẶC đã gắn cờ nhưng chưa có Sale
+    // nào nhận (followupTargetSaleEmail null — case cũ/bị bỏ sót, cần gắn bù).
+    OR: [{ needsFollowup: false }, { needsFollowup: true, followupTargetSaleEmail: null }],
     statusName: status && status !== "all" ? status : { in: [STATUS.WAITING, STATUS.PROCESSING] },
   };
   if (branch && branch !== "all" && canAccessBranch(user, branch)) {
@@ -44,7 +46,9 @@ export default async function FollowupPage({
   if (staleDays) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - staleDays);
-    where.OR = [{ updatedAt: { lte: cutoff } }, { AND: [{ updatedAt: null }, { createdLeadAt: { lte: cutoff } }] }];
+    // Dùng AND riêng (không ghi đè OR ở trên) — where chỉ nhận 1 key "OR" duy
+    // nhất, nên bọc điều kiện cũ (đã push hay chưa) vào AND để giữ cả 2.
+    where.AND = [{ OR: [{ updatedAt: { lte: cutoff } }, { AND: [{ updatedAt: null }, { createdLeadAt: { lte: cutoff } }] }] }];
   }
 
   const rows = await prisma.interaction.findMany({
@@ -68,6 +72,9 @@ export default async function FollowupPage({
     lastActivityAt: (r.updatedAt ?? r.createdLeadAt).toISOString(),
     conversationLink: r.conversationLink,
     rawLink: r.rawLink,
+    // Đã gắn cờ từ trước nhưng chưa có Sale nhận — cần gắn bù, khác với liên
+    // hệ hoàn toàn mới (xem where.OR ở trên).
+    needsSaleAssignment: r.needsFollowup,
   }));
 
   return (
@@ -75,7 +82,7 @@ export default async function FollowupPage({
       <PageHeader
         eyebrow="Marketing"
         title="Chăm sóc lại"
-        description='Chọn liên hệ đang mở để gắn cờ "Cần chăm sóc lại" cho Sale, kèm gợi ý chung nếu có.'
+        description='Chọn liên hệ đang mở để gửi yêu cầu "Cần chăm sóc lại" cho 1 Sale cụ thể — bao gồm cả những liên hệ đã gắn cờ trước đó nhưng chưa gắn Sale nào.'
       />
 
       <FollowupFilterBar branches={branches} sources={sourceRows.map((s) => s.name)} />

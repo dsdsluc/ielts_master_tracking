@@ -3,6 +3,7 @@ import { ApiError, Errors } from "@/lib/interactions/errors";
 import {
   CAN_REASSIGN,
   ROLES,
+  STUDENT_STAGE,
   STUDENT_STAGE_VALUES,
   SYSTEM_LOG_ACTION,
   canonicalStatusKey,
@@ -120,10 +121,22 @@ export async function updateStudentProfile(actor: CurrentUser, id: string, input
   }
 
   const now = new Date();
+  // Chỉ set enrolledAt đúng lúc CHUYỂN sang Đã chốt (từ 1 mốc khác) — không
+  // đụng lại nếu hồ sơ đã ở Đã chốt từ trước rồi Sale chỉ sửa các trường khác,
+  // để mốc này phản ánh đúng lần chốt đó, phục vụ tính KPI theo ngày/tuần/tháng.
+  const justEnrolled = input.stage === STUDENT_STAGE.ENROLLED && profile.stage !== STUDENT_STAGE.ENROLLED;
+  const noLongerEnrolled = input.stage !== undefined && input.stage !== STUDENT_STAGE.ENROLLED && profile.stage === STUDENT_STAGE.ENROLLED;
+
   return prisma.$transaction(async (tx) => {
     const updated = await tx.studentProfile.update({
       where: { id },
-      data: { ...input, updatedByEmail: actor.email, updatedAt: now },
+      data: {
+        ...input,
+        updatedByEmail: actor.email,
+        updatedAt: now,
+        ...(justEnrolled ? { enrolledAt: now } : {}),
+        ...(noLongerEnrolled ? { enrolledAt: null } : {}),
+      },
     });
     await logAction(
       tx,

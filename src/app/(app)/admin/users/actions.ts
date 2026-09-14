@@ -60,7 +60,7 @@ export async function createUser(input: { email: string; password?: string } & z
     })
     .catch((err) => friendlyPrismaError(err, "Không tạo được tài khoản."));
 
-  revalidatePath("/admin/users");
+  revalidatePath("/admin/monitoring");
 }
 
 export async function updateUser(currentEmail: string, input: { email: string } & z.input<typeof userSchema>) {
@@ -102,7 +102,7 @@ export async function updateUser(currentEmail: string, input: { email: string } 
       friendlyPrismaError(err, "Không cập nhật được tài khoản.");
     });
 
-  revalidatePath("/admin/users");
+  revalidatePath("/admin/monitoring");
 }
 
 export async function setUserActive(email: string, active: boolean) {
@@ -111,7 +111,7 @@ export async function setUserActive(email: string, active: boolean) {
     throw new Error("Không thể tự khoá tài khoản của chính mình.");
   }
   await prisma.user.update({ where: { email }, data: { active } }).catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));
-  revalidatePath("/admin/users");
+  revalidatePath("/admin/monitoring");
 }
 
 export async function resetUserPassword(email: string, newPassword: string, mustChangePassword: boolean) {
@@ -123,5 +123,5 @@ export async function resetUserPassword(email: string, newPassword: string, must
   await prisma.user
     .update({ where: { email }, data: { passwordHash, mustChangePassword } })
     .catch((err) => friendlyPrismaError(err, "Không đặt lại được mật khẩu."));
-  revalidatePath("/admin/users");
+  revalidatePath("/admin/monitoring");
 }

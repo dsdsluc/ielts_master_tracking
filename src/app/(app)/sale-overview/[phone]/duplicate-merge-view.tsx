@@ -95,7 +95,7 @@ export function DuplicateMergeView({
         }),
       });
       toast.success(`Đã gộp ${others.length} bản ghi vào "${mergedName}".`);
-      router.push("/customers/duplicates");
+      router.push("/sale-overview");
       router.refresh();
     } catch (err) {
       toast.error(apiErrorMessage(err));
@@ -236,8 +236,8 @@ export function DuplicateMergeView({
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
           <p className="text-xs text-muted-foreground">
-            Sẽ xoá <strong className="text-destructive">{others.length}</strong> bản ghi còn lại sau khi chuyển hết lịch sử liên hệ về "
-            {mergedName}".
+            Sẽ xoá <strong className="text-destructive">{others.length}</strong> bản ghi còn lại sau khi chuyển hết lịch sử liên hệ về &quot;
+            {mergedName}&quot;.
           </p>
           <Button
             type="button"

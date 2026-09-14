@@ -30,7 +30,6 @@ export const listInteractionsQuerySchema = z.object({
   status: z.string().optional(),
   branch: z.string().optional(),
   assignedSaleEmail: z.string().optional(),
-  needsFollowup: z.enum(["true", "false"]).optional(),
   mine: z.enum(["true", "false"]).optional(),
   search: z.string().trim().max(200, "Từ khoá tìm kiếm quá dài.").optional(),
   page: z.coerce.number().int().min(1).optional(),
@@ -58,6 +57,7 @@ export type StatusUpdateInput = z.infer<typeof statusUpdateSchema>;
 
 export const followupPushSchema = z.object({
   interactionIds: z.array(z.string().trim().min(1)).min(1, "Vui lòng chọn ít nhất một hội thoại Chờ hoặc Tiếp nhận.").max(50, "Mỗi lần chỉ được yêu cầu chăm sóc lại tối đa 50 hội thoại."),
+  targetSaleEmail: z.string().trim().email("Vui lòng chọn Sale nhận yêu cầu chăm sóc lại."),
   suggestion: z.string().trim().max(500, "Gợi ý chăm sóc tối đa 500 ký tự.").optional(),
 });
 

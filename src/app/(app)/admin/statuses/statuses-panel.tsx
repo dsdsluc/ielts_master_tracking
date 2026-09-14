@@ -1,24 +1,18 @@
 import { CircleDot } from "lucide-react";
-import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
 import { StatusDialog } from "@/app/(app)/admin/statuses/status-dialog";
 
-export default async function StatusesPage() {
-  await requireRole(ROLES.ADMIN);
+export async function StatusesPanel() {
   const statuses = await prisma.status.findMany({ orderBy: { sortOrder: "asc" } });
 
   return (
-    <>
-      <PageHeader
-        eyebrow="Quản trị"
-        title="Trạng thái"
-        description="4 trạng thái cố định theo quy trình xử lý liên hệ — không thêm/xoá được, chỉ chỉnh thứ tự hiển thị và ghi chú."
-      />
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground">
+        4 trạng thái cố định theo quy trình xử lý liên hệ — không thêm/xoá được, chỉ chỉnh thứ tự hiển thị và ghi chú.
+      </p>
 
       {statuses.length === 0 ? (
         <EmptyState
@@ -74,6 +68,6 @@ export default async function StatusesPage() {
           </Table>
         </div>
       )}
-    </>
+    </div>
   );
 }

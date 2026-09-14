@@ -45,6 +45,7 @@ import { updateInteractionInfo } from "@/app/(app)/leads/leads-api";
 import type { DuplicateConflict } from "@/app/(app)/leads/types";
 import { QualifyDialog } from "@/app/(app)/leads/qualify-dialog";
 import { SpamDialog } from "@/app/(app)/leads/spam-dialog";
+import { ResolveFollowupDialog } from "@/app/(app)/leads/resolve-followup-dialog";
 import { useToast } from "@/hooks/use-toast";
 
 type EditForm = {
@@ -82,6 +83,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
   } = useInteractionDetail(interactionId);
   const [qualifyOpen, setQualifyOpen] = useState(false);
   const [spamOpen, setSpamOpen] = useState(false);
+  const [resolveFollowupOpen, setResolveFollowupOpen] = useState(false);
 
   const [form, setForm] = useState<EditForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -213,7 +215,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                   size="sm"
                   variant="secondary"
                   className="mt-1 w-fit rounded-full border border-gold/30 bg-accent px-4 text-accent-foreground hover:bg-accent/80"
-                  onClick={handleResolveFollowup}
+                  onClick={() => setResolveFollowupOpen(true)}
                   disabled={followupPending}
                 >
                   {followupPending && <LoaderCircle className="animate-spin" />}
@@ -526,6 +528,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
         <>
           <QualifyDialog open={qualifyOpen} onOpenChange={setQualifyOpen} interactionId={detail.interactionId} expectedVersion={detail.version} onDone={refresh} />
           <SpamDialog open={spamOpen} onOpenChange={setSpamOpen} interactionId={detail.interactionId} expectedVersion={detail.version} touchCount={detail.touchCount} onDone={refresh} />
+          <ResolveFollowupDialog open={resolveFollowupOpen} onOpenChange={setResolveFollowupOpen} onConfirm={handleResolveFollowup} />
         </>
       )}
     </>

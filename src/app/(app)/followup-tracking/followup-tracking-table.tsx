@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { ChevronRight, History } from "lucide-react";
+import { History } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { StatusPill } from "@/components/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PaginationBar } from "@/components/pagination-bar";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { FOLLOWUP_OUTCOME, STATUS } from "@/lib/interactions/constants";
+import { FollowupResultReviewDialog } from "@/app/(app)/followup-tracking/followup-result-review-dialog";
 
 export type FollowupTrackingRow = {
   interactionId: string;
@@ -23,11 +23,16 @@ export type FollowupTrackingRow = {
   followupHandledByName: string | null;
   followupOutcome: string | null;
   followupResolvedCount: number;
+  saleEmail: string | null;
+  saleName: string | null;
+  /** Nội dung Sale ghi lại khi "Đánh dấu đã xử lý" hoặc khi đổi trạng thái lúc
+   * đang có yêu cầu chăm sóc lại — null nếu chưa xử lý hoặc không tìm được log. */
+  resolveNote: string | null;
 };
 
 const PAGE_SIZE = 15;
 
-function ResolvedPill({ pending, outcome, status }: { pending: boolean; outcome: string | null; status: string }) {
+export function ResolvedPill({ pending, outcome, status }: { pending: boolean; outcome: string | null; status: string }) {
   if (pending) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-status-waiting-bg px-2.5 py-0.5 text-xs font-medium text-status-waiting">
@@ -64,6 +69,7 @@ function formatDuration(startIso: string, endIso: string) {
 
 export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTrackingRow[]; branchNames: Record<string, string> }) {
   const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<FollowupTrackingRow | null>(null);
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -92,20 +98,23 @@ export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTra
               <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Cơ sở</TableHead>
               <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Trạng thái liên hệ</TableHead>
-              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Gợi ý đã gửi</TableHead>
-              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Gửi lúc</TableHead>
               <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Xử lý</TableHead>
+              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Ghi chú xử lý</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Số lần</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Thời gian xử lý</TableHead>
-              <TableHead className="w-10 pr-4" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {pagedRows.map((row) => (
-              <TableRow key={row.interactionId} className="odd:bg-secondary/10">
+              <TableRow
+                key={row.interactionId}
+                className="cursor-pointer odd:bg-secondary/10 hover:bg-secondary/40"
+                onClick={() => setSelected(row)}
+              >
                 <TableCell className="min-w-40 px-5 py-3.5">
                   <p className="truncate font-medium text-foreground">{row.customerName}</p>
-                  {row.mktPushedByName && <p className="truncate text-xs text-muted-foreground">Gửi bởi {row.mktPushedByName}</p>}
+                  <p className="truncate text-xs text-muted-foreground">Gửi lúc {formatDateTime(row.mktPushedAt)}</p>
+                  {row.mktSuggestion && <p className="mt-0.5 max-w-56 truncate text-xs text-muted-foreground">Gợi ý: {row.mktSuggestion}</p>}
                 </TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">
                   {branchNames[row.assignedBranchCode] ?? row.assignedBranchCode}
@@ -113,30 +122,30 @@ export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTra
                 <TableCell className="px-4">
                   <StatusPill status={row.status} />
                 </TableCell>
-                <TableCell className="hidden px-4 text-sm text-muted-foreground lg:table-cell">
-                  <p className="max-w-56 truncate">{row.mktSuggestion ?? "—"}</p>
-                </TableCell>
-                <TableCell className="hidden px-4 text-xs text-muted-foreground md:table-cell">{formatDateTime(row.mktPushedAt)}</TableCell>
                 <TableCell className="px-4">
                   <ResolvedPill pending={row.needsFollowup} outcome={row.followupOutcome} status={row.status} />
                   {!row.needsFollowup && row.followupHandledByName && (
                     <p className="mt-1 truncate text-xs text-muted-foreground">bởi {row.followupHandledByName}</p>
                   )}
                 </TableCell>
+                <TableCell className="px-4 text-sm text-muted-foreground">
+                  <p className="max-w-64 whitespace-pre-wrap">{row.resolveNote ?? "—"}</p>
+                </TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">{row.followupResolvedCount}</TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground lg:table-cell">
                   {row.followupHandledAt ? formatDuration(row.mktPushedAt, row.followupHandledAt) : "—"}
-                </TableCell>
-                <TableCell className="pr-4 pl-1">
-                  <Link href={`/leads/${row.interactionId}`} className="flex items-center justify-center text-muted-foreground hover:text-foreground" aria-label="Xem chi tiết">
-                    <ChevronRight className="size-4" />
-                  </Link>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+
+      <FollowupResultReviewDialog
+        row={selected}
+        branchName={selected ? (branchNames[selected.assignedBranchCode] ?? selected.assignedBranchCode) : ""}
+        onOpenChange={(open) => !open && setSelected(null)}
+      />
     </div>
   );
 }

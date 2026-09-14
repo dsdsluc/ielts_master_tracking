@@ -56,11 +56,11 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
     }
   }
 
-  async function handleResolveFollowup() {
+  async function handleResolveFollowup(note: string) {
     if (!interactionId) return;
     setFollowupPending(true);
     try {
-      const updated = await resolveFollowup(interactionId);
+      const updated = await resolveFollowup(interactionId, note);
       if (updated.status === "Spam") {
         toast.info("Đã tự động chuyển Spam — liên hệ này đã bị nhắc chăm sóc lại quá số lần cho phép theo cấu hình hệ thống.");
       } else {
@@ -71,6 +71,7 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
       const message = err instanceof Error ? err.message : "Không cập nhật được.";
       setError(message);
       toast.error(message);
+      throw err;
     } finally {
       setFollowupPending(false);
     }

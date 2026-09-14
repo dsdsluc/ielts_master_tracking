@@ -22,5 +22,5 @@ export async function updateStatusMeta(name: string, input: z.input<typeof statu
   await prisma.status
     .update({ where: { name }, data: { sortOrder: data.sortOrder, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));
-  revalidatePath("/admin/statuses");
+  revalidatePath("/admin/catalog");
 }

@@ -23,7 +23,7 @@ export async function createSource(input: { name: string } & z.infer<typeof sour
   if (existing) throw new Error("Đã có nguồn với tên này.");
 
   await prisma.source.create({ data: { name, ...data, note: data.note || null } }).catch((err) => friendlyPrismaError(err, "Không tạo được nguồn."));
-  revalidatePath("/admin/sources");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
@@ -33,14 +33,14 @@ export async function updateSource(name: string, input: z.infer<typeof sourceSch
   await prisma.source
     .update({ where: { name }, data: { ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được nguồn."));
-  revalidatePath("/admin/sources");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
 export async function setSourceActive(name: string, active: boolean) {
   await requireAdmin();
   await prisma.source.update({ where: { name }, data: { active } }).catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));
-  revalidatePath("/admin/sources");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
@@ -66,13 +66,13 @@ export async function addSourceDomain(sourceName: string, domain: string) {
       create: { sourceName, domain: cleaned },
     })
     .catch((err) => friendlyPrismaError(err, "Không thêm được domain."));
-  revalidatePath("/admin/sources");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
 export async function removeSourceDomain(id: number) {
   await requireAdmin();
   await prisma.sourceDomain.delete({ where: { id } }).catch((err) => friendlyPrismaError(err, "Không xoá được domain."));
-  revalidatePath("/admin/sources");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }

@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
+import { CAN_CREATE_OR_EDIT_LEAD, ROLES } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { getMaxFollowupBeforeSpam } from "@/lib/interactions/settings";
 import { prisma } from "@/lib/prisma";
@@ -9,10 +9,18 @@ import { FollowupInboxView, type FollowupInboxItem } from "@/app/(app)/followup-
 export default async function FollowupInboxPage() {
   const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
 
+  // Sale chỉ thấy đúng yêu cầu Marketing/Leader nhắm tới email của họ — không
+  // còn là hàng đợi chung toàn cơ sở. Leader/Admin vẫn xem toàn bộ (theo phạm
+  // vi cơ sở) để có cái nhìn giám sát/backup.
   const [branches, rows, maxBeforeSpam] = await Promise.all([
     prisma.branch.findMany({ select: { code: true, name: true } }),
     prisma.interaction.findMany({
-      where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: true },
+      where: {
+        ...branchScopeWhere(user),
+        activeFlag: true,
+        needsFollowup: true,
+        ...(user.role === ROLES.SALES ? { followupTargetSaleEmail: user.email } : {}),
+      },
       select: {
         interactionId: true,
         customerName: true,
@@ -26,6 +34,8 @@ export default async function FollowupInboxPage() {
         assignedSale: { select: { fullName: true } },
         workspaceClaimedByEmail: true,
         workspaceClaimedBy: { select: { fullName: true } },
+        followupTargetSaleEmail: true,
+        followupTargetSale: { select: { fullName: true } },
       },
       orderBy: { mktPushedAt: "asc" },
     }),
@@ -45,6 +55,7 @@ export default async function FollowupInboxPage() {
     maxBeforeSpam,
     consultantEmail: r.assignedSaleEmail ?? r.workspaceClaimedByEmail,
     consultantName: r.assignedSale?.fullName ?? r.workspaceClaimedBy?.fullName ?? null,
+    targetSaleName: r.followupTargetSale?.fullName ?? null,
   }));
 
   return (

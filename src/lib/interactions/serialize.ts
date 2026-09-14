@@ -40,6 +40,9 @@ export function toListItem(row: ListRow): InteractionListItem {
     phoneNormalized: row.phoneNormalized,
     conversationLink: row.conversationLink,
     version: row.version,
+    // Người gọi có ngữ cảnh SLA (branch SLA map) mới tính lại field này —
+    // xem computeSlaOverdue() trong queries.ts.
+    slaOverdue: false,
   };
 }
 

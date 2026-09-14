@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileDown, Inbox, ListChecks, LoaderCircle, RotateCcw, Search, SlidersHorizontal, Sparkles, User, UserCog, X } from "lucide-react";
+import { FileDown, Inbox, LoaderCircle, RotateCcw, Search, SlidersHorizontal, User } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/empty-state";
@@ -10,14 +10,13 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LeadsTable, type LeadSelection } from "@/app/(app)/leads/lead-row";
+import { LeadsTable } from "@/app/(app)/leads/lead-row";
 import { LeadDetailSheet } from "@/app/(app)/leads/lead-detail-sheet";
 import { NewLeadDialog, type LeadFormOptions } from "@/app/(app)/leads/new-lead-dialog";
-import { BulkReassignDialog } from "@/app/(app)/leads/bulk-reassign-dialog";
 import { fetchInteractions, fetchQueue } from "@/app/(app)/leads/leads-api";
-import type { InteractionListItem, LeadStatus, QueueResponse } from "@/app/(app)/leads/types";
+import type { InteractionListItem, QueueResponse } from "@/app/(app)/leads/types";
 
-type TabKey = "priority" | "waiting" | "in_progress" | "followup" | "closed";
+type TabKey = "priority" | "waiting" | "in_progress";
 type PageMeta = { page: number; totalPages: number; totalItems: number };
 
 const PAGE_SIZE = 20;
@@ -26,7 +25,7 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
   {
     key: "priority",
     label: "Hàng đợi ưu tiên",
-    description: "Gợi ý liên hệ nên xử lý trước — sắp trễ SLA, được Marketing yêu cầu chăm sóc lại, hoặc mới tạo chưa ai xử lý.",
+    description: "Gợi ý liên hệ nên xử lý trước — sắp trễ SLA, hoặc mới tạo chưa ai xử lý.",
   },
   {
     key: "waiting",
@@ -37,16 +36,6 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
     key: "in_progress",
     label: "Tiếp nhận",
     description: "Sale đã bắt đầu trao đổi với khách nhưng chưa lấy được số điện thoại (chưa đủ tiêu chuẩn).",
-  },
-  {
-    key: "followup",
-    label: "Cần chăm sóc lại",
-    description: "Marketing yêu cầu Sale liên hệ lại khách — cần cập nhật trạng thái, nếu không sẽ tự động chuyển Spam sau vài lần nhắc.",
-  },
-  {
-    key: "closed",
-    label: "Đã đóng",
-    description: "Gộp 2 kết quả cuối cùng: Đủ tiêu chuẩn (đã lấy được số điện thoại) và Spam (không có nhu cầu hoặc tin nhắn rác).",
   },
 ];
 
@@ -67,12 +56,11 @@ function sampleItems(branchCode: string): InteractionListItem[] {
     phoneNormalized: null,
     conversationLink: null,
     version: 1,
+    slaOverdue: false,
   };
   return [
     { ...base, interactionId: "SAMPLE-001", customerKey: "SAMPLE-CUS-001", customerName: "Trần Gia Hân", status: "Chờ", createdLeadAt: "2026-09-07T08:15:00+07:00", touchCount: 1, needsFollowup: false },
     { ...base, interactionId: "SAMPLE-002", customerKey: "SAMPLE-CUS-002", customerName: "Lê Hoàng Nam", status: "Tiếp nhận", createdLeadAt: "2026-09-07T09:40:00+07:00", touchCount: 2, needsFollowup: true },
-    { ...base, interactionId: "SAMPLE-003", customerKey: "SAMPLE-CUS-003", customerName: "Phạm Khánh Linh", status: "Đủ tiêu chuẩn", createdLeadAt: "2026-09-06T14:20:00+07:00", touchCount: 3, needsFollowup: false, phoneNormalized: "090 123 4567" },
-    { ...base, interactionId: "SAMPLE-004", customerKey: "SAMPLE-CUS-004", customerName: "Nguyễn Đức Anh", status: "Spam", createdLeadAt: "2026-09-06T16:05:00+07:00", touchCount: 3, needsFollowup: false },
   ];
 }
 
@@ -80,12 +68,10 @@ export function LeadsQueueView({
   options,
   currentUserEmail,
   currentUserName,
-  canReassign = false,
 }: {
   options: LeadFormOptions;
   currentUserEmail: string;
   currentUserName: string;
-  canReassign?: boolean;
 }) {
   const [tab, setTab] = useState<TabKey>("priority");
   const [queue, setQueue] = useState<QueueResponse | null>(null);
@@ -98,38 +84,7 @@ export function LeadsQueueView({
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [branch, setBranch] = useState("all");
-  const [followupOnly, setFollowupOnly] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
-
-  // Điều chuyển hàng loạt — chỉ áp dụng cho tab "Đã đóng" (chỉ liên hệ Đủ tiêu
-  // chuẩn mới điều chuyển được, xem reassignInteractions() ở backend).
-  const [bulkSelecting, setBulkSelecting] = useState(false);
-  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
-  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
-
-  const isReassignable = useCallback((item: InteractionListItem) => item.status === "Đủ tiêu chuẩn", []);
-
-  function toggleBulkOne(item: InteractionListItem) {
-    setBulkSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(item.interactionId)) next.delete(item.interactionId);
-      else next.add(item.interactionId);
-      return next;
-    });
-  }
-
-  function stopBulkSelecting() {
-    setBulkSelecting(false);
-    setBulkSelected(new Set());
-  }
-
-  const bulkSelection: LeadSelection | undefined = bulkSelecting
-    ? { selectedIds: bulkSelected, onToggle: toggleBulkOne, isSelectable: isReassignable }
-    : undefined;
-
-  const bulkItemsForDialog = flatItems
-    .filter((i) => bulkSelected.has(i.interactionId))
-    .map((i) => ({ interactionId: i.interactionId, expectedVersion: i.version }));
 
   const samples = useMemo(() => sampleItems(options.branches[0]?.code ?? "TDM"), [options.branches]);
 
@@ -138,8 +93,8 @@ export function LeadsQueueView({
     const matchesSearch = !needle || [item.customerName, item.sourceName, item.fanpageName, item.assignedSaleName, item.phoneNormalized]
       .some((value) => value?.toLocaleLowerCase("vi").includes(needle));
     const isMine = item.createdByEmail === currentUserEmail || item.assignedSaleEmail === currentUserEmail;
-    return matchesSearch && (branch === "all" || item.assignedBranchCode === branch) && (!followupOnly || item.needsFollowup) && (!mineOnly || isMine);
-  }, [branch, followupOnly, mineOnly, search, currentUserEmail]);
+    return matchesSearch && (branch === "all" || item.assignedBranchCode === branch) && (!mineOnly || isMine);
+  }, [branch, mineOnly, search, currentUserEmail]);
 
   // Debounce ô tìm kiếm trước khi gọi server — tránh 1 request/ký tự gõ.
   // Đặt lại page về 1 cùng lúc (trong cùng callback, được React batch chung 1
@@ -189,7 +144,6 @@ export function LeadsQueueView({
   function changeTab(next: TabKey) {
     setTab(next);
     setPage(1);
-    stopBulkSelecting();
   }
 
   function refreshCurrentTab() {
@@ -201,7 +155,6 @@ export function LeadsQueueView({
     const params = tabToParams(tab);
     const search = new URLSearchParams();
     if (params.status) search.set("status", params.status);
-    if (params.needsFollowup) search.set("needsFollowup", "true");
     if (mineOnly) search.set("mine", "true");
     if (branch !== "all") search.set("branch", branch);
     if (debouncedSearch) search.set("search", debouncedSearch);
@@ -225,51 +178,22 @@ export function LeadsQueueView({
             </TooltipProvider>
           </TabsList>
           <div className="flex shrink-0 items-center gap-2">
-            {tab === "closed" && canReassign && bulkSelecting ? (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  Đã chọn <strong className="font-mono text-foreground">{bulkSelected.size}</strong> liên hệ
-                </p>
-                <Button type="button" variant="ghost" size="sm" className="rounded-full text-muted-foreground" onClick={stopBulkSelecting}>
-                  <X className="size-3.5" /> Huỷ
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="glossy rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90"
-                  disabled={bulkSelected.size === 0}
-                  onClick={() => setBulkDialogOpen(true)}
-                >
-                  <UserCog className="size-3.5" />
-                  Điều chuyển ({bulkSelected.size})
-                </Button>
-              </>
-            ) : (
-              <>
-                {tab === "closed" && canReassign && (
-                  <Button variant="outline" size="sm" className="h-10 rounded-full" onClick={() => setBulkSelecting(true)}>
-                    <ListChecks className="size-3.5" />
-                    Chọn để điều chuyển
-                  </Button>
-                )}
-                {exportHref() && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 rounded-full"
-                    nativeButton={false}
-                    render={<a href={exportHref() ?? undefined} />}
-                  >
-                    <FileDown className="size-3.5" /> Xuất Excel
-                  </Button>
-                )}
-                <NewLeadDialog options={options} onCreated={refreshCurrentTab} />
-              </>
+            {exportHref() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 rounded-full"
+                nativeButton={false}
+                render={<a href={exportHref() ?? undefined} />}
+              >
+                <FileDown className="size-3.5" /> Xuất Excel
+              </Button>
             )}
+            <NewLeadDialog options={options} onCreated={refreshCurrentTab} />
           </div>
         </div>
 
-        <div className="mb-5 grid gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm md:grid-cols-[minmax(240px,1fr)_220px_auto_auto_auto] md:items-center">
+        <div className="mb-5 grid gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm md:grid-cols-[minmax(240px,1fr)_220px_auto_auto] md:items-center">
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm tên, SĐT, Fanpage, tư vấn viên…" className="h-10 rounded-xl bg-background pr-3 pl-9" />
@@ -287,16 +211,6 @@ export function LeadsQueueView({
           <Button
             type="button"
             variant="outline"
-            className={followupOnly
-              ? "h-10 rounded-xl border-gold/40 bg-accent text-accent-foreground hover:bg-accent/80"
-              : "h-10 rounded-xl border-gold/25 bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"}
-            onClick={() => setFollowupOnly((value) => !value)}
-          >
-            <Sparkles className="size-3.5 text-gold" /> Chăm sóc lại
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
             className={mineOnly
               ? "h-10 rounded-xl border-status-received/40 bg-status-received-bg text-status-received hover:bg-status-received-bg/80"
               : "h-10 rounded-xl border-border bg-background text-muted-foreground hover:bg-status-received-bg hover:text-status-received"}
@@ -304,7 +218,7 @@ export function LeadsQueueView({
           >
             <User className="size-3.5" /> Của tôi
           </Button>
-          <Button type="button" variant="ghost" size="icon" aria-label="Xoá bộ lọc" className="mx-auto rounded-xl text-status-received hover:bg-status-received-bg hover:text-status-received md:mx-0" onClick={() => { setSearch(""); setBranch("all"); setFollowupOnly(false); setMineOnly(false); }}>
+          <Button type="button" variant="ghost" size="icon" aria-label="Xoá bộ lọc" className="mx-auto rounded-xl text-status-received hover:bg-status-received-bg hover:text-status-received md:mx-0" onClick={() => { setSearch(""); setBranch("all"); setMineOnly(false); }}>
             <RotateCcw className="size-4" />
           </Button>
         </div>
@@ -339,7 +253,6 @@ export function LeadsQueueView({
                   onOpen={setSelectedId}
                   currentUserEmail={currentUserEmail}
                   currentUserName={currentUserName}
-                  selection={t.key === "closed" ? bulkSelection : undefined}
                 />
                 {pageMeta && flatItems.length > 0 && (
                   <PaginationBar page={pageMeta.page} totalPages={pageMeta.totalPages} totalItems={pageMeta.totalItems} onPageChange={setPage} />
@@ -355,38 +268,18 @@ export function LeadsQueueView({
         onOpenChange={(open) => !open && setSelectedId(null)}
         onChanged={refreshCurrentTab}
       />
-
-      {canReassign && (
-        <BulkReassignDialog
-          open={bulkDialogOpen}
-          onOpenChange={setBulkDialogOpen}
-          items={bulkItemsForDialog}
-          onDone={() => {
-            stopBulkSelecting();
-            refreshCurrentTab();
-          }}
-        />
-      )}
     </>
   );
 }
 
 function tabToParams(tab: Exclude<TabKey, "priority">): {
   status?: string;
-  needsFollowup?: boolean;
 } {
-  const closedStatuses: LeadStatus[] = ["Đủ tiêu chuẩn", "Spam"];
   switch (tab) {
     case "waiting":
       return { status: "Chờ" };
     case "in_progress":
       return { status: "Tiếp nhận" };
-    case "followup":
-      return { needsFollowup: true };
-    case "closed":
-      // API nhận nhiều status nối dấu phẩy — "Đã đóng" gộp cả 2 kết quả cuối
-      // cùng trong 1 lần truy vấn phân trang (thay vì 2 lần rồi merge tay).
-      return { status: closedStatuses.join(",") };
   }
 }
 
@@ -418,7 +311,7 @@ function PriorityGroups({
       <EmptyState
         icon={Inbox}
         title="Hàng đợi trống"
-        description="Không có liên hệ nào cần xử lý ngay lúc này — quay lại sau hoặc kiểm tra tab Đã đóng."
+        description="Không có liên hệ nào cần xử lý ngay lúc này — quay lại sau hoặc kiểm tra tab Chờ/Tiếp nhận."
       />
     );
   }
@@ -463,8 +356,6 @@ function PriorityGroups({
 function samplesForTab(items: InteractionListItem[], tab: TabKey) {
   if (tab === "waiting") return items.filter((item) => item.status === "Chờ");
   if (tab === "in_progress") return items.filter((item) => item.status === "Tiếp nhận");
-  if (tab === "followup") return items.filter((item) => item.needsFollowup);
-  if (tab === "closed") return items.filter((item) => item.status === "Đủ tiêu chuẩn" || item.status === "Spam");
   return items;
 }
 
@@ -475,7 +366,6 @@ function FlatList({
   onOpen,
   currentUserEmail,
   currentUserName,
-  selection,
 }: {
   items: InteractionListItem[];
   samples: InteractionListItem[];
@@ -483,7 +373,6 @@ function FlatList({
   onOpen: (id: string) => void;
   currentUserEmail: string;
   currentUserName: string;
-  selection?: LeadSelection;
 }) {
   const hasRealData = items.length > 0;
   const filteredItems = (hasRealData ? items : samples).filter(matchesFilters);
@@ -500,7 +389,6 @@ function FlatList({
       isSample={!hasRealData}
       currentUserEmail={currentUserEmail}
       currentUserName={currentUserName}
-      selection={hasRealData ? selection : undefined}
     />
   );
 }

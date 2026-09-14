@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireRole } from "@/lib/auth/dal";
 import { CAN_REASSIGN, STUDENT_STAGE_VALUES } from "@/lib/interactions/constants";
-import { computeStudentStats } from "@/lib/students/stats";
+import { computeMonthlyKpiProgress, computeStudentStats } from "@/lib/students/stats";
 import { StageCountStrip } from "@/app/(app)/students/stage-count-strip";
 import { StatsFilterBar } from "@/app/(app)/student-assignment/stats/stats-filter-bar";
 
@@ -33,6 +33,11 @@ function daysSince(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 
+function formatKpiMonth(month: string) {
+  const [y, m] = month.split("-");
+  return `${m}/${y}`;
+}
+
 export default async function StudentStatsPage({
   searchParams,
 }: {
@@ -42,7 +47,7 @@ export default async function StudentStatsPage({
   const { days: daysParam, stage: stageParam, sale: saleParam } = await searchParams;
   const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
 
-  const stats = await computeStudentStats(actor, days);
+  const [stats, kpi] = await Promise.all([computeStudentStats(actor, days), computeMonthlyKpiProgress(actor)]);
 
   const selectedStage = stageParam && VALID_STAGE_LABELS.includes(stageParam) ? stageParam : null;
   const selectedSale = saleParam ? (stats.saleRanking.find((r) => r.email === saleParam) ?? null) : null;
@@ -72,6 +77,24 @@ export default async function StudentStatsPage({
         description="Hiệu quả tư vấn ghi danh của toàn đội Sale — Sale nào đang làm tốt, đa số hồ sơ đang kẹt ở mốc nào, ai chưa được chăm sóc."
         action={<StatsFilterBar />}
       />
+
+      <div className="shadow-bubble mb-6 rounded-2xl border border-border/70 bg-card p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            Chỉ tiêu KPI tháng {formatKpiMonth(kpi.month)}
+          </p>
+          <p className="text-sm text-foreground">
+            <strong className="font-mono">{kpi.enrolled}</strong>
+            <span className="text-muted-foreground"> / {kpi.target} học viên đã chốt</span>
+          </p>
+        </div>
+        <div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+          <div
+            className={`h-full rounded-full transition-all ${kpi.enrolled >= kpi.target ? "bg-status-qualified" : "bg-status-received"}`}
+            style={{ width: `${Math.min(100, Math.round((kpi.enrolled / kpi.target) * 100))}%` }}
+          />
+        </div>
+      </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard label="Tổng học viên" value={stats.total} accentClassName="bg-foreground/50" />

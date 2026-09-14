@@ -1,26 +1,20 @@
 import { Building2 } from "lucide-react";
-import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { BranchDialog } from "@/app/(app)/admin/branches/branch-dialog";
 import { setBranchActive } from "@/app/(app)/admin/branches/actions";
 
-export default async function BranchesPage() {
-  await requireRole(ROLES.ADMIN);
+export async function BranchesPanel() {
   const branches = await prisma.branch.findMany({ orderBy: { name: "asc" } });
 
   return (
-    <>
-      <PageHeader
-        eyebrow="Quản trị"
-        title="Cơ sở"
-        description="Danh sách chi nhánh và SLA nhận/xử lý liên hệ theo từng cơ sở."
-        action={<BranchDialog mode="create" />}
-      />
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">Danh sách chi nhánh và SLA nhận/xử lý liên hệ theo từng cơ sở.</p>
+        <BranchDialog mode="create" />
+      </div>
 
       {branches.length === 0 ? (
         <EmptyState
@@ -80,6 +74,6 @@ export default async function BranchesPage() {
           </Table>
         </div>
       )}
-    </>
+    </div>
   );
 }

@@ -22,5 +22,5 @@ export async function upsertSetting(input: z.input<typeof settingSchema>) {
       create: data,
     })
     .catch((err) => friendlyPrismaError(err, "Không lưu được cấu hình."));
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/monitoring");
 }

@@ -25,7 +25,7 @@ type Tx = Prisma.TransactionClient | PrismaClient;
 export type BranchSla = { slaReceiveMinutes: number; slaProcessHours: number };
 
 /** Ngưỡng SLA nhận (phút) / xử lý (giờ) theo TỪNG cơ sở — đúng như Admin cấu
- * hình ở /admin/branches (`Branch.slaReceiveMinutes`/`slaProcessHours`), thay
+ * hình ở /admin/catalog (`Branch.slaReceiveMinutes`/`slaProcessHours`), thay
  * cho 1 mốc chung toàn hệ thống trước đây. Trả kèm 1 ngưỡng mặc định (30
  * phút/24 giờ) cho liên hệ không xác định được cơ sở. */
 export async function getBranchSlaMap(): Promise<{ byCode: Map<string, BranchSla>; fallback: BranchSla }> {
@@ -34,6 +34,20 @@ export async function getBranchSlaMap(): Promise<{ byCode: Map<string, BranchSla
     byCode: new Map(branches.map((b) => [b.code, { slaReceiveMinutes: b.slaReceiveMinutes, slaProcessHours: b.slaProcessHours }])),
     fallback: { slaReceiveMinutes: 30, slaProcessHours: 24 },
   };
+}
+
+/** Cùng điều kiện "quá hạn" mà trang /sla-queue dùng để lọc — tách ra đây để
+ * dùng chung, tránh 2 nơi định nghĩa lệch nhau: đang "Chờ" (chưa Sale nào
+ * liên hệ) và đã trôi qua đủ slaReceiveMinutes của cơ sở phụ trách. */
+export function computeSlaOverdue(
+  item: Pick<InteractionListItem, "status" | "assignedBranchCode" | "createdLeadAt">,
+  slaByBranch: Map<string, BranchSla>,
+  slaFallback: BranchSla,
+  now: number = Date.now()
+): boolean {
+  if (item.status !== STATUS.WAITING) return false;
+  const sla = slaByBranch.get(item.assignedBranchCode) ?? slaFallback;
+  return new Date(item.createdLeadAt).getTime() <= now - sla.slaReceiveMinutes * 60_000;
 }
 
 /**
@@ -107,7 +121,6 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
 
 export type ListInteractionsParams = {
   status?: string; // 1 giá trị, hoặc nhiều giá trị nối dấu phẩy
-  needsFollowup?: boolean;
   mine?: boolean;
   branch?: string;
   search?: string;
@@ -125,7 +138,10 @@ export type ListInteractionsResult = {
 
 /** Dùng chung giữa listInteractions (phân trang) và route export (lấy toàn bộ). */
 export function buildInteractionWhere(actor: CurrentUser, params: Omit<ListInteractionsParams, "page" | "pageSize">): Prisma.InteractionWhereInput {
-  const where: Prisma.InteractionWhereInput = { ...branchScopeWhere(actor), activeFlag: true };
+  // Liên hệ đang "Cần chăm sóc lại" chỉ hiển thị ở /followup-inbox (và
+  // /followup, /followup-tracking cho Marketing/Leader) — trang Liên hệ không
+  // lặp lại tập này nữa để tránh 2 nơi cùng là "nơi xử lý" 1 liên hệ.
+  const where: Prisma.InteractionWhereInput = { ...branchScopeWhere(actor), activeFlag: true, needsFollowup: false };
   // "mine" và "search" đều cần diễn đạt bằng OR — không thể gán trực tiếp 2 lần
   // vào where.OR (key sau sẽ đè key trước), nên mỗi OR-block được gom vào đây
   // và kết hợp lại bằng AND ở cuối.
@@ -136,7 +152,6 @@ export function buildInteractionWhere(actor: CurrentUser, params: Omit<ListInter
     if (statuses.length === 1) where.statusName = statuses[0];
     else if (statuses.length > 1) where.statusName = { in: statuses };
   }
-  if (params.needsFollowup) where.needsFollowup = true;
   if (params.mine) {
     // "Của tôi" = lead do actor tạo (Chờ/Tiếp nhận, chưa có assignedSaleEmail)
     // HOẶC lead đã Đủ tiêu chuẩn mà actor là người phụ trách chính thức —
@@ -178,7 +193,7 @@ export async function listInteractions(actor: CurrentUser, params: ListInteracti
 
   const where = buildInteractionWhere(actor, params);
 
-  const [totalItems, rows] = await Promise.all([
+  const [totalItems, rows, { byCode: slaByBranch, fallback: slaFallback }] = await Promise.all([
     prisma.interaction.count({ where }),
     prisma.interaction.findMany({
       where,
@@ -187,10 +202,14 @@ export async function listInteractions(actor: CurrentUser, params: ListInteracti
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
+    getBranchSlaMap(),
   ]);
 
+  const now = Date.now();
+  const items = rows.map(toListItem).map((item) => ({ ...item, slaOverdue: computeSlaOverdue(item, slaByBranch, slaFallback, now) }));
+
   return {
-    items: rows.map(toListItem),
+    items,
     page,
     pageSize,
     totalItems,
@@ -201,10 +220,9 @@ export async function listInteractions(actor: CurrentUser, params: ListInteracti
 const QUEUE_GROUP_LABELS: Record<Exclude<LeadQueueGroup["key"], "recently_closed">, string> = {
   new_waiting: "Mới đang Chờ",
   sla_breaching: "Sắp/đã quá SLA",
-  followup_requested: "Cần chăm sóc lại",
   processing_no_phone: "Tiếp nhận, chưa có SĐT",
 };
-const QUEUE_ORDER = ["new_waiting", "sla_breaching", "followup_requested", "processing_no_phone"] as const;
+const QUEUE_ORDER = ["new_waiting", "sla_breaching", "processing_no_phone"] as const;
 // Trần an toàn để tránh payload quá lớn — phân trang thật trong mỗi nhóm nằm
 // ở client (leads-queue-view.tsx), vì việc gộp nhóm (loại trừ lẫn nhau, phụ
 // thuộc SLA theo cơ sở) phải tính trên toàn bộ tập mở nên khó tách theo trang ở DB.
@@ -236,13 +254,15 @@ async function computePersonalKpi(actor: CurrentUser): Promise<LeadQueue["person
 }
 
 /**
- * Hàng đợi ưu tiên: mới đang Chờ → sắp/đã quá SLA → cần chăm sóc lại → Tiếp
- * nhận chưa có SĐT (đúng thứ tự banner ở trang Liên hệ). Mỗi lead chỉ rơi vào
- * ĐÚNG 1 nhóm — nhóm đầu tiên khớp theo thứ tự trên thắng, để không hiển thị
- * trùng lặp giữa các nhóm.
+ * Hàng đợi ưu tiên: mới đang Chờ → sắp/đã quá SLA → Tiếp nhận chưa có SĐT
+ * (đúng thứ tự banner ở trang Liên hệ). Mỗi lead chỉ rơi vào ĐÚNG 1 nhóm —
+ * nhóm đầu tiên khớp theo thứ tự trên thắng, để không hiển thị trùng lặp
+ * giữa các nhóm. Liên hệ "Cần chăm sóc lại" bị loại ngay từ truy vấn — chỉ
+ * hiển thị ở /followup-inbox, tránh trang Liên hệ và Workspace lặp lại cùng
+ * 1 tập với nơi đó (mirror buildInteractionWhere()).
  *
  * SLA tính theo TỪNG cơ sở (Branch.slaReceiveMinutes/slaProcessHours, sửa ở
- * /admin/branches) — không còn 1 mốc chung toàn hệ thống. "Chờ" quá
+ * /admin/catalog) — không còn 1 mốc chung toàn hệ thống. "Chờ" quá
  * slaReceiveMinutes = chưa ai liên hệ kịp; "Tiếp nhận" quá slaProcessHours =
  * đã liên hệ nhưng xử lý (xin SĐT) quá lâu. Lưu ý: schema không có mốc "vào
  * Tiếp nhận" riêng, nên dùng createdLeadAt (giờ tạo lead) làm gốc đo cho cả 2
@@ -256,7 +276,7 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
   const [{ byCode: slaByBranch, fallback: slaFallback }, openRows, personalKpi] = await Promise.all([
     getBranchSlaMap(),
     prisma.interaction.findMany({
-      where: { ...branchScopeWhere(actor), activeFlag: true, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
+      where: { ...branchScopeWhere(actor), activeFlag: true, needsFollowup: false, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
       include: listItemInclude,
       orderBy: { createdLeadAt: "asc" },
     }),
@@ -267,7 +287,6 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
   const buckets: Record<(typeof QUEUE_ORDER)[number], InteractionListItem[]> = {
     new_waiting: [],
     sla_breaching: [],
-    followup_requested: [],
     processing_no_phone: [],
   };
 
@@ -277,11 +296,11 @@ export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
     const isReceiveBreaching = row.statusName === STATUS.WAITING && elapsedMinutes >= sla.slaReceiveMinutes * SLA_APPROACH_RATIO;
     const isProcessBreaching = row.statusName === STATUS.PROCESSING && elapsedMinutes >= sla.slaProcessHours * 60 * SLA_APPROACH_RATIO;
     const isSlaBreaching = isReceiveBreaching || isProcessBreaching;
-    const item = toListItem(row);
+    const baseItem = toListItem(row);
+    const item = { ...baseItem, slaOverdue: computeSlaOverdue(baseItem, slaByBranch, slaFallback, now) };
 
-    if (row.statusName === STATUS.WAITING && !isSlaBreaching && !row.needsFollowup) buckets.new_waiting.push(item);
+    if (row.statusName === STATUS.WAITING && !isSlaBreaching) buckets.new_waiting.push(item);
     else if (isSlaBreaching) buckets.sla_breaching.push(item);
-    else if (row.needsFollowup) buckets.followup_requested.push(item);
     else if (row.statusName === STATUS.PROCESSING) buckets.processing_no_phone.push(item);
   }
 

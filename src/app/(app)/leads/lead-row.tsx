@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, LoaderCircle, MessageCircleMore, Plus, Sparkles } from "lucide-react";
+import { ChevronRight, LoaderCircle, MessageCircleMore, Plus, TimerOff } from "lucide-react";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -16,15 +15,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import type { InteractionListItem } from "@/app/(app)/leads/types";
-
-// Bật khi Leader/Admin đang chọn nhiều liên hệ để điều chuyển hàng loạt (tab
-// "Đã đóng" — xem leads-queue-view.tsx). Chỉ liên hệ Đủ tiêu chuẩn mới chọn
-// được (isSelectable trả false cho Spam) — mirror sla-review-view.tsx.
-export type LeadSelection = {
-  selectedIds: Set<string>;
-  onToggle: (item: InteractionListItem) => void;
-  isSelectable: (item: InteractionListItem) => boolean;
-};
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("vi-VN", {
@@ -42,7 +32,6 @@ export function LeadRow({
   currentUserEmail,
   picking,
   onPick,
-  selection,
 }: {
   item: InteractionListItem;
   onOpen: (id: string) => void;
@@ -50,19 +39,11 @@ export function LeadRow({
   currentUserEmail: string;
   picking: boolean;
   onPick: (item: InteractionListItem) => void;
-  selection?: LeadSelection;
 }) {
   const isMine = item.consultantEmail === currentUserEmail;
-  const selecting = !!selection;
-  const selectable = selection?.isSelectable(item) ?? true;
-  const checked = selection?.selectedIds.has(item.interactionId) ?? false;
 
   function handleActivate() {
     if (isSample) return;
-    if (selecting) {
-      if (selectable) selection!.onToggle(item);
-      return;
-    }
     onOpen(item.interactionId);
   }
 
@@ -77,24 +58,17 @@ export function LeadRow({
       }}
       tabIndex={isSample ? -1 : 0}
       aria-label={isSample ? `Dữ liệu mẫu: ${item.customerName}` : `Mở liên hệ của ${item.customerName}`}
-      className={`group outline-none odd:bg-secondary/10 focus-visible:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring/50 ${
-        selecting && !selectable ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-status-received-bg/45"
-      } ${checked ? "bg-accent/30" : ""}`}
+      className="group cursor-pointer outline-none odd:bg-secondary/10 hover:bg-status-received-bg/45 focus-visible:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring/50"
     >
-      {selecting && (
-        <TableCell className="w-10 pl-5" onClick={(e) => e.stopPropagation()}>
-          {selectable && <Checkbox checked={checked} onCheckedChange={() => selection!.onToggle(item)} aria-label={`Chọn ${item.customerName}`} />}
-        </TableCell>
-      )}
       <TableCell className="min-w-56 px-5 py-4">
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-status-received-bg text-status-received transition-colors group-hover:bg-status-received group-hover:text-white">
             <MessageCircleMore className="size-3.5" />
           </span>
           <span className="min-w-0 max-w-48 flex-1 truncate font-medium text-foreground">{item.customerName}</span>
-          {item.needsFollowup && (
-            <span className="flex shrink-0 items-center gap-1 rounded-full border border-gold/30 bg-accent px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-accent-foreground uppercase">
-              <Sparkles className="size-3" /> Cần chăm sóc lại
+          {item.slaOverdue && (
+            <span className="flex shrink-0 items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-destructive uppercase">
+              <TimerOff className="size-3" /> Quá hạn SLA
             </span>
           )}
         </div>
@@ -147,14 +121,12 @@ export function LeadsTable({
   isSample = false,
   currentUserEmail,
   currentUserName,
-  selection,
 }: {
   items: InteractionListItem[];
   onOpen: (id: string) => void;
   isSample?: boolean;
   currentUserEmail: string;
   currentUserName: string;
-  selection?: LeadSelection;
 }) {
   const { toast } = useToast();
   const [overrides, setOverrides] = useState<Record<string, { email: string; name: string }>>({});
@@ -189,22 +161,6 @@ export function LeadsTable({
       <Table className="sm:min-w-[720px]">
         <TableHeader className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-md">
           <TableRow className="hover:bg-transparent">
-            {selection && (() => {
-              const selectableItems = items.filter(selection.isSelectable);
-              const allSelected = selectableItems.length > 0 && selectableItems.every((i) => selection.selectedIds.has(i.interactionId));
-              return (
-                <TableHead className="w-10 pl-5">
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={() => selectableItems.forEach((i) => {
-                      const isChecked = selection.selectedIds.has(i.interactionId);
-                      if (allSelected ? isChecked : !isChecked) selection.onToggle(i);
-                    })}
-                    aria-label="Chọn tất cả đang hiển thị"
-                  />
-                </TableHead>
-              );
-            })()}
             <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
             <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Nguồn / Fanpage</TableHead>
             <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Tư vấn viên</TableHead>
@@ -227,7 +183,6 @@ export function LeadsTable({
                 currentUserEmail={currentUserEmail}
                 picking={pickingId === item.interactionId}
                 onPick={handlePick}
-                selection={selection}
               />
             );
           })}

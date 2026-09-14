@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { cached } from "@/lib/cache";
 import { STUDENT_STAGE, STUDENT_STAGE_VALUES } from "@/lib/interactions/constants";
 import { isLeaderLike } from "@/lib/interactions/scope";
+import { currentKpiMonth, getMonthlyKpiTarget } from "@/lib/interactions/settings";
 import { studentProfileScopeWhere } from "@/lib/students/queries";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { Prisma } from "@/generated/prisma/client";
@@ -245,4 +246,116 @@ export async function computeStudentStats(actor: CurrentUser, days: number): Pro
   windowStart.setHours(0, 0, 0, 0);
 
   return cached(`student-stats:${scopeCacheKey(actor)}:${days}`, 90, () => compute(actor, windowStart));
+}
+
+function monthBounds(month: string): { monthStart: Date; monthEnd: Date } {
+  const [y, m] = month.split("-").map(Number);
+  return { monthStart: new Date(y, m - 1, 1), monthEnd: new Date(y, m, 1) };
+}
+
+export type MonthlyKpiProgress = { month: string; target: number; enrolled: number };
+
+/** Tiến độ chỉ tiêu chốt học viên trong THÁNG DƯƠNG LỊCH hiện tại (Admin nhập
+ * ở "Cấu hình hệ thống") — độc lập với bộ lọc "days" của trang thống kê vì
+ * chỉ tiêu KPI luôn gắn với 1 tháng cụ thể. Đếm theo enrolledAt (mốc THỰC SỰ
+ * chuyển sang Đã chốt, set 1 lần trong updateStudentProfile()) — không dùng
+ * assignedAt vì đó là ngày Leader phân bổ, không phải ngày chốt. */
+async function computeMonthlyKpiProgressUncached(actor: CurrentUser): Promise<MonthlyKpiProgress> {
+  const month = currentKpiMonth();
+  const { monthStart, monthEnd } = monthBounds(month);
+
+  const [target, enrolled] = await Promise.all([
+    getMonthlyKpiTarget(month),
+    prisma.studentProfile.count({
+      where: { ...studentProfileScopeWhere(actor), enrolledAt: { gte: monthStart, lt: monthEnd } },
+    }),
+  ]);
+  return { month, target, enrolled };
+}
+
+export async function computeMonthlyKpiProgress(actor: CurrentUser): Promise<MonthlyKpiProgress> {
+  return cached(`student-kpi:${scopeCacheKey(actor)}:${currentKpiMonth()}`, 90, () => computeMonthlyKpiProgressUncached(actor));
+}
+
+export type KpiPeriod = { target: number; achieved: number };
+
+export type SalePersonalKpi = {
+  month: string;
+  companyTarget: number;
+  totalAssigned: number;
+  mineAssigned: number;
+  daily: KpiPeriod;
+  weekly: KpiPeriod;
+  monthly: KpiPeriod;
+};
+
+function startOfDay(d: Date): Date {
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+// Tuần theo quy ước Thứ Hai — Chủ Nhật.
+function startOfWeek(d: Date): Date {
+  const date = startOfDay(d);
+  const day = date.getDay();
+  const diffToMonday = day === 0 ? 6 : day - 1;
+  date.setDate(date.getDate() - diffToMonday);
+  return date;
+}
+
+/** Chỉ tiêu CÁ NHÂN của 1 Sale trong tháng = số liên hệ được phân bổ × chính
+ * tỷ lệ nhận đó (không nhân với KPI công ty — đã xác nhận trực tiếp với
+ * người dùng): được phân bổ càng nhiều so với toàn công ty thì chỉ tiêu cá
+ * nhân càng cao theo cấp số nhân của tỷ lệ đó.
+ * Vd: Sale nhận 10/19 học viên toàn công ty (52.6%) thì chỉ tiêu cá nhân =
+ * 10 × 52.6% ≈ 5. KPI công ty (companyTarget) chỉ giữ lại để hiển thị bối
+ * cảnh, không còn là số nhân trong công thức.
+ *
+ * Chỉ tiêu ngày/tuần chia theo TIẾN ĐỘ CÒN LẠI (personalTarget trừ số đã chốt
+ * trong tháng), trải đều cho số ngày/tuần còn lại của tháng — không phải chia
+ * đều cố định — để tự điều chỉnh: đang trễ tiến độ thì chỉ tiêu ngày/tuần tự
+ * tăng lên, đã đạt hoặc vượt thì về 0. */
+async function computeSalePersonalKpiUncached(email: string): Promise<SalePersonalKpi> {
+  const month = currentKpiMonth();
+  const { monthStart, monthEnd } = monthBounds(month);
+  const assignedInMonth: Prisma.StudentProfileWhereInput = { assignedAt: { gte: monthStart, lt: monthEnd } };
+
+  const now = new Date();
+  const dayStart = startOfDay(now);
+  const dayEnd = new Date(dayStart.getTime() + MS_PER_DAY);
+  const weekStart = startOfWeek(now);
+  const weekEnd = new Date(weekStart.getTime() + 7 * MS_PER_DAY);
+
+  const [companyTarget, totalAssigned, mineAssigned, enrolledThisMonth, enrolledThisWeek, enrolledToday] = await Promise.all([
+    getMonthlyKpiTarget(month),
+    prisma.studentProfile.count({ where: assignedInMonth }),
+    prisma.studentProfile.count({ where: { ...assignedInMonth, assignedToEmail: email } }),
+    prisma.studentProfile.count({ where: { assignedToEmail: email, enrolledAt: { gte: monthStart, lt: monthEnd } } }),
+    prisma.studentProfile.count({ where: { assignedToEmail: email, enrolledAt: { gte: weekStart, lt: weekEnd } } }),
+    prisma.studentProfile.count({ where: { assignedToEmail: email, enrolledAt: { gte: dayStart, lt: dayEnd } } }),
+  ]);
+
+  const shareRatio = totalAssigned > 0 ? mineAssigned / totalAssigned : 0;
+  const personalTarget = Math.round(mineAssigned * shareRatio);
+  const remaining = Math.max(0, personalTarget - enrolledThisMonth);
+
+  const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / MS_PER_DAY);
+  const dayOfMonth = Math.floor((dayStart.getTime() - monthStart.getTime()) / MS_PER_DAY) + 1;
+  const daysLeftInMonth = Math.max(1, daysInMonth - dayOfMonth + 1);
+  const weeksLeftInMonth = Math.max(1, Math.ceil(daysLeftInMonth / 7));
+
+  return {
+    month,
+    companyTarget,
+    totalAssigned,
+    mineAssigned,
+    daily: { target: Math.ceil(remaining / daysLeftInMonth), achieved: enrolledToday },
+    weekly: { target: Math.ceil(remaining / weeksLeftInMonth), achieved: enrolledThisWeek },
+    monthly: { target: personalTarget, achieved: enrolledThisMonth },
+  };
+}
+
+export async function computeSalePersonalKpi(email: string): Promise<SalePersonalKpi> {
+  return cached(`sale-personal-kpi:v3:${email}:${currentKpiMonth()}`, 90, () => computeSalePersonalKpiUncached(email));
 }

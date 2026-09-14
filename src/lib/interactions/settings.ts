@@ -33,3 +33,19 @@ export async function isAdsCostCleanupEnabled(): Promise<boolean> {
   const raw = await getAppSetting("system", "ADS_COST_CLEANUP_ENABLED");
   return raw === "true";
 }
+
+/** Khoá tháng hiện tại theo định dạng "YYYY-MM" — dùng làm key mặc định cho
+ * chỉ tiêu KPI tháng (configGroup "kpi"). */
+export function currentKpiMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Chỉ tiêu số học viên cần chốt trong 1 tháng cụ thể (configGroup "kpi", key
+ * "YYYY-MM") — Admin nhập riêng cho từng tháng ở "Cấu hình hệ thống"; tháng
+ * nào chưa nhập thì mặc định 100. */
+export async function getMonthlyKpiTarget(month: string = currentKpiMonth()): Promise<number> {
+  const raw = await getAppSetting("kpi", month);
+  const v = Number(raw);
+  return Number.isFinite(v) && v > 0 ? v : 100;
+}

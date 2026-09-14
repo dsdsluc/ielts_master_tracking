@@ -4,34 +4,24 @@ import {
   Gauge,
   Inbox,
   Users,
-  CalendarCheck,
   Megaphone,
   Building2,
-  Flag,
-  Share2,
-  CircleDot,
   Tag,
-  UserCog,
-  SlidersHorizontal,
   History,
   FileSpreadsheet,
-  GitMerge,
-  ListPlus,
+  LayoutGrid,
   ScrollText,
   ShieldAlert,
   Sparkles,
   TrendingUp,
   Briefcase,
   ClipboardCheck,
-  TimerOff,
   UserRoundPlus,
-  GraduationCap,
 } from "lucide-react";
 import {
   ROLES,
   CAN_VIEW_LEAD,
   CAN_PUSH_FOLLOWUP,
-  CAN_CREATE_OR_EDIT_LEAD,
   CAN_REASSIGN,
 } from "@/lib/interactions/constants";
 
@@ -49,7 +39,12 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-const REPORT_ROLES = [ROLES.LEADER, ROLES.MARKETING, ROLES.BOARD, ROLES.ADMIN] as const;
+const REPORT_ROLES = [
+  ROLES.LEADER,
+  ROLES.MARKETING,
+  ROLES.BOARD,
+  ROLES.ADMIN,
+] as const;
 const SALE_WORKSPACE_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
 const LEAD_ROLES = CAN_VIEW_LEAD;
 const ADMIN_ROLES = [ROLES.ADMIN] as const;
@@ -63,12 +58,14 @@ export function getHomePathForRole(role: string): string {
 
 export function getNavTitle(pathname: string): string {
   const allItems = navGroups.flatMap((g) => g.items);
-  // Khớp tuyệt đối trước — "/admin" và "/admin/users" đều là href hợp lệ,
-  // nếu ưu tiên startsWith thì "/admin" (duyệt trước trong mảng) sẽ nuốt mất
-  // path của mọi trang con /admin/*.
+  // Khớp tuyệt đối trước — "/admin/monitoring" và "/admin/objects" đều là href
+  // hợp lệ, nếu ưu tiên startsWith thì mục duyệt trước trong mảng có thể nuốt
+  // mất path của các trang con /admin/* khác.
   const exact = allItems.find((item) => item.href === pathname);
   if (exact) return exact.title;
-  const prefixMatch = allItems.find((item) => item.href !== "/" && pathname.startsWith(`${item.href}/`));
+  const prefixMatch = allItems.find(
+    (item) => item.href !== "/" && pathname.startsWith(`${item.href}/`),
+  );
   return prefixMatch?.title ?? "Theo dõi Liên hệ";
 }
 
@@ -81,7 +78,7 @@ export function getNavGroupsForRole(role: string): NavGroup[] {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) =>
-        (item.allowedRoles as readonly string[]).includes(role)
+        (item.allowedRoles as readonly string[]).includes(role),
       ),
     }))
     .filter((group) => group.items.length > 0);
@@ -91,7 +88,12 @@ export const navGroups: NavGroup[] = [
   {
     label: "Tổng quan",
     items: [
-      { title: "Dashboard", href: "/", icon: LayoutDashboard, allowedRoles: REPORT_ROLES },
+      {
+        title: "Dashboard",
+        href: "/",
+        icon: LayoutDashboard,
+        allowedRoles: REPORT_ROLES,
+      },
       {
         title: "Dashboard Sale",
         href: "/dashboard-sale",
@@ -101,14 +103,13 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Vận hành",
+    label: "Saler",
     items: [
-      { title: "Liên hệ", href: "/leads", icon: Inbox, allowedRoles: LEAD_ROLES },
       {
-        title: "Liên hệ chờ phản hồi quá lâu",
-        href: "/sla-queue",
-        icon: TimerOff,
-        allowedRoles: CAN_REASSIGN,
+        title: "Liên hệ",
+        href: "/leads",
+        icon: Inbox,
+        allowedRoles: LEAD_ROLES,
       },
       {
         title: "Workspace của tôi",
@@ -117,17 +118,24 @@ export const navGroups: NavGroup[] = [
         allowedRoles: SALE_WORKSPACE_ROLES,
       },
       {
-        title: "Khách hàng",
-        href: "/customers",
-        icon: Users,
-        allowedRoles: SALE_WORKSPACE_ROLES,
-      },
-      {
         title: "Cần chăm sóc lại",
         href: "/followup-inbox",
         icon: Sparkles,
         allowedRoles: SALE_WORKSPACE_ROLES,
       },
+      {
+        title: "Tổng quan Sale",
+        href: "/sale-overview",
+        icon: LayoutGrid,
+        allowedRoles: SALE_WORKSPACE_ROLES,
+      },
+      // "Học viên đang tư vấn" (/students) đã gộp vào "Workspace của tôi" —
+      // ẩn khỏi menu, route vẫn còn dùng được nếu truy cập trực tiếp.
+    ],
+  },
+  {
+    label: "Leader",
+    items: [
       {
         title: "Chăm sóc lại",
         href: "/followup",
@@ -141,28 +149,22 @@ export const navGroups: NavGroup[] = [
         allowedRoles: CAN_PUSH_FOLLOWUP,
       },
       {
+        title: "Khách hàng",
+        href: "/customers",
+        icon: Users,
+        allowedRoles: CAN_REASSIGN,
+      },
+      {
         title: "Nhập từ Excel",
         href: "/leads/import",
         icon: FileSpreadsheet,
-        allowedRoles: CAN_CREATE_OR_EDIT_LEAD,
-      },
-      {
-        title: "Khách hàng trùng",
-        href: "/customers/duplicates",
-        icon: GitMerge,
-        allowedRoles: SALE_WORKSPACE_ROLES,
+        allowedRoles: CAN_REASSIGN,
       },
       {
         title: "Phân bổ học viên",
         href: "/student-assignment",
         icon: UserRoundPlus,
         allowedRoles: CAN_REASSIGN,
-      },
-      {
-        title: "Học viên đang tư vấn",
-        href: "/students",
-        icon: GraduationCap,
-        allowedRoles: SALE_WORKSPACE_ROLES,
       },
     ],
   },
@@ -176,11 +178,16 @@ export const navGroups: NavGroup[] = [
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
       },
       {
-        title: "Báo cáo Page hằng ngày",
-        href: "/page-report",
-        icon: CalendarCheck,
+        title: "Workspace Marketing",
+        href: "/marketing-workspace",
+        icon: Briefcase,
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
       },
+    ],
+  },
+  {
+    label: "Thống kê",
+    items: [
       {
         title: "Chi phí quảng cáo",
         href: "/ads-cost",
@@ -199,38 +206,48 @@ export const navGroups: NavGroup[] = [
         icon: TrendingUp,
         allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
       },
-      {
-        title: "Ad ID mới",
-        href: "/new-ad-ids",
-        icon: ListPlus,
-        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
-      },
     ],
   },
   {
     label: "Quản trị",
     items: [
-      { title: "Giám sát", href: "/admin", icon: ShieldAlert, allowedRoles: ADMIN_ROLES },
-      { title: "Rà soát SLA", href: "/admin/sla-review", icon: TimerOff, allowedRoles: ADMIN_ROLES },
-      { title: "Tổng quan báo cáo đã chốt", href: "/page-report/closed", icon: ClipboardCheck, allowedRoles: ADMIN_ROLES },
-      { title: "Cơ sở", href: "/admin/branches", icon: Building2, allowedRoles: ADMIN_ROLES },
-      { title: "Fanpage", href: "/admin/fanpages", icon: Flag, allowedRoles: ADMIN_ROLES },
-      { title: "Nguồn", href: "/admin/sources", icon: Share2, allowedRoles: ADMIN_ROLES },
-      { title: "Trạng thái", href: "/admin/statuses", icon: CircleDot, allowedRoles: ADMIN_ROLES },
-      { title: "Đối tượng", href: "/admin/objects", icon: Tag, allowedRoles: ADMIN_ROLES },
-      { title: "Người dùng", href: "/admin/users", icon: UserCog, allowedRoles: ADMIN_ROLES },
       {
-        title: "Cấu hình hệ thống",
-        href: "/admin/settings",
-        icon: SlidersHorizontal,
+        title: "Trung tâm quản trị",
+        href: "/admin/monitoring",
+        icon: ShieldAlert,
         allowedRoles: ADMIN_ROLES,
       },
+      {
+        title: "Tổng quan báo cáo đã chốt",
+        href: "/page-report/closed",
+        icon: ClipboardCheck,
+        allowedRoles: ADMIN_ROLES,
+      },
+      {
+        title: "Danh mục",
+        href: "/admin/catalog",
+        icon: Building2,
+        allowedRoles: ADMIN_ROLES,
+      },
+      {
+        title: "Đối tượng",
+        href: "/admin/objects",
+        icon: Tag,
+        allowedRoles: ADMIN_ROLES,
+      },
+      // "Rà soát SLA", "Người dùng", "Cấu hình hệ thống" đã gộp thành section
+      // trong trang "Trung tâm quản trị" (/admin/monitoring) — không còn là mục riêng ở đây.
     ],
   },
   {
     label: "Nhật ký",
     items: [
-      { title: "System Log", href: "/logs", icon: ScrollText, allowedRoles: ADMIN_ROLES },
+      {
+        title: "System Log",
+        href: "/logs",
+        icon: ScrollText,
+        allowedRoles: ADMIN_ROLES,
+      },
     ],
   },
 ];

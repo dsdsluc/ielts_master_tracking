@@ -25,7 +25,7 @@ export async function createBranch(input: { code: string } & z.input<typeof bran
   await prisma.branch
     .create({ data: { code, ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không tạo được cơ sở."));
-  revalidatePath("/admin/branches");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
@@ -35,13 +35,13 @@ export async function updateBranch(code: string, input: z.input<typeof branchSch
   await prisma.branch
     .update({ where: { code }, data: { ...data, note: data.note || null } })
     .catch((err) => friendlyPrismaError(err, "Không cập nhật được cơ sở."));
-  revalidatePath("/admin/branches");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
 export async function setBranchActive(code: string, active: boolean) {
   await requireAdmin();
   await prisma.branch.update({ where: { code }, data: { active } }).catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));
-  revalidatePath("/admin/branches");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }

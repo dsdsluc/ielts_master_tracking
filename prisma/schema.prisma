@@ -134,6 +134,7 @@ model User {
   reassignedInteractions  Interaction[] @relation("ReassignedBy")
   followupInteractions    Interaction[] @relation("FollowupHandledBy")
   mktPushedInteractions   Interaction[] @relation("MktPushedBy")
+  followupTargetInteractions Interaction[] @relation("FollowupTargetSale")
   systemLogs              SystemLog[]
   closedMktPageReports    MktPageReport[] @relation("ClosedMktPageReport")
 
@@ -235,6 +236,12 @@ model Interaction {
 
   mktPushedAt      DateTime? @map("mkt_pushed_at")
   mktPushedByEmail String?   @map("mkt_pushed_by_email")
+  // Sale CỤ THỂ được chọn để nhận yêu cầu chăm sóc lại — bắt buộc chọn khi
+  // gửi mới ở /followup. null = đã gắn cờ needsFollowup nhưng chưa gắn Sale
+  // (case cũ trước khi có field này, hoặc do dữ liệu lỗi) — vẫn hiện lại ở
+  // /followup để Leader/Marketing gắn Sale bù. /followup-inbox của 1 Sale chỉ
+  // hiện đúng những dòng nhắm tới email của họ.
+  followupTargetSaleEmail String? @map("followup_target_sale_email")
 
   conversationLink String? @map("conversation_link")
   mktSuggestion    String? @map("mkt_suggestion")
@@ -265,6 +272,7 @@ model Interaction {
   reassignedBy     User?           @relation("ReassignedBy", fields: [reassignedByEmail], references: [email])
   followupHandledBy User?          @relation("FollowupHandledBy", fields: [followupHandledByEmail], references: [email])
   mktPushedBy      User?           @relation("MktPushedBy", fields: [mktPushedByEmail], references: [email])
+  followupTargetSale User?         @relation("FollowupTargetSale", fields: [followupTargetSaleEmail], references: [email])
 
   migrationMeta   InteractionMigrationMeta?
   studentProfiles StudentProfile[]
@@ -411,6 +419,11 @@ model StudentProfile {
   // thích vì sao hồ sơ đang dừng ở đó (không đến test, do giá, do giáo viên...).
   stage       String?
   stageReason String? @map("stage_reason")
+  // Mốc thời gian THỰC SỰ chuyển sang "Đã chốt" — set đúng 1 lần lúc stage đổi
+  // sang ENROLLED (updateStudentProfile()), KHÔNG dùng chung updatedAt (bị bump
+  // bởi bất kỳ chỉnh sửa nào khác nên không đáng tin cho việc tính KPI theo
+  // ngày/tuần/tháng cụ thể).
+  enrolledAt DateTime? @map("enrolled_at")
   // Case đang kẹt (mở rộng từ stageReason, mirror sheet "Khách kẹt"): hạn xử
   // lý tiếp theo Sale tự đặt, và cờ Sale bật khi cần Leader can thiệp — Leader
   // lọc được ngay ở trang Thống kê thay vì phải đọc từng dòng lý do.

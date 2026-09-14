@@ -15,7 +15,6 @@ export async function fetchQueue(): Promise<QueueResponse> {
 
 export async function fetchInteractions(params: {
   status?: string; // 1 trạng thái, hoặc nhiều trạng thái nối dấu phẩy
-  needsFollowup?: boolean;
   mine?: boolean;
   search?: string;
   page?: number;
@@ -23,7 +22,6 @@ export async function fetchInteractions(params: {
 }): Promise<PagedInteractions> {
   const search = new URLSearchParams();
   if (params.status) search.set("status", params.status);
-  if (params.needsFollowup) search.set("needsFollowup", "true");
   if (params.mine) search.set("mine", "true");
   if (params.search) search.set("search", params.search);
   if (params.page) search.set("page", String(params.page));
@@ -60,8 +58,11 @@ export async function updateStatus(
   });
 }
 
-export async function resolveFollowup(id: string): Promise<InteractionDetail> {
-  return apiFetch<InteractionDetail>(`/api/interactions/${id}/followup/resolve`, { method: "POST" });
+export async function resolveFollowup(id: string, note: string): Promise<InteractionDetail> {
+  return apiFetch<InteractionDetail>(`/api/interactions/${id}/followup/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
 }
 
 export type AssignableSale = { email: string; fullName: string };

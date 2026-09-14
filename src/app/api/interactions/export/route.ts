@@ -14,7 +14,6 @@ export async function GET(request: Request) {
 
     const where = buildInteractionWhere(actor, {
       status: url.searchParams.get("status") ?? undefined,
-      needsFollowup: url.searchParams.get("needsFollowup") === "true",
       mine: url.searchParams.get("mine") === "true",
       branch: url.searchParams.get("branch") ?? undefined,
       search: url.searchParams.get("search") ?? undefined,

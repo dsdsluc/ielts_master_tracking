@@ -377,6 +377,7 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
     if (lead.needsFollowup && businessChanged) {
       Object.assign(data, {
         needsFollowup: false,
+        followupTargetSaleEmail: null,
         followupHandledByEmail: actor.email,
         followupHandledAt: now,
         followupOutcome: FOLLOWUP_OUTCOME.STATUS_CHANGED,
@@ -410,10 +411,20 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 }
 
 // ---------------------------------------------------------------------------
-// Marketing gắn nhãn "Cần chăm sóc lại" hàng loạt (tối đa 50).
+// Marketing/Leader gắn nhãn "Cần chăm sóc lại" hàng loạt (tối đa 50), BẮT BUỘC
+// chọn đúng 1 Sale cụ thể để nhận yêu cầu — Sale đó là người duy nhất thấy
+// dòng này ở /followup-inbox (xem getFollowupInboxWhere() trong queries.ts).
+// Áp dụng được cho cả liên hệ CHƯA gắn cờ (push mới) lẫn liên hệ ĐÃ gắn cờ
+// nhưng chưa có Sale nhận (followupTargetSaleEmail null — case cũ hoặc bị bỏ
+// sót) để Leader/Marketing gắn bù Sale sau.
 // ---------------------------------------------------------------------------
-export async function pushFollowup(actor: CurrentUser, interactionIds: string[], suggestion?: string) {
+export async function pushFollowup(actor: CurrentUser, interactionIds: string[], targetSaleEmail: string, suggestion?: string) {
   requireRole(actor, CAN_PUSH_FOLLOWUP);
+
+  const target = await prisma.user.findUnique({ where: { email: targetSaleEmail } });
+  if (!target || !target.active || ![ROLES.SALES, ROLES.LEADER, ROLES.ADMIN].includes(target.role as never)) {
+    throw new ApiError(422, "VALIDATION_ERROR", "Sale được chọn chưa hoạt động hoặc không có vai trò phù hợp.");
+  }
 
   let pushed = 0;
   let skipped = 0;
@@ -424,16 +435,15 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
   const notifyTargets: { email: string; name: string | null; customerName: string; interactionId: string }[] = [];
 
   for (const interactionId of interactionIds) {
-    const lead = await prisma.interaction.findUnique({
-      where: { interactionId },
-      include: { assignedSale: { select: { fullName: true } }, workspaceClaimedBy: { select: { fullName: true } } },
-    });
+    const lead = await prisma.interaction.findUnique({ where: { interactionId } });
     if (!lead || !canAccessBranch(actor, lead.assignedBranchCode)) {
       skipped++;
       continue;
     }
     const key = canonicalStatusKey(lead.statusName);
-    if ((key !== "WAITING" && key !== "PROCESSING") || lead.needsFollowup) {
+    // Cho qua nếu CHƯA gắn cờ (push mới), hoặc ĐÃ gắn cờ nhưng chưa có Sale
+    // nhận (gắn bù) — chỉ chặn khi đã có Sale khác nhận rồi.
+    if ((key !== "WAITING" && key !== "PROCESSING") || (lead.needsFollowup && lead.followupTargetSaleEmail)) {
       skipped++;
       continue;
     }
@@ -446,22 +456,27 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
           mktPushedAt: now,
           mktPushedByEmail: actor.email,
           mktSuggestion: suggestion || null,
+          followupTargetSaleEmail: target.email,
           followupHandledByEmail: null,
           followupHandledAt: null,
           followupOutcome: null,
+          // Tự thêm luôn vào Workspace của Sale được chọn nếu chưa ai claim —
+          // đã route đích danh cho 1 Sale thì khỏi bắt họ bấm "Nhận" thêm 1
+          // bước nữa ở /followup-inbox. Không đụng nếu đã có người khác claim.
+          ...(lead.workspaceClaimedByEmail ? {} : { workspaceClaimedByEmail: target.email }),
         },
       });
-      await logAction(tx, actor, SYSTEM_LOG_ACTION.MKT_PUSH, interactionId, { status: lead.statusName }, { pushedBy: actor.email, suggestion: suggestion || null });
+      await logAction(
+        tx,
+        actor,
+        SYSTEM_LOG_ACTION.MKT_PUSH,
+        interactionId,
+        { status: lead.statusName },
+        { pushedBy: actor.email, targetSaleEmail: target.email, suggestion: suggestion || null }
+      );
     });
     pushed++;
-
-    // "Tư vấn viên" hiện tại: assignedSaleEmail (Đủ tiêu chuẩn) hoặc người
-    // đang claim Workspace — chưa ai claim thì không có ai để báo, bỏ qua.
-    const consultantEmail = lead.assignedSaleEmail ?? lead.workspaceClaimedByEmail;
-    const consultantName = lead.assignedSale?.fullName ?? lead.workspaceClaimedBy?.fullName ?? null;
-    if (consultantEmail) {
-      notifyTargets.push({ email: consultantEmail, name: consultantName, customerName: lead.customerName, interactionId });
-    }
+    notifyTargets.push({ email: target.email, name: target.fullName, customerName: lead.customerName, interactionId });
   }
 
   if (notifyTargets.length > 0) {
@@ -472,7 +487,7 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
         return sendEmail({
           to: t.email,
           subject: `Cần chăm sóc lại: ${t.customerName}`,
-          html: `<p>Chào ${t.name ?? "bạn"},</p><p>Marketing vừa yêu cầu chăm sóc lại liên hệ <strong>${t.customerName}</strong>.</p>${suggestionHtml}${
+          html: `<p>Chào ${t.name ?? "bạn"},</p><p>Marketing vừa yêu cầu bạn chăm sóc lại liên hệ <strong>${t.customerName}</strong>.</p>${suggestionHtml}${
             link ? `<p><a href="${link}">Xem liên hệ</a></p>` : ""
           }`,
         });
@@ -484,11 +499,16 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
 }
 
 // ---------------------------------------------------------------------------
-// Sale đánh dấu đã xử lý xong yêu cầu chăm sóc lại của Marketing.
+// Sale đánh dấu đã xử lý xong yêu cầu chăm sóc lại của Marketing — bắt buộc
+// ghi lại đã xử lý như thế nào (lưu vào Lịch sử chăm sóc, cùng chỗ với TOUCH
+// bình thường, để xem lại đúng ngữ cảnh sau này).
 // ---------------------------------------------------------------------------
-export async function resolveFollowup(actor: CurrentUser, interactionId: string) {
+export async function resolveFollowup(actor: CurrentUser, interactionId: string, note: string) {
   requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
+
+  const trimmedNote = note.trim();
+  if (!trimmedNote) throw new ApiError(422, "VALIDATION_ERROR", "Vui lòng ghi lại đã xử lý như thế nào.");
 
   const lead = await loadInteractionOr404(interactionId);
   if (!canAccessBranch(actor, lead.assignedBranchCode)) throw Errors.forbidden("Bạn không được xử lý yêu cầu chăm sóc lại của cơ sở này.");
@@ -509,6 +529,7 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string)
     const data: Prisma.InteractionUncheckedUpdateInput = {
       version: { increment: 1 },
       needsFollowup: false,
+      followupTargetSaleEmail: null,
       followupHandledByEmail: actor.email,
       followupHandledAt: now,
       followupOutcome: FOLLOWUP_OUTCOME.MANUAL_DISMISS,
@@ -538,8 +559,12 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string)
       SYSTEM_LOG_ACTION.MKT_PUSH_RESOLVED,
       interactionId,
       { pushedAt: lead.mktPushedAt },
-      { resolvedAt: now, resolvedByEmail: actor.email, resolvedCount }
+      { resolvedAt: now, resolvedByEmail: actor.email, resolvedCount, note: trimmedNote }
     );
+    // Ghi thêm 1 dòng TOUCH bình thường để nội dung xử lý xuất hiện luôn ở
+    // "Lịch sử chăm sóc" trên panel chi tiết — không chỉ nằm trong log kỹ
+    // thuật mà Admin mới xem được.
+    await logAction(tx, actor, SYSTEM_LOG_ACTION.TOUCH, interactionId, null, { note: `[Chăm sóc lại] ${trimmedNote}` });
 
     if (shouldAutoSpam) {
       await tx.customer.update({ where: { customerKey: lead.customerKey }, data: { currentStatusName: STATUS.SPAM, lastTouchAt: now } });

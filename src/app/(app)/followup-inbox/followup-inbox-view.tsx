@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Building2, LoaderCircle, Plus, Repeat2, RotateCcw, Search, Sparkles, TriangleAlert, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusPill } from "@/components/status-pill";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { resolveFollowup } from "@/app/(app)/leads/leads-api";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiErrorMessage } from "@/lib/api-client";
@@ -27,6 +25,7 @@ export type FollowupInboxItem = {
   maxBeforeSpam: number;
   consultantEmail: string | null;
   consultantName: string | null;
+  targetSaleName: string | null;
 };
 
 function daysSince(iso: string) {
@@ -44,8 +43,6 @@ export function FollowupInboxView({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
-  const [pendingId, setPendingId] = useState<string | null>(null);
   const [pickingId, setPickingId] = useState<string | null>(null);
   // Cập nhật lạc quan ngay sau khi "Nhận" — không đợi router.refresh() mới
   // thấy tên tư vấn viên đổi, tránh cảm giác bấm xong mà giao diện đứng im.
@@ -56,7 +53,7 @@ export function FollowupInboxView({
   const [resolvedCount, setResolvedCount] = useState("all");
   const [lastChanceOnly, setLastChanceOnly] = useState(false);
 
-  const visibleItems = useMemo(() => items.filter((i) => !resolvedIds.has(i.interactionId)), [items, resolvedIds]);
+  const visibleItems = items;
 
   const branchOptions = useMemo(() => Array.from(new Set(visibleItems.map((i) => i.branchName))).sort(), [visibleItems]);
   const pusherOptions = useMemo(
@@ -104,24 +101,6 @@ export function FollowupInboxView({
   }, [visibleItems, search, branch, pusher, resolvedCount, lastChanceOnly]);
 
   const hasFilters = !!search.trim() || branch !== "all" || pusher !== "all" || resolvedCount !== "all" || lastChanceOnly;
-
-  async function handleResolve(item: FollowupInboxItem) {
-    setPendingId(item.interactionId);
-    try {
-      const updated = await resolveFollowup(item.interactionId);
-      if (updated.status === "Spam") {
-        toast.info("Đã tự động chuyển Spam — liên hệ này đã bị nhắc chăm sóc lại quá số lần cho phép.");
-      } else {
-        toast.success("Đã đánh dấu xử lý xong.");
-      }
-      setResolvedIds((prev) => new Set(prev).add(item.interactionId));
-      router.refresh();
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
-    } finally {
-      setPendingId(null);
-    }
-  }
 
   async function handlePick(item: FollowupInboxItem) {
     setPickingId(item.interactionId);
@@ -249,17 +228,18 @@ export function FollowupInboxView({
             </p>
           </div>
           <div className="overflow-x-auto">
-            <Table className="min-w-[1220px]">
+            <Table className="min-w-[1320px]">
               <TableHeader className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-md">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Cơ sở</TableHead>
                   <TableHead className="min-w-56 px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Ghi chú từ Marketing</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Người yêu cầu</TableHead>
+                  <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Giao cho</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Thời gian yêu cầu</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Đã chăm sóc</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tư vấn viên</TableHead>
-                  <TableHead className="w-56 pr-5" />
+                  <TableHead className="w-4 pr-5" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -267,14 +247,17 @@ export function FollowupInboxView({
                   const idle = daysSince(item.mktPushedAt);
                   const nextCount = item.followupResolvedCount + 1;
                   const isLastChance = nextCount >= item.maxBeforeSpam;
-                  const pending = pendingId === item.interactionId;
                   const picking = pickingId === item.interactionId;
                   const override = pickedOverrides[item.interactionId];
                   const consultantEmail = override?.email ?? item.consultantEmail;
                   const consultantName = override?.name ?? item.consultantName;
                   const isMine = consultantEmail === currentUserEmail;
                   return (
-                    <TableRow key={item.interactionId} className="odd:bg-secondary/10 align-top">
+                    <TableRow
+                      key={item.interactionId}
+                      className="cursor-pointer odd:bg-secondary/10 align-top"
+                      onClick={() => router.push(`/leads/${item.interactionId}`)}
+                    >
                       <TableCell className="min-w-40 px-5 py-3.5">
                         <p className="max-w-48 truncate font-medium text-foreground">{item.customerName}</p>
                         <div className="mt-1">
@@ -289,6 +272,11 @@ export function FollowupInboxView({
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm text-muted-foreground">
                         <p className="max-w-36 truncate">{item.mktPushedByName ?? "—"}</p>
+                      </TableCell>
+                      <TableCell className="px-4 py-3.5 text-sm">
+                        <p className={item.targetSaleName === currentUserName ? "max-w-32 truncate font-medium text-status-received" : "max-w-32 truncate text-muted-foreground"}>
+                          {item.targetSaleName === currentUserName ? "Bạn" : (item.targetSaleName ?? "—")}
+                        </p>
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-xs text-muted-foreground">
                         {formatDateTime(item.mktPushedAt)}
@@ -315,7 +303,10 @@ export function FollowupInboxView({
                             size="sm"
                             variant="outline"
                             className="rounded-full border-status-received/30 text-status-received hover:bg-status-received-bg hover:text-status-received"
-                            onClick={() => handlePick(item)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePick(item);
+                            }}
                             disabled={picking}
                           >
                             {picking ? <LoaderCircle className="animate-spin" /> : <Plus className="size-3.5" />}
@@ -323,29 +314,8 @@ export function FollowupInboxView({
                           </Button>
                         )}
                       </TableCell>
-                      <TableCell className="py-3.5 pr-5 pl-1">
-                        <div className="flex flex-wrap items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="rounded-full border border-gold/30 bg-accent px-3 text-accent-foreground hover:bg-accent/80"
-                            onClick={() => handleResolve(item)}
-                            disabled={pending}
-                          >
-                            {pending && <LoaderCircle className="animate-spin" />}
-                            Đã xử lý
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="rounded-full text-muted-foreground hover:text-foreground"
-                            nativeButton={false}
-                            render={<Link href={`/leads/${item.interactionId}`} />}
-                          >
-                            Mở
-                            <ArrowRight className="size-3.5" />
-                          </Button>
-                        </div>
+                      <TableCell className="w-4 py-3.5 pr-5 pl-1">
+                        <ArrowRight className="size-3.5 text-muted-foreground" />
                       </TableCell>
                     </TableRow>
                   );

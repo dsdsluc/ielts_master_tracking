@@ -16,8 +16,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/dal";
 import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
-import { CustomersFilterBar } from "@/app/(app)/customers/customers-filter-bar";
-import { customerScopeWhere, customerSearchWhere } from "@/app/(app)/customers/customer-scope";
+import { customerScopeWhere, qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
 
 const PAGE_SIZE = 20;
 
@@ -28,29 +27,20 @@ function formatDate(date: Date) {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string; status?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
-  const { page: pageParam, q, status } = await searchParams;
+  const { page: pageParam } = await searchParams;
   const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
-  const hasFilters = !!q?.trim() || !!status;
 
-  const where: Prisma.CustomerWhereInput = { ...customerScopeWhere(user), ...customerSearchWhere(q, status) };
-
-  const pageHref = (targetPage: number) => {
-    const params = new URLSearchParams();
-    if (q?.trim()) params.set("q", q.trim());
-    if (status) params.set("status", status);
-    params.set("page", String(targetPage));
-    return `/customers?${params.toString()}`;
+  const where: Prisma.CustomerWhereInput = {
+    ...customerScopeWhere(user),
+    ...qualifiedCustomerWhere(),
   };
 
-  const exportHref = (() => {
-    const params = new URLSearchParams();
-    if (q?.trim()) params.set("q", q.trim());
-    if (status) params.set("status", status);
-    return `/api/customers/export?${params.toString()}`;
-  })();
+  const pageHref = (targetPage: number) => `/customers?page=${targetPage}`;
+
+  const exportHref = "/api/customers/export";
 
   const [totalItems, customers] = await Promise.all([
     prisma.customer.count({ where }),
@@ -78,26 +68,19 @@ export default async function CustomersPage({
       <PageHeader
         eyebrow="Vận hành"
         title="Khách hàng"
-        description="Khách hàng gộp theo Link chuẩn — mỗi khách có thể có nhiều lượt liên hệ."
+        description="Khách hàng Đủ tiêu chuẩn (có SĐT), gộp theo Link chuẩn — mỗi khách có thể có nhiều lượt liên hệ."
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <CustomersFilterBar />
-            <Button variant="outline" size="sm" className="h-10 rounded-full" nativeButton={false} render={<a href={exportHref} />}>
-              <FileDown className="size-3.5" /> Xuất Excel
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" className="h-10 rounded-full" nativeButton={false} render={<a href={exportHref} />}>
+            <FileDown className="size-3.5" /> Xuất Excel
+          </Button>
         }
       />
 
       {customers.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={hasFilters ? "Không tìm thấy khách hàng phù hợp" : "Chưa có khách hàng nào"}
-          description={
-            hasFilters
-              ? "Thử đổi từ khoá tìm kiếm hoặc bộ lọc trạng thái."
-              : "Khách hàng sẽ được gộp tự động từ các liên hệ trùng Link chuẩn."
-          }
+          title="Chưa có khách hàng nào"
+          description="Khách hàng Đủ tiêu chuẩn (có SĐT) sẽ được gộp tự động từ các liên hệ trùng Link chuẩn."
         />
       ) : (
         <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
