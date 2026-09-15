@@ -94,7 +94,7 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
   if (!row) throw Errors.notFound();
   if (!canViewLead(actor, row.assignedBranchCode)) throw Errors.forbidden("Bạn không được xem hội thoại này.");
 
-  const [customerHistoryRows, touchLogs] = await Promise.all([
+  const [customerHistoryRows, touchLogs, emailMessageRows] = await Promise.all([
     tx.interaction.findMany({
       where: { customerKey: row.customerKey, interactionId: { not: interactionId } },
       include: listItemInclude,
@@ -104,6 +104,24 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
       where: { interactionId, action: SYSTEM_LOG_ACTION.TOUCH },
       orderBy: { loggedAt: "desc" },
       select: { loggedAt: true, actorName: true, actorEmail: true, detailNew: true },
+    }),
+    tx.emailMessageInteraction.findMany({
+      where: { interactionId },
+      orderBy: { emailMessage: { sentAt: "desc" } },
+      select: {
+        emailMessage: {
+          select: {
+            id: true,
+            subject: true,
+            html: true,
+            toEmail: true,
+            bccEmails: true,
+            action: true,
+            sentAt: true,
+            sentBy: { select: { fullName: true } },
+          },
+        },
+      },
     }),
   ]);
 
@@ -115,6 +133,16 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
       actorName: l.actorName,
       actorEmail: l.actorEmail,
       note: (l.detailNew as { note?: string | null } | null)?.note ?? null,
+    })),
+    emailMessages: emailMessageRows.map((r) => ({
+      id: r.emailMessage.id,
+      subject: r.emailMessage.subject,
+      html: r.emailMessage.html,
+      toEmail: r.emailMessage.toEmail,
+      bccEmails: r.emailMessage.bccEmails,
+      action: r.emailMessage.action,
+      sentAt: r.emailMessage.sentAt.toISOString(),
+      sentByName: r.emailMessage.sentBy?.fullName ?? null,
     })),
   });
 }

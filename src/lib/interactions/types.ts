@@ -63,6 +63,18 @@ export type InteractionDetail = InteractionListItem & {
   };
   customerHistory: InteractionListItem[];
   touchLog: Array<{ loggedAt: string; actorName: string; actorEmail: string | null; note: string | null }>;
+  // Lịch sử email hệ thống đã gửi có nhắc tới liên hệ này (phân bổ chăm sóc
+  // lại...) — ai xem được liên hệ này cũng xem được, không chỉ người gửi/nhận.
+  emailMessages: Array<{
+    id: string;
+    subject: string;
+    html: string;
+    toEmail: string;
+    bccEmails: string[];
+    action: string;
+    sentAt: string;
+    sentByName: string | null;
+  }>;
 };
 
 export type LeadQueueGroup = {

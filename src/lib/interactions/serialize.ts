@@ -62,6 +62,7 @@ export function toDetail(
     permissions: InteractionDetail["permissions"];
     customerHistory: InteractionListItem[];
     touchLog: InteractionDetail["touchLog"];
+    emailMessages: InteractionDetail["emailMessages"];
   }
 ): InteractionDetail {
   return {

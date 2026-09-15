@@ -7,6 +7,7 @@ import {
   ExternalLink,
   History,
   LoaderCircle,
+  Mail,
   MessageCircleMore,
   PhoneCall,
   Save,
@@ -442,6 +443,33 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {detail.emailMessages.length > 0 && (
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <p className="mb-2 flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  <Mail className="size-3.5" /> Email đã gửi
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  {detail.emailMessages.map((m) => (
+                    <details key={m.id} className="group rounded-lg border border-border px-3 py-2">
+                      <summary className="flex cursor-pointer list-none items-start justify-between gap-3 text-sm">
+                        <span className="text-foreground">{m.subject}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatDateTime(m.sentAt)} · {m.sentByName ?? "Hệ thống"}
+                        </span>
+                      </summary>
+                      <div className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
+                        <p className="mb-1.5">
+                          Tới: {m.toEmail}
+                          {m.bccEmails.length > 0 ? ` · Bcc: ${m.bccEmails.join(", ")}` : ""}
+                        </p>
+                        <div className="rounded-md bg-secondary/40 p-3 text-foreground" dangerouslySetInnerHTML={{ __html: m.html }} />
+                      </div>
+                    </details>
+                  ))}
+                </div>
               </div>
             )}
           </div>

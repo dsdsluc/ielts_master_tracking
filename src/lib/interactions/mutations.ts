@@ -26,6 +26,7 @@ import { logAction } from "@/lib/interactions/audit";
 import { getMaxFollowupBeforeSpam, getSpamNoReplyMinAttempts } from "@/lib/interactions/settings";
 import { detailInclude, toDetail } from "@/lib/interactions/serialize";
 import { appLink, sendEmail } from "@/lib/email";
+import { escapeHtml } from "@/lib/html-escape";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { LeadInfoInput, StatusUpdateInput } from "@/lib/interactions/validation";
 import { getInteractionDetail } from "@/lib/interactions/queries";
@@ -512,13 +513,13 @@ export async function assignFollowup(actor: CurrentUser, interactionIds: string[
 
   let assigned = 0;
   let skipped = 0;
-  const notifyTargets: { email: string; name: string | null; customerName: string; interactionId: string; suggestion: string | null }[] = [];
+  const notifyTargets: { customerName: string; interactionId: string; suggestion: string | null }[] = [];
 
   for (const interactionId of interactionIds) {
     try {
       const { customerName, mktSuggestion } = await applyAssignFollowup(interactionId, target, actor);
       assigned++;
-      notifyTargets.push({ email: target.email, name: target.fullName, customerName, interactionId, suggestion: mktSuggestion });
+      notifyTargets.push({ customerName, interactionId, suggestion: mktSuggestion });
     } catch {
       skipped++;
     }
@@ -526,20 +527,37 @@ export async function assignFollowup(actor: CurrentUser, interactionIds: string[
 
   if (notifyTargets.length > 0) {
     // Gửi mail SAU vòng lặp DB — I/O mạng không nên giữ trong transaction, và
-    // lỗi gửi không được làm hỏng việc gán (sendEmail() không throw).
-    await Promise.allSettled(
-      notifyTargets.map((t) => {
+    // lỗi gửi không được làm hỏng việc gán (sendEmail() không throw). Cả batch
+    // luôn cùng 1 targetSaleEmail (tham số của hàm) nên gộp thành 1 email duy
+    // nhất liệt kê hết các liên hệ, thay vì gửi riêng từng mail — Sale nhận 1
+    // thông báo cho 1 lần Leader/Admin phân bổ, dù phân bổ bao nhiêu liên hệ.
+    // customerName/suggestion là dữ liệu người dùng nhập (tên khách, gợi ý tự
+    // do của Marketing) — escape trước khi chèn vào HTML, vì html này không
+    // chỉ gửi qua Gmail mà còn hiển thị lại nguyên trạng trong app (mục "Email
+    // đã gửi" ở trang chi tiết liên hệ) qua dangerouslySetInnerHTML.
+    const itemsHtml = notifyTargets
+      .map((t) => {
         const link = appLink(`/leads/${t.interactionId}`);
-        const suggestionHtml = t.suggestion ? `<p>Gợi ý từ Marketing: ${t.suggestion}</p>` : "";
-        return sendEmail({
-          to: t.email,
-          subject: `Cần chăm sóc lại: ${t.customerName}`,
-          html: `<p>Chào ${t.name ?? "bạn"},</p><p>Bạn vừa được phân bổ chăm sóc lại liên hệ <strong>${t.customerName}</strong>.</p>${suggestionHtml}${
-            link ? `<p><a href="${link}">Xem liên hệ</a></p>` : ""
-          }`,
-        });
+        const safeName = escapeHtml(t.customerName);
+        const suggestionHtml = t.suggestion ? ` — Gợi ý từ Marketing: ${escapeHtml(t.suggestion)}` : "";
+        const label = link ? `<a href="${link}">${safeName}</a>` : safeName;
+        return `<li>${label}${suggestionHtml}</li>`;
       })
-    );
+      .join("");
+
+    // Threading + ghi lịch sử vào email_messages đều xử lý bên trong
+    // sendEmail() — chỉ cần khai báo liên hệ nào email này nói tới.
+    await sendEmail({
+      to: target.email,
+      subject:
+        notifyTargets.length === 1
+          ? `Cần chăm sóc lại: ${notifyTargets[0].customerName}`
+          : `Cần chăm sóc lại: ${notifyTargets.length} liên hệ`,
+      html: `<p>Chào ${escapeHtml(target.fullName ?? "bạn")},</p><p>Bạn vừa được phân bổ chăm sóc lại ${notifyTargets.length} liên hệ:</p><ul>${itemsHtml}</ul>`,
+      action: SYSTEM_LOG_ACTION.FOLLOWUP_ASSIGN,
+      sentByEmail: actor.email,
+      interactionIds: notifyTargets.map((t) => t.interactionId),
+    });
   }
 
   return { assigned, skipped };

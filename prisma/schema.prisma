@@ -137,6 +137,7 @@ model User {
   followupTargetInteractions Interaction[]    @relation("FollowupTargetSale")
   systemLogs                 SystemLog[]
   closedMktPageReports       MktPageReport[]  @relation("ClosedMktPageReport")
+  sentEmailMessages          EmailMessage[]
 
   studentProfilesAssignedTo StudentProfile[] @relation("StudentAssignedTo")
   studentProfilesAssignedBy StudentProfile[] @relation("StudentAssignedBy")
@@ -272,6 +273,7 @@ model Interaction {
   studentProfiles StudentProfile[]
   systemLogs      SystemLog[]
   workspaceClaims WorkspaceClaim[]
+  emailMessages   EmailMessageInteraction[]
 
   @@index([customerKey])
   @@index([statusName])
@@ -300,6 +302,50 @@ model WorkspaceClaim {
   @@index([interactionId])
   @@index([saleEmail])
   @@map("workspace_claims")
+}
+
+// Mỗi dòng = 1 email THẬT SỰ đã gửi đi (1 Message-ID) — kể cả khi 1 email gộp
+// thông báo cho nhiều liên hệ cùng lúc (vd phân bổ hàng loạt cho 1 Sale).
+// Là nguồn sự thật để: (1) tất cả người xem được liên hệ này cũng xem được
+// lịch sử email đã gửi về nó (không chỉ người trực tiếp bấm gửi), và (2) mọi
+// dịch vụ gửi mail sau này tra cứu Message-ID gốc của liên hệ để reply-vào
+// (In-Reply-To/References) thay vì tạo hội thoại mới mỗi lần — xem sendEmail()
+// trong lib/email.ts, đây là nơi DUY NHẤT nên ghi/đọc bảng này.
+model EmailMessage {
+  id          String   @id @default(cuid())
+  messageId   String   @unique @map("message_id")
+  toEmail     String   @map("to_email")
+  bccEmails   String[] @map("bcc_emails")
+  subject     String
+  html        String
+  // Tag nghiệp vụ đã tạo ra email này (mirror SYSTEM_LOG_ACTION, vd
+  // "FOLLOWUP_ASSIGN", "SEND_BROADCAST_EMAIL") — để lọc/hiển thị theo ngữ cảnh.
+  action      String
+  sentByEmail String?  @map("sent_by_email")
+  sentAt      DateTime @default(now()) @map("sent_at")
+
+  sentBy       User?                     @relation(fields: [sentByEmail], references: [email])
+  interactions EmailMessageInteraction[]
+
+  @@index([sentAt])
+  @@map("email_messages")
+}
+
+// Bảng nối nhiều-nhiều EmailMessage <-> Interaction (1 email có thể gộp
+// nhiều liên hệ; 1 liên hệ có thể xuất hiện trong nhiều email theo thời gian)
+// — mirror đúng pattern WorkspaceClaim ở trên thay vì dùng cột mảng, để giữ
+// được FK/index chuẩn như phần còn lại của schema.
+model EmailMessageInteraction {
+  id             String @id @default(cuid())
+  emailMessageId String @map("email_message_id")
+  interactionId  String @map("interaction_id")
+
+  emailMessage EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  interaction  Interaction  @relation(fields: [interactionId], references: [interactionId], onDelete: Cascade)
+
+  @@unique([emailMessageId, interactionId])
+  @@index([interactionId])
+  @@map("email_message_interactions")
 }
 
 // Dữ liệu đối chiếu migration — tách khỏi bảng chính, chỉ phục vụ audit 1 lần

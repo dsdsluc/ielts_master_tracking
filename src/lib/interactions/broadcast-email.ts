@@ -42,8 +42,15 @@ export async function sendBroadcastEmail(
     .map((para) => `<p>${para.replace(/\n/g, "<br/>")}</p>`)
     .join("");
 
-  const ok = await sendEmail({ to: actor.email, bcc: validEmails, subject, html });
-  if (!ok) {
+  const result = await sendEmail({
+    to: actor.email,
+    bcc: validEmails,
+    subject,
+    html,
+    action: SYSTEM_LOG_ACTION.SEND_BROADCAST_EMAIL,
+    sentByEmail: actor.email,
+  });
+  if (!result.ok) {
     throw new ApiError(502, "EMAIL_FAILED", "Không gửi được email — kiểm tra cấu hình Gmail (GMAIL_USER/GMAIL_APP_PASSWORD) trong máy chủ.");
   }
 
