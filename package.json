@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
-    "seed:data:pilot": "tsx prisma/seed-data-pilot.ts"
+    "seed:data:pilot": "tsx prisma/seed-data-pilot.ts",
+    "db:import:workbook": "tsx prisma/reset-and-import-workbook.ts",
+    "db:reset:workbook": "tsx prisma/reset-and-import-workbook.ts --execute"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

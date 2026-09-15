@@ -26,21 +26,12 @@ export const metadata: Metadata = {
   description: "Hệ thống theo dõi và chăm sóc liên hệ nội bộ IELTS Master.",
 };
 
-// Đọc theme đã lưu (hoặc prefers-color-scheme lần đầu) và gắn class .dark
-// TRƯỚC khi React hydrate — tránh nháy sai giao diện lúc tải trang. Đặt
-// suppressHydrationWarning ở <html> vì class này chỉ được gắn phía client.
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
-
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="vi"
-      suppressHydrationWarning
       className={`${fontUI.variable} ${fontCondensed.variable} ${fontData.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-      </head>
       <body className="min-h-full flex flex-col">
         <TooltipProvider delay={200}>{children}</TooltipProvider>
       </body>
