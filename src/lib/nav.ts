@@ -42,13 +42,11 @@ const REPORT_ROLES = [
 // Mỗi vai trò chỉ thấy đúng nhóm nav của mình — Admin luôn thấy tất cả nhóm.
 // Leader không thấy nhóm "Marketing" qua nav (vẫn có thể thao tác thay
 // Marketing nếu nghiệp vụ cho phép, chỉ là không lộ ra sidebar — xem "Menu chỉ
-// là lớp trình bày" ở dưới); mọi việc Leader cần đã gộp vào "Dashboard Leader"
-// trong nhóm Leader. Riêng "Dashboard Sale" (nhóm Saler) Leader vẫn được xem
-// và dùng trực tiếp — xem DASHBOARD_SALE_NAV_ROLES.
-const SALER_NAV_ROLES = [ROLES.SALES, ROLES.ADMIN] as const;
-// Leader được xem "Dashboard Sale" (không phải toàn bộ nhóm Saler) — theo yêu
-// cầu nghiệp vụ cho Leader theo dõi/sử dụng trực tiếp dashboard của Sale.
-const DASHBOARD_SALE_NAV_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
+// là lớp trình bày" ở dưới). Nhóm "Saler" thì Leader vẫn thấy đầy đủ — Leader
+// cũng là Saler theo nghiệp vụ, cần xem/dùng được toàn bộ công cụ của Sale
+// (Dashboard Sale, Liên hệ, Workspace, Chăm sóc lại, Tổng quan Sale) bên cạnh
+// "Dashboard Leader" riêng của mình.
+const SALER_NAV_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
 const MARKETING_NAV_ROLES = [ROLES.MARKETING, ROLES.ADMIN] as const;
 const ADMIN_ROLES = [ROLES.ADMIN] as const;
 
@@ -106,15 +104,15 @@ export const navGroups: NavGroup[] = [
         title: "Dashboard Sale",
         href: "/dashboard-sale",
         icon: Gauge,
-        allowedRoles: DASHBOARD_SALE_NAV_ROLES,
+        allowedRoles: SALER_NAV_ROLES,
       },
       {
         title: "Liên hệ",
         href: "/leads",
         icon: Inbox,
-        // Trước đây dùng CAN_VIEW_LEAD (quyền truy cập server, có cả Marketing
-        // và Leader) — riêng ở NAV chỉ Sale/Admin cần thấy mục này. Trang
-        // /leads vẫn kiểm tra quyền riêng ở server, không phụ thuộc danh sách này.
+        // NAV dùng SALER_NAV_ROLES (Sale/Leader/Admin) — hẹp hơn CAN_VIEW_LEAD
+        // (quyền server, có thêm cả Marketing). Trang /leads vẫn kiểm tra
+        // quyền riêng ở server, không phụ thuộc danh sách này.
         allowedRoles: SALER_NAV_ROLES,
       },
       {
