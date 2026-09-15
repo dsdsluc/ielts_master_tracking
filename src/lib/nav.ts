@@ -40,11 +40,15 @@ const REPORT_ROLES = [
   ROLES.ADMIN,
 ] as const;
 // Mỗi vai trò chỉ thấy đúng nhóm nav của mình — Admin luôn thấy tất cả nhóm.
-// Leader không còn thấy nhóm "Saler"/"Marketing" qua nav nữa (vẫn có thể thao
-// tác thay Sale/Marketing nếu nghiệp vụ cho phép, chỉ là không lộ ra sidebar
-// — xem "Menu chỉ là lớp trình bày" ở dưới); mọi việc Leader cần đã gộp vào
-// "Dashboard Leader" trong nhóm Leader.
+// Leader không thấy nhóm "Marketing" qua nav (vẫn có thể thao tác thay
+// Marketing nếu nghiệp vụ cho phép, chỉ là không lộ ra sidebar — xem "Menu chỉ
+// là lớp trình bày" ở dưới); mọi việc Leader cần đã gộp vào "Dashboard Leader"
+// trong nhóm Leader. Riêng "Dashboard Sale" (nhóm Saler) Leader vẫn được xem
+// và dùng trực tiếp — xem DASHBOARD_SALE_NAV_ROLES.
 const SALER_NAV_ROLES = [ROLES.SALES, ROLES.ADMIN] as const;
+// Leader được xem "Dashboard Sale" (không phải toàn bộ nhóm Saler) — theo yêu
+// cầu nghiệp vụ cho Leader theo dõi/sử dụng trực tiếp dashboard của Sale.
+const DASHBOARD_SALE_NAV_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
 const MARKETING_NAV_ROLES = [ROLES.MARKETING, ROLES.ADMIN] as const;
 const ADMIN_ROLES = [ROLES.ADMIN] as const;
 
@@ -102,7 +106,7 @@ export const navGroups: NavGroup[] = [
         title: "Dashboard Sale",
         href: "/dashboard-sale",
         icon: Gauge,
-        allowedRoles: SALER_NAV_ROLES,
+        allowedRoles: DASHBOARD_SALE_NAV_ROLES,
       },
       {
         title: "Liên hệ",
