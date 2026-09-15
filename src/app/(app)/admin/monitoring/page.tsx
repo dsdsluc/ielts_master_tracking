@@ -31,6 +31,7 @@ import {
   type BranchSla,
 } from "@/lib/interactions/queries";
 import { listItemInclude, toListItem } from "@/lib/interactions/serialize";
+import { computeSalePerformance } from "@/lib/interactions/sale-performance";
 import { SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { currentKpiMonth } from "@/lib/interactions/settings";
@@ -134,9 +135,7 @@ export default async function AdminMonitoringPage() {
 
   const [
     branches,
-    sales,
-    createdCounts,
-    closedGroups,
+    perfRowsRaw,
     spamInteractions,
     queue,
     slaMap,
@@ -148,24 +147,7 @@ export default async function AdminMonitoringPage() {
       select: { code: true, name: true },
       orderBy: { name: "asc" },
     }),
-    prisma.user.findMany({
-      where: { role: ROLES.SALES, active: true },
-      select: { email: true, fullName: true, branchCode: true },
-    }),
-    prisma.interaction.groupBy({
-      by: ["createdByEmail"],
-      where: { createdLeadAt: { gte: windowStart } },
-      _count: { _all: true },
-    }),
-    prisma.interaction.groupBy({
-      by: ["updatedByEmail", "statusName"],
-      where: {
-        closedAt: { gte: windowStart },
-        statusName: { in: [STATUS.PHONE, STATUS.SPAM] },
-        updatedByEmail: { not: null },
-      },
-      _count: { _all: true },
-    }),
+    computeSalePerformance(admin, WINDOW_DAYS),
     prisma.interaction.findMany({
       where: { statusName: STATUS.SPAM, closedAt: { gte: windowStart } },
       orderBy: { closedAt: "desc" },
@@ -210,26 +192,7 @@ export default async function AdminMonitoringPage() {
   const branchNameByCode = new Map(branches.map((b) => [b.code, b.name]));
 
   // --- Giám sát hoạt động -----------------------------------------------
-  const createdByEmail = new Map(
-    createdCounts.map((r) => [r.createdByEmail, r._count._all]),
-  );
-  const qualifiedByEmail = new Map<string, number>();
-  const spamByEmail = new Map<string, number>();
-  for (const row of closedGroups) {
-    if (!row.updatedByEmail) continue;
-    if (row.statusName === STATUS.PHONE)
-      qualifiedByEmail.set(row.updatedByEmail, row._count._all);
-    if (row.statusName === STATUS.SPAM)
-      spamByEmail.set(row.updatedByEmail, row._count._all);
-  }
-  const perfRows = sales
-    .map((s) => {
-      const created = createdByEmail.get(s.email) ?? 0;
-      const qualified = qualifiedByEmail.get(s.email) ?? 0;
-      const spam = spamByEmail.get(s.email) ?? 0;
-      return { ...s, created, qualified, spam };
-    })
-    .sort((a, b) => b.spam - a.spam || b.created - a.created);
+  const perfRows = [...perfRowsRaw].sort((a, b) => b.spam - a.spam || b.created - a.created);
 
   // Lấy đúng lý do Spam gần nhất của mỗi liên hệ từ nhật ký hệ thống — Interaction
   // không lưu trực tiếp spamReason, chỉ SystemLog (detailNew) mới có.
@@ -387,7 +350,7 @@ export default async function AdminMonitoringPage() {
                       </TableCell>
                       <TableCell className="pr-4 pl-1">
                         <Link
-                          href={`/leads/${item.interactionId}`}
+                          href={`/admin/monitoring/spam-review/${item.interactionId}`}
                           className="flex items-center justify-center text-muted-foreground hover:text-foreground"
                           aria-label="Xem chi tiết"
                         >

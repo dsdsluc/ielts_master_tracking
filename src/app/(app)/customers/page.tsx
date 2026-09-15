@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { StatusPill } from "@/components/status-pill";
+import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -146,6 +147,7 @@ export default async function CustomersPage({
                       <span className="flex items-center gap-1.5 font-mono text-sm text-foreground">
                         <PhoneCall className="size-3.5 text-muted-foreground" />
                         {c.phoneNormalized}
+                        <CopyButton value={c.phoneNormalized} label="Đã copy số điện thoại" />
                       </span>
                     ) : (
                       <span className="text-sm text-muted-foreground">Chưa có</span>

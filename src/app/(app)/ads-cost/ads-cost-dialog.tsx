@@ -72,19 +72,23 @@ function toFormValues(row: AdsCostRow): AdsCostFormValues {
 export function AdsCostDialog({
   mode,
   row,
+  defaultAdId,
   sourceOptions,
   fanpageOptions,
   branchOptions,
 }: {
   mode: "create" | "edit";
   row?: AdsCostRow;
+  // Gợi ý sẵn Ad ID khi tạo mới từ 1 dòng đã biết trước (vd. đăng ký Ad ID mới
+  // phát hiện) — người dùng vẫn sửa được nếu cần, không khoá field.
+  defaultAdId?: string;
   sourceOptions: string[];
   fanpageOptions: string[];
   branchOptions: { code: string; name: string }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<AdsCostFormValues>(row ? toFormValues(row) : EMPTY);
+  const [form, setForm] = useState<AdsCostFormValues>(row ? toFormValues(row) : { ...EMPTY, adId: defaultAdId ?? "" });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,7 +97,7 @@ export function AdsCostDialog({
   }
 
   function reset() {
-    setForm(row ? toFormValues(row) : EMPTY);
+    setForm(row ? toFormValues(row) : { ...EMPTY, adId: defaultAdId ?? "" });
     setError(null);
   }
 

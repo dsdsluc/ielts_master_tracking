@@ -3,8 +3,19 @@
 import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, LoaderCircle, Trash2, X } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  ChevronDown,
+  ChevronRight,
+  GraduationCap,
+  LoaderCircle,
+  MessageCircleMore,
+  ScrollText,
+  Sparkles,
+  TimerOff,
+  Trash2,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,8 +31,16 @@ import {
 import { FormMessage } from "@/components/form-message";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiErrorMessage } from "@/lib/api-client";
-import { formatDateTime } from "@/app/(app)/leads/lead-format";
-import { actionLabel, buildDetailDiffRows, fieldLabel, formatDetailValue, resultLabel } from "@/app/(app)/logs/format";
+import {
+  actionCategory,
+  actionLabel,
+  buildDetailDiffRows,
+  fieldLabel,
+  formatDetailValue,
+  LOG_CATEGORY_META,
+  resultLabel,
+  type LogCategoryKey,
+} from "@/app/(app)/logs/format";
 
 export type LogRow = {
   logId: string;
@@ -38,26 +57,53 @@ export type LogRow = {
   technicalInfo: string | null;
 };
 
-const RESULT_STYLES: Record<string, string> = {
-  SUCCESS: "bg-status-qualified-bg text-status-qualified",
-  FAIL: "bg-destructive/10 text-destructive",
+const CATEGORY_ICON: Record<LogCategoryKey, LucideIcon> = {
+  lead: MessageCircleMore,
+  followup: Sparkles,
+  student: GraduationCap,
+  sla: TimerOff,
 };
 
-function ResultPill({ result }: { result: string }) {
-  const style = RESULT_STYLES[result] ?? "bg-secondary text-muted-foreground";
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`}>
-      <span className="size-1.5 rounded-full bg-current" />
-      {resultLabel(result)}
-    </span>
-  );
+const FALLBACK_META = { label: "Khác", bgClass: "bg-secondary", textClass: "text-muted-foreground" };
+
+function categoryMeta(action: string) {
+  const key = actionCategory(action);
+  return { key, ...(key ? LOG_CATEGORY_META[key] : FALLBACK_META) };
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+}
+
+// "Hôm nay"/"Hôm qua" cho 2 ngày gần nhất — đọc nhanh hơn ngày tháng khi lướt
+// hoạt động hằng ngày; các ngày cũ hơn hiện đủ thứ/ngày/tháng/năm.
+function dayLabel(iso: string) {
+  const d = new Date(iso);
+  const dOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffDays = Math.round((todayOnly.getTime() - dOnly.getTime()) / 86400000);
+  if (diffDays === 0) return "Hôm nay";
+  if (diffDays === 1) return "Hôm qua";
+  return d.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function groupByDay(rows: LogRow[]): { label: string; rows: LogRow[] }[] {
+  const groups: { label: string; rows: LogRow[] }[] = [];
+  for (const row of rows) {
+    const label = dayLabel(row.loggedAt);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.rows.push(row);
+    else groups.push({ label, rows: [row] });
+  }
+  return groups;
 }
 
 function hasDetail(row: LogRow) {
   return row.detailOld != null || row.detailNew != null || !!row.technicalInfo;
 }
 
-export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: number }) {
+export function LogsFeed({ rows, totalItems }: { rows: LogRow[]; totalItems: number }) {
   const router = useRouter();
   const { toast } = useToast();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -69,6 +115,7 @@ export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: nu
 
   const pageIds = rows.map((r) => r.logId);
   const allPagedSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const groups = groupByDay(rows);
 
   function stopSelecting() {
     setSelecting(false);
@@ -122,9 +169,12 @@ export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: nu
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card px-5 py-3">
         {selecting ? (
           <>
-            <p className="text-xs text-muted-foreground">
-              Đã chọn <strong className="font-mono text-foreground">{selected.size}</strong> dòng (trong trang này)
-            </p>
+            <div className="flex items-center gap-2.5">
+              <Checkbox checked={allPagedSelected} onCheckedChange={toggleAllOnPage} aria-label="Chọn tất cả đang hiển thị" />
+              <p className="text-xs text-muted-foreground">
+                Đã chọn <strong className="font-mono text-foreground">{selected.size}</strong> dòng (trong trang này)
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <Button type="button" variant="ghost" size="sm" className="rounded-full text-muted-foreground" onClick={stopSelecting}>
                 <X className="size-3.5" />
@@ -176,7 +226,7 @@ export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: nu
         ) : (
           <>
             <p className="text-xs text-muted-foreground">
-              <strong className="font-mono text-foreground">{totalItems}</strong> dòng nhật ký
+              <strong className="font-mono text-foreground">{totalItems}</strong> hoạt động
             </p>
             <Button
               type="button"
@@ -192,92 +242,78 @@ export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: nu
         )}
       </div>
 
-      <div className="overflow-x-auto">
-        <Table className="min-w-[920px]">
-          <TableHeader className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-md">
-            <TableRow className="hover:bg-transparent">
-              {selecting ? (
-                <TableHead className="w-10 pl-5">
-                  <Checkbox checked={allPagedSelected} onCheckedChange={toggleAllOnPage} aria-label="Chọn tất cả đang hiển thị" />
-                </TableHead>
-              ) : (
-                <TableHead className="w-8 pl-5" />
-              )}
-              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Thời gian</TableHead>
-              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Người thực hiện</TableHead>
-              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Vai trò</TableHead>
-              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Hành động</TableHead>
-              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Liên hệ liên quan</TableHead>
-              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Kết quả</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => {
-              const expandable = !selecting && hasDetail(row);
-              const expanded = expandedId === row.logId;
-              const checked = selected.has(row.logId);
-              const diffRows = expandable ? buildDetailDiffRows(row.detailOld, row.detailNew) : null;
-              return (
-                <Fragment key={row.logId}>
-                  <TableRow
-                    className={`odd:bg-secondary/10 ${expandable || selecting ? "cursor-pointer" : ""} ${checked ? "bg-accent/30" : ""}`}
-                    onClick={
-                      selecting
-                        ? () => toggleOne(row.logId)
-                        : expandable
-                          ? () => setExpandedId(expanded ? null : row.logId)
-                          : undefined
-                    }
-                  >
-                    <TableCell className="pl-5" onClick={selecting ? (e) => e.stopPropagation() : undefined}>
+      <div className="divide-y divide-border/60">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="sticky top-0 z-10 bg-secondary/80 px-5 py-2 font-condensed text-[10px] font-semibold tracking-wider text-muted-foreground uppercase backdrop-blur-md">
+              {group.label}
+            </div>
+            <div className="divide-y divide-border/40">
+              {group.rows.map((row) => {
+                const expandable = !selecting && hasDetail(row);
+                const expanded = expandedId === row.logId;
+                const checked = selected.has(row.logId);
+                const meta = categoryMeta(row.action);
+                const Icon = meta.key ? CATEGORY_ICON[meta.key] : ScrollText;
+                const diffRows = expandable ? buildDetailDiffRows(row.detailOld, row.detailNew) : null;
+
+                return (
+                  <Fragment key={row.logId}>
+                    <div
+                      className={`flex items-start gap-3 px-5 py-3 transition-colors ${expandable || selecting ? "cursor-pointer hover:bg-secondary/30" : ""} ${checked ? "bg-accent/30" : ""}`}
+                      onClick={
+                        selecting
+                          ? () => toggleOne(row.logId)
+                          : expandable
+                            ? () => setExpandedId(expanded ? null : row.logId)
+                            : undefined
+                      }
+                    >
                       {selecting ? (
-                        <Checkbox checked={checked} onCheckedChange={() => toggleOne(row.logId)} aria-label="Chọn dòng này" />
+                        <div className="flex size-9 shrink-0 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox checked={checked} onCheckedChange={() => toggleOne(row.logId)} aria-label="Chọn dòng này" />
+                        </div>
                       ) : (
-                        expandable && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="rounded-full text-muted-foreground"
-                            aria-label={expanded ? "Thu gọn chi tiết" : "Xem chi tiết"}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedId(expanded ? null : row.logId);
-                            }}
-                          >
-                            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                          </Button>
-                        )
+                        <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full ${meta.bgClass}`}>
+                          <Icon className={`size-4 ${meta.textClass}`} />
+                        </span>
                       )}
-                    </TableCell>
-                    <TableCell className="min-w-36 px-4 text-sm text-muted-foreground">{formatDateTime(row.loggedAt)}</TableCell>
-                    <TableCell className="min-w-40 px-4">
-                      <p className="truncate font-medium text-foreground">{row.actorName}</p>
-                      {row.actorEmail && <p className="truncate text-xs text-muted-foreground">{row.actorEmail}</p>}
-                    </TableCell>
-                    <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">{row.actorRole}</TableCell>
-                    <TableCell className="px-4 text-sm text-foreground">{actionLabel(row.action)}</TableCell>
-                    <TableCell className="hidden px-4 text-sm md:table-cell">
-                      {row.interactionId ? (
-                        <Link
-                          href={`/leads/${row.interactionId}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-status-received underline underline-offset-2 hover:text-status-received/80"
-                        >
-                          {row.customerName ?? row.interactionId}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4">
-                      <ResultPill result={row.result} />
-                    </TableCell>
-                  </TableRow>
-                  {expandable && expanded && (
-                    <TableRow className="bg-secondary/20 hover:bg-secondary/20">
-                      <TableCell />
-                      <TableCell colSpan={6} className="px-4 py-4">
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-1.5">
+                          <span className="font-medium text-foreground">{row.actorName}</span>
+                          <span className="text-sm text-muted-foreground">{actionLabel(row.action).toLowerCase()}</span>
+                          {row.interactionId && (
+                            <Link
+                              href={`/leads/${row.interactionId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-sm font-medium text-status-received underline underline-offset-2 hover:text-status-received/80"
+                            >
+                              {row.customerName ?? row.interactionId}
+                            </Link>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                          <span>{row.actorRole}</span>
+                          <span aria-hidden>·</span>
+                          <span className={meta.textClass}>{meta.label}</span>
+                          {row.result === "FAIL" && (
+                            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
+                              {resultLabel(row.result)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
+                        {formatTime(row.loggedAt)}
+                        {expandable &&
+                          (expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />)}
+                      </div>
+                    </div>
+
+                    {expandable && expanded && (
+                      <div className="bg-secondary/20 px-5 py-4 pl-[3.25rem]">
                         {diffRows && diffRows.length > 0 && (
                           <div className="overflow-hidden rounded-lg border border-border/60 bg-card">
                             <table className="w-full text-sm">
@@ -306,18 +342,18 @@ export function LogsTable({ rows, totalItems }: { rows: LogRow[]; totalItems: nu
                         )}
                         {row.technicalInfo && (
                           <p className="mt-3 text-xs text-muted-foreground">
-                            <span className="font-medium text-foreground">Ghi chú kỹ thuật: </span>
+                            <span className="font-medium text-foreground">Ghi chú: </span>
                             {row.technicalInfo}
                           </p>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-          </TableBody>
-        </Table>
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

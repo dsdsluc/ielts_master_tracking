@@ -13,11 +13,14 @@ export type InteractionListItem = {
   assignedBranchCode: string;
   assignedSaleEmail: string | null;
   assignedSaleName: string | null;
-  workspaceClaimedByEmail: string | null;
-  workspaceClaimedByName: string | null;
+  // Email của MỌI Sale đang có liên hệ này trong Workspace của họ — nhiều Sale
+  // có thể cùng claim 1 liên hệ (không còn độc quyền). Dùng để lọc "liên hệ
+  // của tôi" ở dashboard/Workspace mà không cần round-trip DB riêng.
+  workspaceClaimantEmails: string[];
   // "Tư vấn viên" hiển thị cho người dùng: assignedSaleEmail chỉ có giá trị
-  // từ khi Đủ tiêu chuẩn (SĐT), nên trước đó lấy theo người đang claim liên
-  // hệ vào Workspace của họ — xem autoClaimWorkspace() trong mutations.ts.
+  // từ khi Đủ tiêu chuẩn (SĐT), nên trước đó lấy theo Sale claim liên hệ vào
+  // Workspace của họ GẦN NHẤT (lastActivityAt lớn nhất) — xem
+  // autoClaimWorkspace() trong mutations.ts và listItemInclude trong serialize.ts.
   consultantEmail: string | null;
   consultantName: string | null;
   createdByEmail: string;

@@ -1,26 +1,20 @@
 import { Tag } from "lucide-react";
-import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
 import { ActiveToggle } from "@/app/(app)/admin/active-toggle";
 import { ObjectDialog } from "@/app/(app)/admin/objects/object-dialog";
 import { setObjectActive } from "@/app/(app)/admin/objects/actions";
 
-export default async function ObjectsPage() {
-  await requireRole(ROLES.ADMIN);
+export async function ObjectsPanel() {
   const objects = await prisma.customerObject.findMany({ orderBy: { sortOrder: "asc" } });
 
   return (
-    <>
-      <PageHeader
-        eyebrow="Quản trị"
-        title="Đối tượng"
-        description="Phân loại đối tượng khách hàng: HS-SV, phụ huynh, người đi làm..."
-        action={<ObjectDialog mode="create" />}
-      />
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">Phân loại đối tượng khách hàng: HS-SV, phụ huynh, người đi làm...</p>
+        <ObjectDialog mode="create" />
+      </div>
 
       {objects.length === 0 ? (
         <EmptyState
@@ -68,6 +62,6 @@ export default async function ObjectsPage() {
           </Table>
         </div>
       )}
-    </>
+    </div>
   );
 }

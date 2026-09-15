@@ -57,9 +57,9 @@ export function WorkspaceKpiCard({ kpi }: { kpi: SalePersonalKpi }) {
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
         Được phân bổ <strong className="font-mono text-foreground">{kpi.mineAssigned}</strong>/{kpi.totalAssigned} học viên toàn công ty tháng này (
-        {sharePercent}%) — chỉ tiêu tháng của bạn = số học viên nhận × tỷ lệ nhận ={" "}
-        {kpi.mineAssigned} × {sharePercent}% ≈ <strong className="font-mono text-foreground">{kpi.monthly.target}</strong> (chỉ tiêu công ty tháng này:{" "}
-        {kpi.companyTarget}). Chỉ tiêu ngày/tuần tự tính lại theo phần còn thiếu và số ngày/tuần còn lại trong tháng.
+        {sharePercent}%) — chỉ tiêu tháng của bạn = chỉ tiêu công ty × tỷ lệ nhận ={" "}
+        {kpi.companyTarget} × {sharePercent}% ≈ <strong className="font-mono text-foreground">{kpi.monthly.target}</strong>. Chỉ tiêu ngày/tuần tự
+        tính lại theo phần còn thiếu và số ngày/tuần còn lại trong tháng.
       </p>
     </div>
   );

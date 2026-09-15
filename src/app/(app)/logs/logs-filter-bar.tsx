@@ -6,19 +6,19 @@ import { RotateCcw, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { LOG_ACTION_LABELS, LOG_RESULT_LABELS } from "@/app/(app)/logs/format";
+import { LOG_CATEGORY_OPTIONS, LOG_RESULT_LABELS } from "@/app/(app)/logs/format";
 
 export function LogsFilterBar() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentQ = searchParams.get("q") ?? "";
-  const action = searchParams.get("action") ?? "all";
+  const category = searchParams.get("category") ?? "all";
   const result = searchParams.get("result") ?? "all";
   const [q, setQ] = useState(currentQ);
 
   // Truyền sẵn items cho Select — tránh Base UI hiển thị value thô ("all")
   // thay vì nhãn, do nhãn chỉ đăng ký được sau khi popup đã mount lần đầu.
-  const actionItems = { all: "Tất cả hành động", ...LOG_ACTION_LABELS };
+  const categoryItems = { all: "Tất cả nhóm", ...Object.fromEntries(LOG_CATEGORY_OPTIONS.map((o) => [o.value, o.label])) };
   const resultItems = { all: "Tất cả kết quả", ...LOG_RESULT_LABELS };
 
   function updateParams(next: Record<string, string | null>) {
@@ -51,15 +51,15 @@ export function LogsFilterBar() {
           className="h-10 rounded-xl bg-background pr-3 pl-9"
         />
       </div>
-      <Select items={actionItems} value={action} onValueChange={(v) => updateParams({ action: v })}>
+      <Select items={categoryItems} value={category} onValueChange={(v) => updateParams({ category: v })}>
         <SelectTrigger className="h-10 w-full rounded-xl bg-background sm:w-48">
-          <SelectValue placeholder="Tất cả hành động" />
+          <SelectValue placeholder="Tất cả nhóm" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">Tất cả hành động</SelectItem>
-          {Object.entries(LOG_ACTION_LABELS).map(([code, label]) => (
-            <SelectItem key={code} value={code}>
-              {label}
+          <SelectItem value="all">Tất cả nhóm</SelectItem>
+          {LOG_CATEGORY_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
             </SelectItem>
           ))}
         </SelectContent>

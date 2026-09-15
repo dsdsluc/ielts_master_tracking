@@ -3,14 +3,13 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   UPDATE_CONVERSATION_INFO: "Cập nhật thông tin liên hệ",
   TOUCH: "Ghi nhận đã liên hệ",
   UPDATE_RESULT: "Cập nhật kết quả",
-  MKT_PUSH_SALE: "Marketing yêu cầu chăm sóc lại",
+  MKT_PUSH_SALE: "Gửi yêu cầu chăm sóc lại",
   MKT_PUSH_RESOLVED: "Đã xử lý chăm sóc lại",
+  FOLLOWUP_ASSIGN: "Phân bổ chăm sóc lại",
   REASSIGN_PHONE_LEAD: "Chuyển tư vấn viên",
   CLOSE_MKT_PAGE_REPORT: "Chốt báo cáo Page",
   REOPEN_MKT_PAGE_REPORT: "Mở lại báo cáo Page",
   MERGE_CUSTOMERS: "Gộp khách hàng trùng",
-  CLEANUP_SYSTEM_LOGS: "Dọn dẹp System Log",
-  CLEANUP_ADS_COST: "Dọn dẹp chi phí quảng cáo",
   ADD_TO_WORKSPACE: "Thêm liên hệ vào Workspace",
   RELEASE_FROM_WORKSPACE: "Giải phóng liên hệ khỏi Workspace",
   FLAG_SLA_BREACH: "Đánh dấu quá SLA",
@@ -23,6 +22,50 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
 export function actionLabel(action: string) {
   return LOG_ACTION_LABELS[action] ?? action;
 }
+
+// Hành động dọn dẹp dữ liệu hệ thống (Admin) — không phải việc nhân viên làm
+// với khách/học viên, nên trang Nhật ký hoạt động không liệt kê các dòng này.
+export const ADMIN_ONLY_ACTIONS = ["CLEANUP_SYSTEM_LOGS", "CLEANUP_ADS_COST"];
+
+export type LogCategoryKey = "lead" | "followup" | "student" | "sla";
+
+// Gộp hành động thành 4 nhóm nghiệp vụ — dùng để tô màu phân biệt trong
+// feed và lọc theo nhóm thay vì phải nhớ tên từng hành động lẻ.
+export const ACTION_CATEGORY: Record<string, LogCategoryKey> = {
+  CREATE_CONVERSATION: "lead",
+  UPDATE_CONVERSATION_INFO: "lead",
+  TOUCH: "lead",
+  UPDATE_RESULT: "lead",
+  REASSIGN_PHONE_LEAD: "lead",
+  MERGE_CUSTOMERS: "lead",
+  ADD_TO_WORKSPACE: "lead",
+  RELEASE_FROM_WORKSPACE: "lead",
+  MKT_PUSH_SALE: "followup",
+  MKT_PUSH_RESOLVED: "followup",
+  FOLLOWUP_ASSIGN: "followup",
+  CLOSE_MKT_PAGE_REPORT: "followup",
+  REOPEN_MKT_PAGE_REPORT: "followup",
+  SEND_BROADCAST_EMAIL: "followup",
+  ASSIGN_STUDENT: "student",
+  UPDATE_STUDENT_STAGE: "student",
+  TRANSFER_STUDENT: "student",
+  FLAG_SLA_BREACH: "sla",
+};
+
+export function actionCategory(action: string): LogCategoryKey | null {
+  return ACTION_CATEGORY[action] ?? null;
+}
+
+export const LOG_CATEGORY_META: Record<LogCategoryKey, { label: string; bgClass: string; textClass: string }> = {
+  lead: { label: "Liên hệ & khách hàng", bgClass: "bg-status-received-bg", textClass: "text-status-received" },
+  followup: { label: "Chăm sóc lại & Marketing", bgClass: "bg-accent", textClass: "text-gold" },
+  student: { label: "Học viên", bgClass: "bg-status-qualified-bg", textClass: "text-status-qualified" },
+  sla: { label: "Giám sát SLA", bgClass: "bg-status-spam-bg", textClass: "text-status-spam" },
+};
+
+export const LOG_CATEGORY_OPTIONS: { value: LogCategoryKey; label: string }[] = (
+  Object.entries(LOG_CATEGORY_META) as [LogCategoryKey, (typeof LOG_CATEGORY_META)[LogCategoryKey]][]
+).map(([value, meta]) => ({ value, label: meta.label }));
 
 export const LOG_RESULT_LABELS: Record<string, string> = {
   SUCCESS: "Thành công",

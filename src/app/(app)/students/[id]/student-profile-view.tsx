@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FormMessage } from "@/components/form-message";
+import { CopyButton } from "@/components/copy-button";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-client";
 import { STUDENT_STAGE, STUDENT_STAGE_VALUES } from "@/lib/interactions/constants";
@@ -200,7 +201,10 @@ export function StudentProfileView({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Số điện thoại</Label>
-            <Input value={form.phone} onChange={(e) => update("phone", e.target.value)} disabled className="h-10 rounded-xl bg-secondary/40 font-mono" />
+            <div className="flex items-center gap-1.5">
+              <Input value={form.phone} onChange={(e) => update("phone", e.target.value)} disabled className="h-10 rounded-xl bg-secondary/40 font-mono" />
+              <CopyButton value={form.phone} label="Đã copy số điện thoại" />
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Độ tuổi</Label>

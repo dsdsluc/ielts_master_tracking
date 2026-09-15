@@ -25,6 +25,7 @@ export type FollowupInboxItem = {
   maxBeforeSpam: number;
   consultantEmail: string | null;
   consultantName: string | null;
+  workspaceClaimantEmails: string[];
   targetSaleName: string | null;
 };
 
@@ -110,7 +111,7 @@ export function FollowupInboxView({
         body: JSON.stringify({ interactionIds: [item.interactionId] }),
       });
       if (data.conflicts?.length) {
-        toast.error(`${item.customerName} vừa được Sale khác nhận vào Workspace của họ trước.`);
+        toast.error(`Không thể thêm ${item.customerName} vào Workspace — liên hệ đã đóng hoặc bạn không có quyền truy cập.`);
       } else {
         setPickedOverrides((prev) => ({ ...prev, [item.interactionId]: { email: currentUserEmail, name: currentUserName } }));
         toast.success(`Đã nhận ${item.customerName} vào Workspace của bạn.`);
@@ -249,9 +250,8 @@ export function FollowupInboxView({
                   const isLastChance = nextCount >= item.maxBeforeSpam;
                   const picking = pickingId === item.interactionId;
                   const override = pickedOverrides[item.interactionId];
-                  const consultantEmail = override?.email ?? item.consultantEmail;
                   const consultantName = override?.name ?? item.consultantName;
-                  const isMine = consultantEmail === currentUserEmail;
+                  const isMine = !!override || item.workspaceClaimantEmails.includes(currentUserEmail) || item.consultantEmail === currentUserEmail;
                   return (
                     <TableRow
                       key={item.interactionId}
@@ -294,24 +294,25 @@ export function FollowupInboxView({
                         {isLastChance && <p className="mt-0.5 text-[11px] text-destructive">Lần cuối trước khi tự Spam</p>}
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm">
-                        {consultantName ? (
-                          <p className={isMine ? "font-medium text-status-received" : "max-w-32 truncate text-foreground"}>
-                            {isMine ? "Bạn" : consultantName}
-                          </p>
+                        {isMine ? (
+                          <p className="font-medium text-status-received">Bạn</p>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="rounded-full border-status-received/30 text-status-received hover:bg-status-received-bg hover:text-status-received"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handlePick(item);
-                            }}
-                            disabled={picking}
-                          >
-                            {picking ? <LoaderCircle className="animate-spin" /> : <Plus className="size-3.5" />}
-                            Nhận
-                          </Button>
+                          <div className="flex items-center gap-1.5">
+                            {consultantName && <p className="max-w-24 truncate text-xs text-muted-foreground">{consultantName}</p>}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0 rounded-full border-status-received/30 text-status-received hover:bg-status-received-bg hover:text-status-received"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePick(item);
+                              }}
+                              disabled={picking}
+                            >
+                              {picking ? <LoaderCircle className="animate-spin" /> : <Plus className="size-3.5" />}
+                              Nhận
+                            </Button>
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="w-4 py-3.5 pr-5 pl-1">

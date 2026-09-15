@@ -122,7 +122,7 @@ export function WorkspaceView({ initialWorkspace }: { initialWorkspace: Interact
         body: JSON.stringify({ interactionId: item.interactionId }),
       });
       setReleasedIds((prev) => new Set(prev).add(item.interactionId));
-      toast.success(`Đã giải phóng ${item.customerName} khỏi Workspace — Sale khác có thể thêm liên hệ này.`);
+      toast.success(`Đã giải phóng ${item.customerName} khỏi Workspace của bạn.`);
       router.refresh();
     } catch (err) {
       toast.error(apiErrorMessage(err));

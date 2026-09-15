@@ -62,7 +62,12 @@ export default async function SaleOverviewPage({
       where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: false, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
     }),
     prisma.interaction.count({
-      where: { workspaceClaimedByEmail: user.email, activeFlag: true, needsFollowup: false, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
+      where: {
+        workspaceClaims: { some: { saleEmail: user.email } },
+        activeFlag: true,
+        needsFollowup: false,
+        statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] },
+      },
     }),
     prisma.interaction.count({ where: followupWhere }),
     prisma.interaction.count({ where: { ...branchScopeWhere(user), createdLeadAt: { gte: dayStart, lt: dayEnd } } }),

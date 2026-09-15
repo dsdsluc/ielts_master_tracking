@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Megaphone, TrendingUp, Users } from "lucide-react";
+import { ChevronRight, Fingerprint, Megaphone, TrendingUp, Users } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
@@ -9,13 +9,11 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/dal";
 import { ROLES, STATUS, STUDENT_STAGE, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
-import { canAccessBranch } from "@/lib/interactions/scope";
 import { cached } from "@/lib/cache";
 import { ConversionPill } from "@/app/(app)/ads-performance/ads-performance-table";
-import { DashboardFilterBar } from "@/app/(app)/dashboard-filter-bar";
 
 const REPORT_ROLES = [ROLES.LEADER, ROLES.MARKETING, ROLES.BOARD, ROLES.ADMIN] as const;
-const DAYS_OPTIONS = [7, 30, 90];
+const WINDOW_DAYS = 30;
 
 type DashboardKpi = { total: number; waiting: number; processing: number; qualified: number; spam: number };
 
@@ -89,10 +87,9 @@ type SalePerfRow = {
 async function computeSalePerformance(
   scope: Prisma.InteractionWhereInput,
   windowStart: Date,
-  windowEnd: Date | undefined,
   branchNameByCode: Map<string, string>
 ): Promise<SalePerfRow[]> {
-  const createdWindow = windowEnd ? { gte: windowStart, lt: windowEnd } : { gte: windowStart };
+  const createdWindow = { gte: windowStart };
   const [sales, createdGroups, closedGroups, touchGroups, qualifyRows] = await Promise.all([
     prisma.user.findMany({ where: { role: ROLES.SALES, active: true }, select: { email: true, fullName: true, branchCode: true } }),
     prisma.interaction.groupBy({
@@ -167,18 +164,9 @@ type FunnelSummary = { assigned: number; enrolled: number };
 // không có sẵn 1 truy vấn nào nối chúng lại; đây là nơi Leader/Admin thấy
 // toàn mạch "lead vào -> đủ tiêu chuẩn -> phân bổ tư vấn -> chốt" mà không
 // phải mở 2 trang riêng để tự cộng trừ. Chỉ Leader/Admin gọi hàm này (luôn
-// thấy toàn bộ chi nhánh — mirror branchScopeWhere trả {} cho isLeaderLike ở
-// trên) nên không cần tự áp lại phạm vi cơ sở của actor, chỉ áp bộ lọc cơ sở
-// đang chọn trên thanh filter nếu có.
-async function computeFunnelSummary(
-  windowStart: Date,
-  windowEnd: Date | undefined,
-  interactionFilter: Prisma.InteractionWhereInput
-): Promise<FunnelSummary> {
-  const where: Prisma.StudentProfileWhereInput = {
-    assignedAt: windowEnd ? { gte: windowStart, lt: windowEnd } : { gte: windowStart },
-  };
-  if (Object.keys(interactionFilter).length > 0) where.interaction = interactionFilter;
+// thấy toàn bộ chi nhánh — mirror branchScopeWhere trả {} cho isLeaderLike).
+async function computeFunnelSummary(windowStart: Date): Promise<FunnelSummary> {
+  const where: Prisma.StudentProfileWhereInput = { assignedAt: { gte: windowStart } };
 
   const [assigned, enrolled] = await Promise.all([
     prisma.studentProfile.count({ where }),
@@ -191,101 +179,43 @@ function funnelRate(part: number, total: number): string {
   return total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : "—";
 }
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ days?: string; branch?: string; source?: string; fanpage?: string; adId?: string; from?: string; to?: string }>;
-}) {
+export default async function DashboardPage() {
   const user = await requireRole(...REPORT_ROLES);
-  const {
-    days: daysParam,
-    branch: branchParam,
-    source: sourceParam,
-    fanpage: fanpageParam,
-    adId: adIdParam,
-    from: fromParam,
-    to: toParam,
-  } = await searchParams;
 
-  const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - (WINDOW_DAYS - 1));
+  windowStart.setHours(0, 0, 0, 0);
 
-  // Khoảng ngày cụ thể (Từ ngày/Đến ngày) ưu tiên hơn preset nếu cả 2 giá trị
-  // hợp lệ — mirror đúng "BỘ LỌC BÁO CÁO" ở bản Google Sheets gốc, vốn dùng
-  // Từ ngày/Đến ngày làm bộ lọc chính chứ không phải preset số ngày.
-  const customFrom = fromParam ? new Date(fromParam) : null;
-  const customTo = toParam ? new Date(toParam) : null;
-  const hasCustomRange = !!(customFrom && !Number.isNaN(customFrom.getTime()) && customTo && !Number.isNaN(customTo.getTime()));
-
-  let windowStart: Date;
-  let windowEnd: Date | undefined;
-  if (hasCustomRange) {
-    windowStart = new Date(customFrom!);
-    windowStart.setHours(0, 0, 0, 0);
-    windowEnd = new Date(customTo!);
-    windowEnd.setHours(0, 0, 0, 0);
-    windowEnd.setDate(windowEnd.getDate() + 1); // chặn trên loại trừ — bao trọn hết ngày "Đến"
-  } else {
-    windowStart = new Date();
-    windowStart.setDate(windowStart.getDate() - (days - 1));
-    windowStart.setHours(0, 0, 0, 0);
-    windowEnd = undefined;
-  }
-  const createdWindow = windowEnd ? { gte: windowStart, lt: windowEnd } : { gte: windowStart };
-
-  const [branches, sourceRows, fanpageRows] = await Promise.all([
-    prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
-    prisma.fanpage.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
-  ]);
+  const branches = await prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } });
   const branchNameByCode = new Map(branches.map((b) => [b.code, b.name]));
 
   const scope = branchScopeWhere(user);
-  const branchFilter: Prisma.InteractionWhereInput =
-    branchParam && branchParam !== "all" && canAccessBranch(user, branchParam) ? { assignedBranchCode: branchParam } : {};
-  const sourceFilter: Prisma.InteractionWhereInput = sourceParam && sourceParam !== "all" ? { sourceName: sourceParam } : {};
-  const fanpageFilter: Prisma.InteractionWhereInput = fanpageParam && fanpageParam !== "all" ? { fanpageName: fanpageParam } : {};
-  const adIdFilter: Prisma.InteractionWhereInput = adIdParam?.trim() ? { adId: { contains: adIdParam.trim(), mode: "insensitive" } } : {};
-  // Phạm vi cơ sở + mọi chiều lọc khác (Nguồn/Fanpage/Ad ID) — KHÔNG kèm
-  // createdLeadAt, vì computeSalePerformance tự áp field ngày khác nhau cho
-  // từng truy vấn con (tạo mới theo createdLeadAt, đóng theo closedAt) — gộp
-  // sẵn createdLeadAt vào đây sẽ vô tình lọc nhầm cả những lead tạo trước cửa
-  // sổ nhưng đóng trong cửa sổ.
-  const scopeWithFilters: Prisma.InteractionWhereInput = { ...scope, ...branchFilter, ...sourceFilter, ...fanpageFilter, ...adIdFilter };
-  const where: Prisma.InteractionWhereInput = {
-    ...scopeWithFilters,
-    activeFlag: true,
-    createdLeadAt: createdWindow,
-  };
+  const where: Prisma.InteractionWhereInput = { ...scope, activeFlag: true, createdLeadAt: { gte: windowStart } };
 
-  const cacheKey = `dash:overview:v3:${JSON.stringify(scope)}:${days}:${branchParam ?? "all"}:${sourceParam ?? "all"}:${fanpageParam ?? "all"}:${adIdParam ?? ""}:${fromParam ?? ""}:${toParam ?? ""}`;
+  const cacheKey = `dash:overview:v4:${JSON.stringify(scope)}`;
 
-  // Điều hướng sang /customers lọc theo trạng thái — nơi duy nhất Sale/Leader/
-  // Admin có thể xem danh sách khách theo trạng thái hiện có sẵn URL param.
-  function customerStatusHref(status?: string) {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    const qs = params.toString();
-    return `/customers${qs ? `?${qs}` : ""}`;
+  // Điều hướng sang router chi tiết /interactions-overview — view QUẢN TRỊ
+  // (toàn hệ thống theo scope actor), tách khỏi /leads (công cụ tác nghiệp
+  // riêng của Sale) và /customers (khách hàng Đủ tiêu chuẩn đã gộp theo SĐT,
+  // không phải danh sách liên hệ thô).
+  function pipelineHref(status?: string) {
+    return status ? `/interactions-overview?status=${encodeURIComponent(status)}` : "/interactions-overview";
+  }
+
+  function salePerformanceHref(email: string) {
+    return `/sale-performance/${encodeURIComponent(email)}`;
   }
 
   const canSeeSaleOps = user.role === ROLES.LEADER || user.role === ROLES.ADMIN;
   const canSeeMarketingOps = user.role === ROLES.MARKETING || user.role === ROLES.ADMIN;
 
-  const rangeLabel = hasCustomRange
-    ? `${windowStart.toLocaleDateString("vi-VN")} – ${customTo!.toLocaleDateString("vi-VN")}`
-    : `${days} ngày`;
+  const rangeLabel = `${WINDOW_DAYS} ngày`;
 
   const [kpi, topAds, salePerf, funnel] = await Promise.all([
     cached(cacheKey, 90, () => computeDashboardKpi(where)),
     canSeeMarketingOps ? cached(`${cacheKey}:top-ads`, 90, () => computeTopAds(where)) : Promise.resolve([]),
-    canSeeSaleOps
-      ? cached(`${cacheKey}:sale-perf`, 90, () => computeSalePerformance(scopeWithFilters, windowStart, windowEnd, branchNameByCode))
-      : Promise.resolve([]),
-    canSeeSaleOps
-      ? cached(`${cacheKey}:funnel`, 90, () =>
-          computeFunnelSummary(windowStart, windowEnd, { ...branchFilter, ...sourceFilter, ...fanpageFilter, ...adIdFilter })
-        )
-      : Promise.resolve({ assigned: 0, enrolled: 0 }),
+    canSeeSaleOps ? cached(`${cacheKey}:sale-perf`, 90, () => computeSalePerformance(scope, windowStart, branchNameByCode)) : Promise.resolve([]),
+    canSeeSaleOps ? cached(`${cacheKey}:funnel`, 90, () => computeFunnelSummary(windowStart)) : Promise.resolve({ assigned: 0, enrolled: 0 }),
   ]);
 
   return (
@@ -293,34 +223,37 @@ export default async function DashboardPage({
       <PageHeader
         eyebrow="Tổng quan"
         title="Dashboard"
-        description="Theo dõi chất lượng nguồn và kết quả chuyển đổi thực tế."
-        action={<DashboardFilterBar branches={branches} sources={sourceRows.map((s) => s.name)} fanpages={fanpageRows.map((f) => f.name)} />}
+        description="Theo dõi chất lượng nguồn và kết quả chuyển đổi thực tế trong 30 ngày gần nhất."
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Link href={customerStatusHref()} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
+        <Link href={pipelineHref()} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
           <KpiCard label="Tổng liên hệ" value={kpi.total} accentClassName="bg-foreground/50" />
         </Link>
-        <Link href={customerStatusHref(STATUS.PHONE)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
+        <Link href={pipelineHref(STATUS.PHONE)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
           <KpiCard label="Đủ tiêu chuẩn" value={kpi.qualified} accentClassName="bg-status-qualified" />
         </Link>
-        <Link href={customerStatusHref(STATUS.PROCESSING)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
+        <Link href={pipelineHref(STATUS.PROCESSING)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
           <KpiCard label="Tiếp nhận" value={kpi.processing} accentClassName="bg-status-received" />
         </Link>
-        <Link href={customerStatusHref(STATUS.SPAM)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
+        <Link href={pipelineHref(STATUS.SPAM)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
           <KpiCard label="Spam" value={kpi.spam} accentClassName="bg-status-spam" />
         </Link>
       </div>
 
       {canSeeMarketingOps && (
-        <div className="mb-6">
+        <div className="mb-8">
+          <div className="mb-3 flex items-center gap-2">
+            <Megaphone className="size-4 text-primary" />
+            <h2 className="font-heading text-base font-semibold text-foreground">Phòng Marketing</h2>
+          </div>
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <TrendingUp className="size-3.5" />
               Quảng cáo thu hút nhiều liên hệ nhất ({rangeLabel})
             </p>
-            <Link href="/ads-performance" className="text-xs font-medium text-status-received hover:underline">
-              Xem tất cả
+            <Link href="/ad-ids" className="flex items-center gap-1 text-xs font-medium text-status-received hover:underline">
+              <Fingerprint className="size-3.5" /> Xem toàn bộ Ad ID
             </Link>
           </div>
           {topAds.length === 0 ? (
@@ -356,6 +289,13 @@ export default async function DashboardPage({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {canSeeSaleOps && (
+        <div className="mb-3 flex items-center gap-2">
+          <Users className="size-4 text-status-received" />
+          <h2 className="font-heading text-base font-semibold text-foreground">Phòng Sale</h2>
         </div>
       )}
 
@@ -411,14 +351,17 @@ export default async function DashboardPage({
                       <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Spam</TableHead>
                       <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tỷ lệ chuyển đổi</TableHead>
                       <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Số lần chăm sóc</TableHead>
-                      <TableHead className="px-4 pr-5 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">TB đủ tiêu chuẩn</TableHead>
+                      <TableHead className="px-4 text-right font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">TB đủ tiêu chuẩn</TableHead>
+                      <TableHead className="w-10 pr-5" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {salePerf.map((s) => (
                       <TableRow key={s.email} className="odd:bg-secondary/10">
                         <TableCell className="min-w-40 px-5 py-3.5">
-                          <p className="max-w-40 truncate font-medium text-foreground">{s.fullName}</p>
+                          <Link href={salePerformanceHref(s.email)} className="block max-w-40 truncate font-medium text-foreground hover:text-status-received hover:underline">
+                            {s.fullName}
+                          </Link>
                         </TableCell>
                         <TableCell className="px-4 text-sm text-muted-foreground">{s.branchName}</TableCell>
                         <TableCell className="px-4 text-center font-mono text-sm text-foreground">{s.created}</TableCell>
@@ -428,8 +371,13 @@ export default async function DashboardPage({
                           {s.conversionRate != null ? <ConversionPill rate={s.conversionRate} /> : <span className="text-xs text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="px-4 text-center font-mono text-sm text-muted-foreground">{s.touches}</TableCell>
-                        <TableCell className="px-4 pr-5 text-right text-xs text-muted-foreground">
+                        <TableCell className="px-4 text-right text-xs text-muted-foreground">
                           {s.avgQualifyHours != null ? `~${Math.round(s.avgQualifyHours)}h` : "—"}
+                        </TableCell>
+                        <TableCell className="pr-5 pl-1 text-right">
+                          <Link href={salePerformanceHref(s.email)} aria-label={`Xem chi tiết ${s.fullName}`}>
+                            <ChevronRight className="size-4 text-muted-foreground hover:text-foreground" />
+                          </Link>
                         </TableCell>
                       </TableRow>
                     ))}

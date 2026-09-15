@@ -40,7 +40,7 @@ export function LeadRow({
   picking: boolean;
   onPick: (item: InteractionListItem) => void;
 }) {
-  const isMine = item.consultantEmail === currentUserEmail;
+  const isMine = item.workspaceClaimantEmails.includes(currentUserEmail) || item.consultantEmail === currentUserEmail;
 
   function handleActivate() {
     if (isSample) return;
@@ -81,24 +81,25 @@ export function LeadRow({
         <p className="mt-0.5 truncate text-xs">{item.sourceName}</p>
       </TableCell>
       <TableCell className="hidden px-4 text-muted-foreground lg:table-cell" onClick={(e) => e.stopPropagation()}>
-        {item.consultantName ? (
-          <p className={isMine ? "max-w-32 truncate font-medium text-status-received" : "max-w-32 truncate"}>
-            {isMine ? "Bạn" : item.consultantName}
-          </p>
+        {isMine ? (
+          <p className="max-w-32 truncate font-medium text-status-received">Bạn</p>
         ) : isSample ? (
-          <span className="text-muted-foreground">Chưa gán</span>
+          item.consultantName ? <p className="max-w-32 truncate">{item.consultantName}</p> : <span className="text-muted-foreground">Chưa gán</span>
         ) : (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 rounded-full border-status-received/30 px-2.5 text-xs text-status-received hover:bg-status-received-bg hover:text-status-received"
-            onClick={() => onPick(item)}
-            disabled={picking}
-          >
-            {picking ? <LoaderCircle className="size-3 animate-spin" /> : <Plus className="size-3" />}
-            Nhận
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {item.consultantName && <p className="max-w-20 truncate text-xs">{item.consultantName}</p>}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 shrink-0 rounded-full border-status-received/30 px-2.5 text-xs text-status-received hover:bg-status-received-bg hover:text-status-received"
+              onClick={() => onPick(item)}
+              disabled={picking}
+            >
+              {picking ? <LoaderCircle className="size-3 animate-spin" /> : <Plus className="size-3" />}
+              Nhận
+            </Button>
+          </div>
         )}
       </TableCell>
       <TableCell className="hidden px-4 font-mono text-xs text-muted-foreground md:table-cell">
@@ -140,7 +141,7 @@ export function LeadsTable({
         body: JSON.stringify({ interactionIds: [item.interactionId] }),
       });
       if (data.conflicts?.length) {
-        toast.error(`${item.customerName} vừa được Sale khác nhận vào Workspace của họ trước.`);
+        toast.error(`Không thể thêm ${item.customerName} vào Workspace — liên hệ đã đóng hoặc bạn không có quyền truy cập.`);
       } else {
         setOverrides((prev) => ({ ...prev, [item.interactionId]: { email: currentUserEmail, name: currentUserName } }));
         toast.success(`Đã nhận ${item.customerName} vào Workspace của bạn.`);
@@ -173,7 +174,16 @@ export function LeadsTable({
         <TableBody>
           {items.map((item) => {
             const override = overrides[item.interactionId];
-            const displayItem = override ? { ...item, consultantEmail: override.email, consultantName: override.name } : item;
+            const displayItem = override
+              ? {
+                  ...item,
+                  consultantEmail: override.email,
+                  consultantName: override.name,
+                  workspaceClaimantEmails: item.workspaceClaimantEmails.includes(override.email)
+                    ? item.workspaceClaimantEmails
+                    : [...item.workspaceClaimantEmails, override.email],
+                }
+              : item;
             return (
               <LeadRow
                 key={item.interactionId}

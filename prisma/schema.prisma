@@ -15,11 +15,11 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Branch {
-  code              String   @id
+  code              String  @id
   name              String
-  active            Boolean  @default(true)
-  slaReceiveMinutes Int      @map("sla_receive_minutes")
-  slaProcessHours   Int      @map("sla_process_hours")
+  active            Boolean @default(true)
+  slaReceiveMinutes Int     @map("sla_receive_minutes")
+  slaProcessHours   Int     @map("sla_process_hours")
   note              String?
 
   fanpages              Fanpage[]
@@ -32,11 +32,11 @@ model Branch {
 }
 
 model Source {
-  name         String   @id
-  channelGroup String   @map("channel_group")
-  sourceGroup  String   @map("source_group")
-  requireAdId  Boolean  @default(false) @map("require_ad_id")
-  active       Boolean  @default(true)
+  name         String  @id
+  channelGroup String  @map("channel_group")
+  sourceGroup  String  @map("source_group")
+  requireAdId  Boolean @default(false) @map("require_ad_id")
+  active       Boolean @default(true)
   note         String?
 
   domains      SourceDomain[]
@@ -59,15 +59,15 @@ model SourceDomain {
 }
 
 model Fanpage {
-  name              String  @id
-  defaultSourceName String  @map("default_source_name")
-  suggestedBranchCode String @map("suggested_branch_code")
-  requireAdId       Boolean @default(false) @map("require_ad_id")
-  active            Boolean @default(true)
-  note              String?
+  name                String  @id
+  defaultSourceName   String  @map("default_source_name")
+  suggestedBranchCode String  @map("suggested_branch_code")
+  requireAdId         Boolean @default(false) @map("require_ad_id")
+  active              Boolean @default(true)
+  note                String?
 
-  defaultSource   Source        @relation(fields: [defaultSourceName], references: [name])
-  suggestedBranch Branch        @relation(fields: [suggestedBranchCode], references: [code])
+  defaultSource   Source          @relation(fields: [defaultSourceName], references: [name])
+  suggestedBranch Branch          @relation(fields: [suggestedBranchCode], references: [code])
   interactions    Interaction[]
   adsCosts        AdsCost[]
   mktPageReports  MktPageReport[]
@@ -122,25 +122,25 @@ model User {
   canCloseMktReport Boolean @default(false) @map("can_close_mkt_report")
   note              String?
 
-  passwordHash      String  @map("password_hash")
+  passwordHash       String  @map("password_hash")
   mustChangePassword Boolean @default(true) @map("must_change_password")
 
-  branch                  Branch?       @relation(fields: [branchCode], references: [code])
-  assignedInteractions    Interaction[] @relation("AssignedSale")
-  workspaceClaimedInteractions Interaction[] @relation("WorkspaceClaimedBy")
-  slaFlaggedInteractions Interaction[] @relation("SlaFlaggedBy")
-  createdInteractions     Interaction[] @relation("CreatedBy")
-  updatedInteractions     Interaction[] @relation("UpdatedBy")
-  reassignedInteractions  Interaction[] @relation("ReassignedBy")
-  followupInteractions    Interaction[] @relation("FollowupHandledBy")
-  mktPushedInteractions   Interaction[] @relation("MktPushedBy")
-  followupTargetInteractions Interaction[] @relation("FollowupTargetSale")
-  systemLogs              SystemLog[]
-  closedMktPageReports    MktPageReport[] @relation("ClosedMktPageReport")
+  branch                     Branch?          @relation(fields: [branchCode], references: [code])
+  assignedInteractions       Interaction[]    @relation("AssignedSale")
+  workspaceClaims            WorkspaceClaim[]
+  slaFlaggedInteractions     Interaction[]    @relation("SlaFlaggedBy")
+  createdInteractions        Interaction[]    @relation("CreatedBy")
+  updatedInteractions        Interaction[]    @relation("UpdatedBy")
+  reassignedInteractions     Interaction[]    @relation("ReassignedBy")
+  followupInteractions       Interaction[]    @relation("FollowupHandledBy")
+  mktPushedInteractions      Interaction[]    @relation("MktPushedBy")
+  followupTargetInteractions Interaction[]    @relation("FollowupTargetSale")
+  systemLogs                 SystemLog[]
+  closedMktPageReports       MktPageReport[]  @relation("ClosedMktPageReport")
 
-  studentProfilesAssignedTo StudentProfile[]  @relation("StudentAssignedTo")
-  studentProfilesAssignedBy StudentProfile[]  @relation("StudentAssignedBy")
-  studentProfilesUpdatedBy  StudentProfile[]  @relation("StudentUpdatedBy")
+  studentProfilesAssignedTo StudentProfile[] @relation("StudentAssignedTo")
+  studentProfilesAssignedBy StudentProfile[] @relation("StudentAssignedBy")
+  studentProfilesUpdatedBy  StudentProfile[] @relation("StudentUpdatedBy")
   studentCareLogs           StudentCareLog[]
 
   @@map("users")
@@ -162,13 +162,13 @@ model AppSetting {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  customerKey      String   @id @map("customer_key")
-  displayName      String   @map("display_name")
-  canonicalLink    String   @unique @map("canonical_link")
-  phoneNormalized  String?  @map("phone_normalized")
-  firstTouchAt     DateTime @map("first_touch_at")
-  lastTouchAt      DateTime @map("last_touch_at")
-  currentStatusName String  @map("current_status_name")
+  customerKey       String   @id @map("customer_key")
+  displayName       String   @map("display_name")
+  canonicalLink     String   @unique @map("canonical_link")
+  phoneNormalized   String?  @map("phone_normalized")
+  firstTouchAt      DateTime @map("first_touch_at")
+  lastTouchAt       DateTime @map("last_touch_at")
+  currentStatusName String   @map("current_status_name")
 
   currentStatus Status        @relation(fields: [currentStatusName], references: [name])
   interactions  Interaction[]
@@ -177,23 +177,23 @@ model Customer {
 }
 
 model Interaction {
-  interactionId  String   @id @map("interaction_id")
-  customerKey    String   @map("customer_key")
-  version        Int      @default(1)
-  activeFlag     Boolean  @default(true) @map("active_flag")
-  createdLeadAt  DateTime @map("created_lead_at")
+  interactionId String   @id @map("interaction_id")
+  customerKey   String   @map("customer_key")
+  version       Int      @default(1)
+  activeFlag    Boolean  @default(true) @map("active_flag")
+  createdLeadAt DateTime @map("created_lead_at")
 
-  sourceName         String  @map("source_name")
-  fanpageName         String  @map("fanpage_name")
-  adId                String? @map("ad_id")
-  firstTouchAdId      String? @map("first_touch_ad_id")
-  lastTouchAdId       String? @map("last_touch_ad_id")
+  sourceName     String  @map("source_name")
+  fanpageName    String  @map("fanpage_name")
+  adId           String? @map("ad_id")
+  firstTouchAdId String? @map("first_touch_ad_id")
+  lastTouchAdId  String? @map("last_touch_ad_id")
 
-  rawLink       String  @map("raw_link")
-  canonicalLink String  @map("canonical_link")
-  customerName  String  @map("customer_name")
+  rawLink       String @map("raw_link")
+  canonicalLink String @map("canonical_link")
+  customerName  String @map("customer_name")
 
-  customerObjectName String @map("customer_object_name")
+  customerObjectName  String @map("customer_object_name")
   suggestedBranchCode String @map("suggested_branch_code")
   assignedBranchCode  String @map("assigned_branch_code")
   statusName          String @map("status_name")
@@ -202,11 +202,6 @@ model Interaction {
   touchCount      Int    @default(1) @map("touch_count")
 
   assignedSaleEmail String? @map("assigned_sale_email")
-
-  // Sale tự "thêm vào Workspace" từ hàng đợi chung (khác với assignedSaleEmail
-  // — chỉ được hệ thống tự gán khi liên hệ đạt Đủ tiêu chuẩn). Có giá trị thì
-  // liên hệ bị khoá khỏi Workspace của Sale khác cho đến khi được "Giải phóng".
-  workspaceClaimedByEmail String? @map("workspace_claimed_by_email")
 
   // Admin rà soát trang "Rà soát SLA" và tick đánh dấu ghi nhận — chỉ để theo
   // dõi/báo cáo trách nhiệm, KHÔNG đổi trạng thái hay hành vi nào khác của
@@ -224,9 +219,9 @@ model Interaction {
   transferredToPse Boolean @default(false) @map("transferred_to_pse")
   pseProfileCode   String? @map("pse_profile_code")
 
-  createdByEmail String   @map("created_by_email")
-  createdAt      DateTime @map("created_at")
-  updatedByEmail String?  @map("updated_by_email")
+  createdByEmail String    @map("created_by_email")
+  createdAt      DateTime  @map("created_at")
+  updatedByEmail String?   @map("updated_by_email")
   updatedAt      DateTime? @map("updated_at")
 
   reassignedByEmail String? @map("reassigned_by_email")
@@ -234,14 +229,14 @@ model Interaction {
 
   needsFollowup Boolean @default(false) @map("needs_followup")
 
-  mktPushedAt      DateTime? @map("mkt_pushed_at")
-  mktPushedByEmail String?   @map("mkt_pushed_by_email")
+  mktPushedAt             DateTime? @map("mkt_pushed_at")
+  mktPushedByEmail        String?   @map("mkt_pushed_by_email")
   // Sale CỤ THỂ được chọn để nhận yêu cầu chăm sóc lại — bắt buộc chọn khi
   // gửi mới ở /followup. null = đã gắn cờ needsFollowup nhưng chưa gắn Sale
   // (case cũ trước khi có field này, hoặc do dữ liệu lỗi) — vẫn hiện lại ở
   // /followup để Leader/Marketing gắn Sale bù. /followup-inbox của 1 Sale chỉ
   // hiện đúng những dòng nhắm tới email của họ.
-  followupTargetSaleEmail String? @map("followup_target_sale_email")
+  followupTargetSaleEmail String?   @map("followup_target_sale_email")
 
   conversationLink String? @map("conversation_link")
   mktSuggestion    String? @map("mkt_suggestion")
@@ -257,33 +252,54 @@ model Interaction {
   // (mặc định 3) thì tự động chuyển Spam — xem resolveFollowup() trong mutations.ts.
   followupResolvedCount  Int       @default(0) @map("followup_resolved_count")
 
-  customer         Customer        @relation(fields: [customerKey], references: [customerKey])
-  source           Source          @relation(fields: [sourceName], references: [name])
-  fanpage          Fanpage         @relation(fields: [fanpageName], references: [name])
-  customerObject   CustomerObject  @relation(fields: [customerObjectName], references: [name])
-  suggestedBranch  Branch          @relation("SuggestedBranch", fields: [suggestedBranchCode], references: [code])
-  assignedBranch   Branch          @relation("AssignedBranch", fields: [assignedBranchCode], references: [code])
-  status           Status          @relation(fields: [statusName], references: [name])
-  assignedSale     User?           @relation("AssignedSale", fields: [assignedSaleEmail], references: [email])
-  workspaceClaimedBy User?         @relation("WorkspaceClaimedBy", fields: [workspaceClaimedByEmail], references: [email])
-  slaFlaggedBy     User?           @relation("SlaFlaggedBy", fields: [slaFlaggedByEmail], references: [email])
-  createdBy        User            @relation("CreatedBy", fields: [createdByEmail], references: [email])
-  updatedBy        User?           @relation("UpdatedBy", fields: [updatedByEmail], references: [email])
-  reassignedBy     User?           @relation("ReassignedBy", fields: [reassignedByEmail], references: [email])
-  followupHandledBy User?          @relation("FollowupHandledBy", fields: [followupHandledByEmail], references: [email])
-  mktPushedBy      User?           @relation("MktPushedBy", fields: [mktPushedByEmail], references: [email])
-  followupTargetSale User?         @relation("FollowupTargetSale", fields: [followupTargetSaleEmail], references: [email])
+  customer           Customer       @relation(fields: [customerKey], references: [customerKey])
+  source             Source         @relation(fields: [sourceName], references: [name])
+  fanpage            Fanpage        @relation(fields: [fanpageName], references: [name])
+  customerObject     CustomerObject @relation(fields: [customerObjectName], references: [name])
+  suggestedBranch    Branch         @relation("SuggestedBranch", fields: [suggestedBranchCode], references: [code])
+  assignedBranch     Branch         @relation("AssignedBranch", fields: [assignedBranchCode], references: [code])
+  status             Status         @relation(fields: [statusName], references: [name])
+  assignedSale       User?          @relation("AssignedSale", fields: [assignedSaleEmail], references: [email])
+  slaFlaggedBy       User?          @relation("SlaFlaggedBy", fields: [slaFlaggedByEmail], references: [email])
+  createdBy          User           @relation("CreatedBy", fields: [createdByEmail], references: [email])
+  updatedBy          User?          @relation("UpdatedBy", fields: [updatedByEmail], references: [email])
+  reassignedBy       User?          @relation("ReassignedBy", fields: [reassignedByEmail], references: [email])
+  followupHandledBy  User?          @relation("FollowupHandledBy", fields: [followupHandledByEmail], references: [email])
+  mktPushedBy        User?          @relation("MktPushedBy", fields: [mktPushedByEmail], references: [email])
+  followupTargetSale User?          @relation("FollowupTargetSale", fields: [followupTargetSaleEmail], references: [email])
 
   migrationMeta   InteractionMigrationMeta?
   studentProfiles StudentProfile[]
-  systemLogs    SystemLog[]
+  systemLogs      SystemLog[]
+  workspaceClaims WorkspaceClaim[]
 
   @@index([customerKey])
   @@index([statusName])
   @@index([assignedBranchCode])
   @@index([createdLeadAt])
-  @@index([workspaceClaimedByEmail])
   @@map("interactions")
+}
+
+// Nhiều Sale có thể cùng thêm 1 liên hệ đang mở vào "Workspace của tôi" —
+// không còn khoá độc quyền như trước (workspace_claimed_by_email cũ). "Tư vấn
+// viên" hiển thị ở UI vẫn là 1 người: người có lastActivityAt gần nhất (xem
+// consultantEmail/consultantName trong serialize.ts).
+model WorkspaceClaim {
+  id             String   @id @default(cuid())
+  interactionId  String   @map("interaction_id")
+  saleEmail      String   @map("sale_email")
+  claimedAt      DateTime @default(now()) @map("claimed_at")
+  // Bump mỗi lần Sale này thao tác lên liên hệ (autoClaimWorkspace trong
+  // mutations.ts) — dùng để xác định "tư vấn viên gần nhất thao tác".
+  lastActivityAt DateTime @default(now()) @map("last_activity_at")
+
+  interaction Interaction @relation(fields: [interactionId], references: [interactionId], onDelete: Cascade)
+  sale        User        @relation(fields: [saleEmail], references: [email], onDelete: Cascade)
+
+  @@unique([interactionId, saleEmail])
+  @@index([interactionId])
+  @@index([saleEmail])
+  @@map("workspace_claims")
 }
 
 // Dữ liệu đối chiếu migration — tách khỏi bảng chính, chỉ phục vụ audit 1 lần
@@ -391,24 +407,24 @@ model SystemLog {
 
 // ---------------------------------------------------------------------------
 // 5. TƯ VẤN HỌC VIÊN — Hướng A: tách hoàn toàn khỏi Interaction, KHÔNG đụng
-// field/logic sẵn có (statusName, assignedSaleEmail, workspaceClaimedByEmail...).
+// field/logic sẵn có (statusName, assignedSaleEmail, WorkspaceClaim...).
 // Leader phân bổ 1 liên hệ Đủ tiêu chuẩn cho 1 Sale để gọi điện tư vấn ghi
 // danh; interactionId chỉ là liên kết MỀM để tra lại lead gốc khi cần.
 // ---------------------------------------------------------------------------
 
 model StudentProfile {
-  id            String   @id @default(cuid())
-  interactionId String?  @map("interaction_id")
+  id            String  @id @default(cuid())
+  interactionId String? @map("interaction_id")
 
-  studentName   String   @map("student_name")
+  studentName   String    @map("student_name")
   age           Int?
   dateOfBirth   DateTime? @map("date_of_birth")
   gender        String?
-  parentName    String?  @map("parent_name")
+  parentName    String?   @map("parent_name")
   phone         String
   address       String?
   level         String?
-  trainingTrack String?  @map("training_track")
+  trainingTrack String?   @map("training_track")
   school        String?
   aspiration    String?
 
@@ -417,13 +433,13 @@ model StudentProfile {
   // xem STUDENT_STAGE trong lib/interactions/constants.ts. null = chưa gọi
   // lần nào. stageReason tuỳ chọn, mở cho nhập ở bất kỳ mốc nào để giải
   // thích vì sao hồ sơ đang dừng ở đó (không đến test, do giá, do giáo viên...).
-  stage       String?
-  stageReason String? @map("stage_reason")
+  stage              String?
+  stageReason        String?   @map("stage_reason")
   // Mốc thời gian THỰC SỰ chuyển sang "Đã chốt" — set đúng 1 lần lúc stage đổi
   // sang ENROLLED (updateStudentProfile()), KHÔNG dùng chung updatedAt (bị bump
   // bởi bất kỳ chỉnh sửa nào khác nên không đáng tin cho việc tính KPI theo
   // ngày/tuần/tháng cụ thể).
-  enrolledAt DateTime? @map("enrolled_at")
+  enrolledAt         DateTime? @map("enrolled_at")
   // Case đang kẹt (mở rộng từ stageReason, mirror sheet "Khách kẹt"): hạn xử
   // lý tiếp theo Sale tự đặt, và cờ Sale bật khi cần Leader can thiệp — Leader
   // lọc được ngay ở trang Thống kê thay vì phải đọc từng dòng lý do.
@@ -431,7 +447,7 @@ model StudentProfile {
   needsLeaderSupport Boolean   @default(false) @map("needs_leader_support")
   // Ngày hẹn cụ thể — chỉ có ý nghĩa khi stage = "Đặt lịch test"/"Đặt lịch học
   // thử", cho phép tự phát hiện "quá hạn hẹn mà chưa cập nhật kết quả".
-  appointmentAt DateTime? @map("appointment_at")
+  appointmentAt      DateTime? @map("appointment_at")
 
   assignedToEmail String   @map("assigned_to_email")
   assignedByEmail String   @map("assigned_by_email")
@@ -442,10 +458,10 @@ model StudentProfile {
   updatedByEmail String?   @map("updated_by_email")
   updatedAt      DateTime? @map("updated_at")
 
-  interaction Interaction? @relation(fields: [interactionId], references: [interactionId])
-  assignedTo  User         @relation("StudentAssignedTo", fields: [assignedToEmail], references: [email])
-  assignedBy  User         @relation("StudentAssignedBy", fields: [assignedByEmail], references: [email])
-  updatedBy   User?        @relation("StudentUpdatedBy", fields: [updatedByEmail], references: [email])
+  interaction Interaction?     @relation(fields: [interactionId], references: [interactionId])
+  assignedTo  User             @relation("StudentAssignedTo", fields: [assignedToEmail], references: [email])
+  assignedBy  User             @relation("StudentAssignedBy", fields: [assignedByEmail], references: [email])
+  updatedBy   User?            @relation("StudentUpdatedBy", fields: [updatedByEmail], references: [email])
   careLogs    StudentCareLog[]
 
   @@index([assignedToEmail])

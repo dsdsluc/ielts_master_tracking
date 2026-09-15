@@ -38,12 +38,19 @@ async function loadInteractionOr404(interactionId: string) {
 
 /** Sale thao tác lên 1 hội thoại (ghi nhận chăm sóc, đổi trạng thái, đánh dấu
  * đã xử lý chăm sóc lại, lưu thay đổi thông tin...) thì mặc nhiên "nhận" luôn
- * hội thoại đó vào Workspace của mình — như đã làm với create — nhưng chỉ khi
- * CHƯA ai claim trước (không cướp Workspace của Sale khác), và chỉ áp dụng cho
- * vai trò Sale (Leader/Admin thao tác thay không tự nhận về mình). */
-function autoClaimWorkspace(actor: CurrentUser, currentClaimedByEmail: string | null): { workspaceClaimedByEmail?: string } {
-  if (actor.role !== ROLES.SALES || currentClaimedByEmail) return {};
-  return { workspaceClaimedByEmail: actor.email };
+ * hội thoại đó vào Workspace của mình — như đã làm với create. Nhiều Sale có
+ * thể cùng có mặt trong Workspace của 1 liên hệ (không còn độc quyền); ai vừa
+ * thao tác thì lastActivityAt của họ mới nhất, quyết định "Tư vấn viên" hiển
+ * thị ở UI (xem consultantEmail/consultantName trong serialize.ts). Chỉ áp
+ * dụng cho vai trò Sale (Leader/Admin thao tác thay không tự nhận về mình). */
+async function autoClaimWorkspace(tx: Prisma.TransactionClient, actor: CurrentUser, interactionId: string): Promise<void> {
+  if (actor.role !== ROLES.SALES) return;
+  const now = new Date();
+  await tx.workspaceClaim.upsert({
+    where: { interactionId_saleEmail: { interactionId, saleEmail: actor.email } },
+    create: { interactionId, saleEmail: actor.email, claimedAt: now, lastActivityAt: now },
+    update: { lastActivityAt: now },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -122,11 +129,6 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
         updatedAt: now,
         needsFollowup: false,
         conversationLink: info.conversationLink || null,
-        // Người tạo liên hệ mặc nhiên là người sẽ làm việc với nó — tự thêm
-        // luôn vào Workspace của họ, khỏi phải quay lại trang Workspace bấm
-        // thêm thủ công. Luôn hợp lệ vì đây là dòng Interaction vừa tạo mới,
-        // không thể đã bị ai khác claim trước.
-        workspaceClaimedByEmail: actor.email,
         ...(phoneNorm
           ? {
               phoneRaw: input.phoneRaw,
@@ -139,6 +141,12 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
           : {}),
       },
     });
+
+    // Người tạo liên hệ mặc nhiên là người sẽ làm việc với nó — tự thêm luôn
+    // vào Workspace của họ, khỏi phải quay lại trang Workspace bấm thêm thủ
+    // công. Luôn tạo mới được vì đây là dòng Interaction vừa tạo, không thể đã
+    // có claim nào từ trước.
+    await tx.workspaceClaim.create({ data: { interactionId, saleEmail: actor.email, claimedAt: now, lastActivityAt: now } });
 
     await logAction(
       tx,
@@ -217,10 +225,10 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
         lastTouchAdId: touch.lastTouchAdId,
         updatedByEmail: actor.email,
         updatedAt: now,
-        ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail),
       },
     });
     if (result.count === 0) throw Errors.staleVersion();
+    await autoClaimWorkspace(tx, actor, interactionId);
 
     await logAction(tx, actor, SYSTEM_LOG_ACTION.UPDATE_CONVERSATION_INFO, interactionId, { customerName: lead.customerName }, { customerName: info.customerName });
 
@@ -244,8 +252,9 @@ export async function recordTouch(actor: CurrentUser, interactionId: string, not
     await logAction(tx, actor, SYSTEM_LOG_ACTION.TOUCH, interactionId, null, { note: note || null });
     await tx.interaction.update({
       where: { interactionId },
-      data: { updatedByEmail: actor.email, updatedAt: new Date(), ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail) },
+      data: { updatedByEmail: actor.email, updatedAt: new Date() },
     });
+    await autoClaimWorkspace(tx, actor, interactionId);
   });
 
   return getInteractionDetail(actor, interactionId);
@@ -335,7 +344,6 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
       statusName: input.status,
       updatedByEmail: actor.email,
       updatedAt: now,
-      ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail),
     };
 
     if (afterKey === "WAITING" || afterKey === "PROCESSING") {
@@ -386,6 +394,7 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 
     const result = await tx.interaction.updateMany({ where: { interactionId, version: input.expectedVersion }, data });
     if (result.count === 0) throw Errors.staleVersion();
+    await autoClaimWorkspace(tx, actor, interactionId);
 
     if (afterKey === "PHONE" || afterKey === "SPAM") {
       await tx.customer.update({ where: { customerKey: lead.customerKey }, data: { currentStatusName: input.status, lastTouchAt: now, ...(phoneNorm ? { phoneNormalized: phoneNorm } : {}) } });
@@ -411,28 +420,18 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 }
 
 // ---------------------------------------------------------------------------
-// Marketing/Leader gắn nhãn "Cần chăm sóc lại" hàng loạt (tối đa 50), BẮT BUỘC
-// chọn đúng 1 Sale cụ thể để nhận yêu cầu — Sale đó là người duy nhất thấy
-// dòng này ở /followup-inbox (xem getFollowupInboxWhere() trong queries.ts).
-// Áp dụng được cho cả liên hệ CHƯA gắn cờ (push mới) lẫn liên hệ ĐÃ gắn cờ
-// nhưng chưa có Sale nhận (followupTargetSaleEmail null — case cũ hoặc bị bỏ
-// sót) để Leader/Marketing gắn bù Sale sau.
+// Marketing gắn nhãn "Cần chăm sóc lại" hàng loạt (tối đa 50) — CHỈ gửi yêu
+// cầu, KHÔNG chọn Sale. Yêu cầu vào hàng đợi chờ Leader/Admin phân bổ ở
+// /followup-assign (xem assignFollowup() bên dưới) — tách trách nhiệm: Marketing
+// phát hiện & gửi, Leader quyết định ai xử lý. Liên hệ đã gửi rồi (needsFollowup
+// đang true, bất kể đã có Sale nhận hay chưa) không gửi lại được từ đây nữa.
 // ---------------------------------------------------------------------------
-export async function pushFollowup(actor: CurrentUser, interactionIds: string[], targetSaleEmail: string, suggestion?: string) {
+export async function pushFollowup(actor: CurrentUser, interactionIds: string[], suggestion?: string) {
   requireRole(actor, CAN_PUSH_FOLLOWUP);
-
-  const target = await prisma.user.findUnique({ where: { email: targetSaleEmail } });
-  if (!target || !target.active || ![ROLES.SALES, ROLES.LEADER, ROLES.ADMIN].includes(target.role as never)) {
-    throw new ApiError(422, "VALIDATION_ERROR", "Sale được chọn chưa hoạt động hoặc không có vai trò phù hợp.");
-  }
 
   let pushed = 0;
   let skipped = 0;
   const now = new Date();
-  // Gom lại để gửi mail SAU khi toàn bộ vòng lặp DB xong — gửi mail là I/O
-  // mạng, không nên giữ trong transaction, và lỗi gửi không được làm hỏng
-  // việc gắn cờ (xem sendEmail() trong lib/email.ts — không throw).
-  const notifyTargets: { email: string; name: string | null; customerName: string; interactionId: string }[] = [];
 
   for (const interactionId of interactionIds) {
     const lead = await prisma.interaction.findUnique({ where: { interactionId } });
@@ -441,9 +440,7 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
       continue;
     }
     const key = canonicalStatusKey(lead.statusName);
-    // Cho qua nếu CHƯA gắn cờ (push mới), hoặc ĐÃ gắn cờ nhưng chưa có Sale
-    // nhận (gắn bù) — chỉ chặn khi đã có Sale khác nhận rồi.
-    if ((key !== "WAITING" && key !== "PROCESSING") || (lead.needsFollowup && lead.followupTargetSaleEmail)) {
+    if ((key !== "WAITING" && key !== "PROCESSING") || lead.needsFollowup) {
       skipped++;
       continue;
     }
@@ -456,14 +453,7 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
           mktPushedAt: now,
           mktPushedByEmail: actor.email,
           mktSuggestion: suggestion || null,
-          followupTargetSaleEmail: target.email,
-          followupHandledByEmail: null,
-          followupHandledAt: null,
-          followupOutcome: null,
-          // Tự thêm luôn vào Workspace của Sale được chọn nếu chưa ai claim —
-          // đã route đích danh cho 1 Sale thì khỏi bắt họ bấm "Nhận" thêm 1
-          // bước nữa ở /followup-inbox. Không đụng nếu đã có người khác claim.
-          ...(lead.workspaceClaimedByEmail ? {} : { workspaceClaimedByEmail: target.email }),
+          followupTargetSaleEmail: null,
         },
       });
       await logAction(
@@ -472,22 +462,79 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
         SYSTEM_LOG_ACTION.MKT_PUSH,
         interactionId,
         { status: lead.statusName },
-        { pushedBy: actor.email, targetSaleEmail: target.email, suggestion: suggestion || null }
+        { pushedBy: actor.email, suggestion: suggestion || null }
       );
     });
     pushed++;
-    notifyTargets.push({ email: target.email, name: target.fullName, customerName: lead.customerName, interactionId });
+  }
+
+  return { pushed, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Leader/Admin phân bổ yêu cầu "Cần chăm sóc lại" (Marketing đã gửi, chưa có
+// Sale nào nhận) cho 1 Sale cụ thể — Sale đó mới thấy dòng này ở
+// /followup-inbox và nhận mail thông báo (dời thời điểm gửi mail từ lúc
+// Marketing gửi sang lúc Leader gán, vì trước đó Sale còn chưa biết mình là
+// người phụ trách). Hỗ trợ cả gán 1 dòng lẫn hàng loạt (tối đa 50) cho cùng
+// 1 Sale — mirror reassignInteractions() ở trên.
+// ---------------------------------------------------------------------------
+async function applyAssignFollowup(interactionId: string, target: { email: string; fullName: string | null }, actor: CurrentUser) {
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    const lead = await tx.interaction.findUnique({ where: { interactionId } });
+    if (!lead) throw Errors.notFound();
+    if (!lead.needsFollowup || lead.followupTargetSaleEmail) {
+      throw new ApiError(409, "DATA_CHANGED", "Yêu cầu này đã được phân bổ hoặc không còn hiệu lực.");
+    }
+
+    await tx.interaction.update({
+      where: { interactionId },
+      data: { version: { increment: 1 }, followupTargetSaleEmail: target.email },
+    });
+    // Tự thêm vào Workspace của Sale được gán — khỏi bắt họ bấm "Nhận" thêm 1
+    // bước nữa ở /followup-inbox. Không ảnh hưởng claim của Sale khác (nếu có)
+    // đang có sẵn trên cùng liên hệ.
+    await tx.workspaceClaim.upsert({
+      where: { interactionId_saleEmail: { interactionId, saleEmail: target.email } },
+      create: { interactionId, saleEmail: target.email, claimedAt: now, lastActivityAt: now },
+      update: { lastActivityAt: now },
+    });
+    await logAction(tx, actor, SYSTEM_LOG_ACTION.FOLLOWUP_ASSIGN, interactionId, { followupTargetSaleEmail: null }, { followupTargetSaleEmail: target.email });
+
+    return { customerName: lead.customerName, mktSuggestion: lead.mktSuggestion };
+  });
+}
+
+export async function assignFollowup(actor: CurrentUser, interactionIds: string[], targetSaleEmail: string): Promise<{ assigned: number; skipped: number }> {
+  requireRole(actor, CAN_REASSIGN);
+  const target = await validateReassignTarget(targetSaleEmail);
+
+  let assigned = 0;
+  let skipped = 0;
+  const notifyTargets: { email: string; name: string | null; customerName: string; interactionId: string; suggestion: string | null }[] = [];
+
+  for (const interactionId of interactionIds) {
+    try {
+      const { customerName, mktSuggestion } = await applyAssignFollowup(interactionId, target, actor);
+      assigned++;
+      notifyTargets.push({ email: target.email, name: target.fullName, customerName, interactionId, suggestion: mktSuggestion });
+    } catch {
+      skipped++;
+    }
   }
 
   if (notifyTargets.length > 0) {
-    const suggestionHtml = suggestion ? `<p>Gợi ý từ Marketing: ${suggestion}</p>` : "";
+    // Gửi mail SAU vòng lặp DB — I/O mạng không nên giữ trong transaction, và
+    // lỗi gửi không được làm hỏng việc gán (sendEmail() không throw).
     await Promise.allSettled(
       notifyTargets.map((t) => {
         const link = appLink(`/leads/${t.interactionId}`);
+        const suggestionHtml = t.suggestion ? `<p>Gợi ý từ Marketing: ${t.suggestion}</p>` : "";
         return sendEmail({
           to: t.email,
           subject: `Cần chăm sóc lại: ${t.customerName}`,
-          html: `<p>Chào ${t.name ?? "bạn"},</p><p>Marketing vừa yêu cầu bạn chăm sóc lại liên hệ <strong>${t.customerName}</strong>.</p>${suggestionHtml}${
+          html: `<p>Chào ${t.name ?? "bạn"},</p><p>Bạn vừa được phân bổ chăm sóc lại liên hệ <strong>${t.customerName}</strong>.</p>${suggestionHtml}${
             link ? `<p><a href="${link}">Xem liên hệ</a></p>` : ""
           }`,
         });
@@ -495,7 +542,7 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
     );
   }
 
-  return { pushed, skipped };
+  return { assigned, skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +581,6 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string,
       followupHandledAt: now,
       followupOutcome: FOLLOWUP_OUTCOME.MANUAL_DISMISS,
       followupResolvedCount: resolvedCount,
-      ...autoClaimWorkspace(actor, lead.workspaceClaimedByEmail),
     };
 
     if (shouldAutoSpam) {
@@ -552,6 +598,7 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string,
     }
 
     await tx.interaction.update({ where: { interactionId }, data });
+    await autoClaimWorkspace(tx, actor, interactionId);
 
     await logAction(
       tx,

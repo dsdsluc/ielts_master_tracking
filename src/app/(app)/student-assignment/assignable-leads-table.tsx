@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormMessage } from "@/components/form-message";
+import { CopyButton } from "@/components/copy-button";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-client";
 import { assignStudentsBulk } from "@/app/(app)/student-assignment/actions";
@@ -169,7 +170,15 @@ export function AssignableLeadsTable({ leads, sales }: { leads: AssignableLead[]
                   <TableCell className="min-w-48 px-5 py-4">
                     <p className="max-w-56 truncate font-medium text-foreground">{lead.customerName}</p>
                   </TableCell>
-                  <TableCell className="hidden px-4 font-mono text-xs text-muted-foreground sm:table-cell">{lead.phone}</TableCell>
+                  <TableCell
+                    className="hidden px-4 font-mono text-xs text-muted-foreground sm:table-cell"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="flex items-center gap-1">
+                      {lead.phone}
+                      <CopyButton value={lead.phone} label="Đã copy số điện thoại" />
+                    </span>
+                  </TableCell>
                   <TableCell className="hidden px-4 text-muted-foreground md:table-cell">
                     <p className="max-w-48 truncate font-medium text-foreground/80">{lead.fanpageName}</p>
                     <p className="mt-0.5 max-w-48 truncate text-xs">{lead.sourceName}</p>

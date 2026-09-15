@@ -2,26 +2,19 @@ import Link from "next/link";
 import { ArrowRight, CalendarCheck, Megaphone, Sparkles, TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { requireRole } from "@/lib/auth/dal";
 import type { CurrentUser } from "@/lib/auth/dal";
 import { ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { isLeaderLike } from "@/lib/interactions/scope";
-import { dayKey } from "@/lib/day-key";
 import { cached } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { getPageReportRows } from "@/lib/marketing/page-report";
-import { DashboardChart, type ChartPoint, type ChartSeries } from "@/app/(app)/dashboard-chart";
 import { MarketingDashboardFilterBar } from "@/app/(app)/marketing-dashboard/marketing-dashboard-filter-bar";
 import { MiniRankTable, type RankRow } from "@/app/(app)/marketing-dashboard/mini-rank-table";
 import { formatVnd } from "@/app/(app)/ads-cost/format";
 
 const DAYS_OPTIONS = [7, 30, 90];
-const CHART_SERIES: ChartSeries[] = [
-  { key: "total", label: "Tin nhắn nhận được", color: "var(--color-status-received)" },
-  { key: "qualified", label: "Khách xin SĐT", color: "var(--color-status-qualified)" },
-];
 
 function todayStr() {
   const d = new Date();
@@ -40,7 +33,6 @@ type MarketingDashboardData = {
   totalLeads: number;
   qualified: number;
   totalCost: number;
-  chartData: ChartPoint[];
   topPages: RankRow[];
   topAds: RankRow[];
   byAdIdSize: number;
@@ -51,7 +43,6 @@ type MarketingDashboardData = {
 // ngày nhưng dữ liệu không cần chính xác tới từng giây, nên cache lại.
 async function computeMarketingDashboardData(
   user: CurrentUser,
-  days: number,
   windowStart: Date,
   windowEnd: Date
 ): Promise<MarketingDashboardData> {
@@ -69,21 +60,6 @@ async function computeMarketingDashboardData(
   const totalLeads = rows.length;
   const qualified = rows.filter((r) => r.statusName === STATUS.PHONE).length;
   const totalCost = costRows.reduce((sum, c) => sum + Number(c.costVnd), 0);
-
-  const byDay = new Map<string, { total: number; qualified: number }>();
-  for (const r of rows) {
-    const key = dayKey(r.createdLeadAt);
-    const bucket = byDay.get(key) ?? { total: 0, qualified: 0 };
-    bucket.total++;
-    if (r.statusName === STATUS.PHONE) bucket.qualified++;
-    byDay.set(key, bucket);
-  }
-  const chartData: ChartPoint[] = Array.from({ length: days }, (_, i) => {
-    const d = new Date(windowStart);
-    d.setDate(d.getDate() + i);
-    const bucket = byDay.get(dayKey(d)) ?? { total: 0, qualified: 0 };
-    return { date: d.toISOString(), values: bucket };
-  });
 
   const byFanpage = new Map<string, { total: number; qualified: number }>();
   const byAdId = new Map<string, { total: number; qualified: number }>();
@@ -111,7 +87,7 @@ async function computeMarketingDashboardData(
     .sort((a, b) => b.total - a.total)
     .slice(0, 5);
 
-  return { totalLeads, qualified, totalCost, chartData, topPages, topAds, byAdIdSize: byAdId.size };
+  return { totalLeads, qualified, totalCost, topPages, topAds, byAdIdSize: byAdId.size };
 }
 
 export default async function MarketingDashboardPage({
@@ -129,13 +105,18 @@ export default async function MarketingDashboardPage({
   const windowEnd = new Date();
   windowEnd.setHours(23, 59, 59, 999);
 
-  const [{ totalLeads, qualified, totalCost, chartData, topPages, topAds, byAdIdSize }, todayRows, pendingFollowup, totalAdsCostRecords] =
+  const [{ totalLeads, qualified, totalCost, topPages, topAds, byAdIdSize }, todayRows, eligibleFollowupCount, totalAdsCostRecords] =
     await Promise.all([
       cached(`dash:marketing:v1:${scopeCacheKey(user)}:${days}`, 90, () =>
-        computeMarketingDashboardData(user, days, windowStart, windowEnd)
+        computeMarketingDashboardData(user, windowStart, windowEnd)
       ),
       getPageReportRows(todayStr()),
-      prisma.interaction.count({ where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: true } }),
+      // Số liên hệ ĐỦ ĐIỀU KIỆN để gửi yêu cầu chăm sóc lại (chưa gửi) — đây là
+      // việc Marketing sắp làm tiếp ở /followup, khác với số đã gửi đang chờ
+      // Leader/Sale xử lý (đó là việc của Leader/Sale, không hiện ở đây nữa).
+      prisma.interaction.count({
+        where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: false, statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
+      }),
       prisma.adsCost.count(),
     ]);
 
@@ -148,7 +129,7 @@ export default async function MarketingDashboardPage({
       <PageHeader
         eyebrow="Marketing"
         title="Dashboard Marketing"
-        description="Tổng quan hiệu quả marketing — liên hệ, chi phí, Page, quảng cáo, chăm sóc lại."
+        description="Việc cần làm hôm nay — nhập chi phí quảng cáo, theo dõi hiệu quả, kiểm tra tin nhắn theo Page và gửi yêu cầu chăm sóc lại."
         action={<MarketingDashboardFilterBar />}
       />
 
@@ -158,16 +139,6 @@ export default async function MarketingDashboardPage({
         <KpiCard label="Chi phí quảng cáo" value={formatVnd(totalCost)} accentClassName="bg-status-received" />
         <KpiCard label="CP/liên hệ" value={costPerLead != null ? formatVnd(Math.round(costPerLead)) : "—"} accentClassName="bg-primary" />
       </div>
-
-      <Card className="mb-6 gap-0 py-0">
-        <CardHeader className="border-b border-border/70 px-5 py-3.5">
-          <CardTitle>Diễn biến theo ngày</CardTitle>
-          <CardDescription>{days} ngày gần nhất — Tin nhắn nhận được và Khách xin SĐT.</CardDescription>
-        </CardHeader>
-        <CardContent className="px-5 py-4">
-          <DashboardChart data={chartData} series={CHART_SERIES} />
-        </CardContent>
-      </Card>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <MiniRankTable
@@ -226,14 +197,14 @@ export default async function MarketingDashboardPage({
           </div>
           <ArrowRight className="size-4 text-muted-foreground" />
         </Link>
-        <Link href="/followup-tracking" className="shadow-bubble flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card p-4 hover:bg-secondary/30">
+        <Link href="/followup" className="shadow-bubble flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card p-4 hover:bg-secondary/30">
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
               <Sparkles className="size-4" />
             </span>
             <div>
-              <p className="text-sm font-medium text-foreground">Chăm sóc lại</p>
-              <p className="text-xs text-muted-foreground">{pendingFollowup} đang chờ Sale xử lý</p>
+              <p className="text-sm font-medium text-foreground">Yêu cầu chăm sóc lại</p>
+              <p className="text-xs text-muted-foreground">{eligibleFollowupCount} liên hệ đủ điều kiện gửi yêu cầu</p>
             </div>
           </div>
           <ArrowRight className="size-4 text-muted-foreground" />

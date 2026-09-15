@@ -4,7 +4,14 @@ import type { InteractionDetail, InteractionListItem } from "@/lib/interactions/
 
 export const listItemInclude = {
   assignedSale: { select: { fullName: true } },
-  workspaceClaimedBy: { select: { fullName: true } },
+  // Nhiều Sale có thể cùng claim 1 liên hệ vào Workspace của họ — lấy hết để
+  // vừa xác định "tư vấn viên gần nhất thao tác" (claim đầu tiên sau khi sort
+  // desc theo lastActivityAt), vừa biết đủ actor nào đang có mặt (dùng ở các
+  // trang lọc "Workspace của tôi").
+  workspaceClaims: {
+    orderBy: { lastActivityAt: "desc" },
+    include: { sale: { select: { fullName: true } } },
+  },
 } satisfies Prisma.InteractionInclude;
 
 export const detailInclude = {
@@ -18,6 +25,10 @@ type ListRow = Prisma.InteractionGetPayload<{ include: typeof listItemInclude }>
 type DetailRow = Prisma.InteractionGetPayload<{ include: typeof detailInclude }>;
 
 export function toListItem(row: ListRow): InteractionListItem {
+  // Đã sort desc theo lastActivityAt ở listItemInclude — phần tử đầu tiên là
+  // người thao tác gần nhất, quyết định "Tư vấn viên" hiển thị khi liên hệ
+  // chưa Đủ tiêu chuẩn (assignedSaleEmail còn null).
+  const latestClaim = row.workspaceClaims[0];
   return {
     interactionId: row.interactionId,
     customerKey: row.customerKey,
@@ -29,10 +40,9 @@ export function toListItem(row: ListRow): InteractionListItem {
     assignedBranchCode: row.assignedBranchCode,
     assignedSaleEmail: row.assignedSaleEmail,
     assignedSaleName: row.assignedSale?.fullName ?? null,
-    workspaceClaimedByEmail: row.workspaceClaimedByEmail,
-    workspaceClaimedByName: row.workspaceClaimedBy?.fullName ?? null,
-    consultantEmail: row.assignedSaleEmail ?? row.workspaceClaimedByEmail,
-    consultantName: row.assignedSale?.fullName ?? row.workspaceClaimedBy?.fullName ?? null,
+    workspaceClaimantEmails: row.workspaceClaims.map((c) => c.saleEmail),
+    consultantEmail: row.assignedSaleEmail ?? latestClaim?.saleEmail ?? null,
+    consultantName: row.assignedSale?.fullName ?? latestClaim?.sale.fullName ?? null,
     createdByEmail: row.createdByEmail,
     createdLeadAt: row.createdLeadAt.toISOString(),
     touchCount: row.touchCount,

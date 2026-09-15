@@ -4,24 +4,18 @@ import {
   Gauge,
   Inbox,
   Users,
-  Megaphone,
   Building2,
-  Tag,
-  History,
   FileSpreadsheet,
+  Fingerprint,
   LayoutGrid,
   ScrollText,
   ShieldAlert,
   Sparkles,
-  TrendingUp,
   Briefcase,
   ClipboardCheck,
-  UserRoundPlus,
 } from "lucide-react";
 import {
   ROLES,
-  CAN_VIEW_LEAD,
-  CAN_PUSH_FOLLOWUP,
   CAN_REASSIGN,
 } from "@/lib/interactions/constants";
 
@@ -45,8 +39,13 @@ const REPORT_ROLES = [
   ROLES.BOARD,
   ROLES.ADMIN,
 ] as const;
-const SALE_WORKSPACE_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
-const LEAD_ROLES = CAN_VIEW_LEAD;
+// Mỗi vai trò chỉ thấy đúng nhóm nav của mình — Admin luôn thấy tất cả nhóm.
+// Leader không còn thấy nhóm "Saler"/"Marketing" qua nav nữa (vẫn có thể thao
+// tác thay Sale/Marketing nếu nghiệp vụ cho phép, chỉ là không lộ ra sidebar
+// — xem "Menu chỉ là lớp trình bày" ở dưới); mọi việc Leader cần đã gộp vào
+// "Dashboard Leader" trong nhóm Leader.
+const SALER_NAV_ROLES = [ROLES.SALES, ROLES.ADMIN] as const;
+const MARKETING_NAV_ROLES = [ROLES.MARKETING, ROLES.ADMIN] as const;
 const ADMIN_ROLES = [ROLES.ADMIN] as const;
 
 // Sale/Admin không được vào trang Dashboard tổng ("/") — home của họ là
@@ -94,40 +93,43 @@ export const navGroups: NavGroup[] = [
         icon: LayoutDashboard,
         allowedRoles: REPORT_ROLES,
       },
-      {
-        title: "Dashboard Sale",
-        href: "/dashboard-sale",
-        icon: Gauge,
-        allowedRoles: SALE_WORKSPACE_ROLES,
-      },
     ],
   },
   {
     label: "Saler",
     items: [
       {
+        title: "Dashboard Sale",
+        href: "/dashboard-sale",
+        icon: Gauge,
+        allowedRoles: SALER_NAV_ROLES,
+      },
+      {
         title: "Liên hệ",
         href: "/leads",
         icon: Inbox,
-        allowedRoles: LEAD_ROLES,
+        // Trước đây dùng CAN_VIEW_LEAD (quyền truy cập server, có cả Marketing
+        // và Leader) — riêng ở NAV chỉ Sale/Admin cần thấy mục này. Trang
+        // /leads vẫn kiểm tra quyền riêng ở server, không phụ thuộc danh sách này.
+        allowedRoles: SALER_NAV_ROLES,
       },
       {
         title: "Workspace của tôi",
         href: "/workspace",
         icon: Briefcase,
-        allowedRoles: SALE_WORKSPACE_ROLES,
+        allowedRoles: SALER_NAV_ROLES,
       },
       {
         title: "Cần chăm sóc lại",
         href: "/followup-inbox",
         icon: Sparkles,
-        allowedRoles: SALE_WORKSPACE_ROLES,
+        allowedRoles: SALER_NAV_ROLES,
       },
       {
         title: "Tổng quan Sale",
         href: "/sale-overview",
         icon: LayoutGrid,
-        allowedRoles: SALE_WORKSPACE_ROLES,
+        allowedRoles: SALER_NAV_ROLES,
       },
       // "Học viên đang tư vấn" (/students) đã gộp vào "Workspace của tôi" —
       // ẩn khỏi menu, route vẫn còn dùng được nếu truy cập trực tiếp.
@@ -137,17 +139,15 @@ export const navGroups: NavGroup[] = [
     label: "Leader",
     items: [
       {
-        title: "Chăm sóc lại",
-        href: "/followup",
-        icon: Sparkles,
-        allowedRoles: CAN_PUSH_FOLLOWUP,
+        title: "Dashboard Leader",
+        href: "/leader-dashboard",
+        icon: Gauge,
+        allowedRoles: CAN_REASSIGN,
       },
-      {
-        title: "Theo dõi hiệu quả chăm sóc lại",
-        href: "/followup-tracking",
-        icon: History,
-        allowedRoles: CAN_PUSH_FOLLOWUP,
-      },
+      // "Phân bổ chăm sóc lại", "Theo dõi hiệu quả chăm sóc lại" (chuyển sang
+      // nhóm Marketing — Leader/Admin không cần nữa) và "Phân bổ học viên" đã
+      // gộp thành các mục bấm được ngay trên Dashboard Leader — không còn là
+      // mục nav riêng để Leader chỉ cần vào 1 trang là làm được mọi việc.
       {
         title: "Khách hàng",
         href: "/customers",
@@ -160,12 +160,6 @@ export const navGroups: NavGroup[] = [
         icon: FileSpreadsheet,
         allowedRoles: CAN_REASSIGN,
       },
-      {
-        title: "Phân bổ học viên",
-        href: "/student-assignment",
-        icon: UserRoundPlus,
-        allowedRoles: CAN_REASSIGN,
-      },
     ],
   },
   {
@@ -175,39 +169,38 @@ export const navGroups: NavGroup[] = [
         title: "Dashboard Marketing",
         href: "/marketing-dashboard",
         icon: Gauge,
-        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+        allowedRoles: MARKETING_NAV_ROLES,
       },
       {
         title: "Workspace Marketing",
         href: "/marketing-workspace",
         icon: Briefcase,
-        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
+        allowedRoles: MARKETING_NAV_ROLES,
       },
+      {
+        title: "Ad ID",
+        href: "/ad-ids",
+        icon: Fingerprint,
+        allowedRoles: MARKETING_NAV_ROLES,
+      },
+      {
+        title: "Chăm sóc lại",
+        href: "/followup",
+        icon: Sparkles,
+        // Trước đây dùng CAN_PUSH_FOLLOWUP (quyền server, có cả Leader) —
+        // riêng ở NAV chỉ Marketing/Admin cần thấy, Leader có Dashboard Leader
+        // riêng. Route vẫn nhận Leader nếu truy cập trực tiếp.
+        allowedRoles: MARKETING_NAV_ROLES,
+      },
+      // "Theo dõi hiệu quả chăm sóc lại" (/followup-tracking) là việc của
+      // Leader, không phải Marketing — đã gỡ khỏi nhóm này. Leader xem qua
+      // mục bấm được ngay trên Dashboard Leader (xem comment ở nhóm Leader).
     ],
   },
-  {
-    label: "Thống kê",
-    items: [
-      {
-        title: "Chi phí quảng cáo",
-        href: "/ads-cost",
-        icon: Megaphone,
-        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
-      },
-      {
-        title: "Nhập chi phí từ Excel",
-        href: "/ads-cost/import",
-        icon: FileSpreadsheet,
-        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
-      },
-      {
-        title: "Hiệu quả quảng cáo",
-        href: "/ads-performance",
-        icon: TrendingUp,
-        allowedRoles: [ROLES.MARKETING, ROLES.ADMIN],
-      },
-    ],
-  },
+  // Nhóm "Thống kê" (Chi phí quảng cáo / Nhập chi phí từ Excel / Hiệu quả
+  // quảng cáo) đã gỡ khỏi nav — cả 3 đều bấm được ngay trong Workspace
+  // Marketing (thêm/nhập chi phí, xem chi phí gần đây, xếp hạng hiệu quả),
+  // kèm link "Xem tất cả" sang đúng 3 route này khi cần xem đầy đủ.
   {
     label: "Quản trị",
     items: [
@@ -229,12 +222,6 @@ export const navGroups: NavGroup[] = [
         icon: Building2,
         allowedRoles: ADMIN_ROLES,
       },
-      {
-        title: "Đối tượng",
-        href: "/admin/objects",
-        icon: Tag,
-        allowedRoles: ADMIN_ROLES,
-      },
       // "Rà soát SLA", "Người dùng", "Cấu hình hệ thống" đã gộp thành section
       // trong trang "Trung tâm quản trị" (/admin/monitoring) — không còn là mục riêng ở đây.
     ],
@@ -243,7 +230,7 @@ export const navGroups: NavGroup[] = [
     label: "Nhật ký",
     items: [
       {
-        title: "System Log",
+        title: "Nhật ký hoạt động",
         href: "/logs",
         icon: ScrollText,
         allowedRoles: ADMIN_ROLES,

@@ -8,22 +8,29 @@ import { requireRole } from "@/lib/auth/dal";
 import { ROLES } from "@/lib/interactions/constants";
 import { prisma } from "@/lib/prisma";
 import { LogsFilterBar } from "@/app/(app)/logs/logs-filter-bar";
-import { LogsTable, type LogRow } from "@/app/(app)/logs/logs-table";
+import { LogsFeed, type LogRow } from "@/app/(app)/logs/logs-feed";
+import { ACTION_CATEGORY, ADMIN_ONLY_ACTIONS, LOG_CATEGORY_OPTIONS, type LogCategoryKey } from "@/app/(app)/logs/format";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 60;
 
 export default async function LogsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string; action?: string; result?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; category?: string; result?: string }>;
 }) {
   await requireRole(ROLES.ADMIN);
-  const { page: pageParam, q, action, result } = await searchParams;
+  const { page: pageParam, q, category, result } = await searchParams;
   const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
-  const hasFilters = !!q?.trim() || (!!action && action !== "all") || (!!result && result !== "all");
+  const validCategory = LOG_CATEGORY_OPTIONS.some((o) => o.value === category) ? (category as LogCategoryKey) : null;
+  const hasFilters = !!q?.trim() || !!validCategory || (!!result && result !== "all");
 
-  const where: Prisma.SystemLogWhereInput = {};
-  if (action && action !== "all") where.action = action;
+  // Trang này chỉ liệt kê hành động NHÂN VIÊN đã làm với khách/học viên — các
+  // thao tác dọn dẹp dữ liệu hệ thống (chỉ Admin dùng) không thuộc phạm vi
+  // này nên loại thẳng ở truy vấn, không chỉ ẩn ở bộ lọc.
+  const where: Prisma.SystemLogWhereInput = { action: { notIn: ADMIN_ONLY_ACTIONS } };
+  if (validCategory) {
+    where.action = { in: Object.entries(ACTION_CATEGORY).filter(([, cat]) => cat === validCategory).map(([action]) => action) };
+  }
   if (result && result !== "all") where.result = result;
   if (q?.trim()) {
     const term = q.trim();
@@ -37,7 +44,7 @@ export default async function LogsPage({
   const pageHref = (targetPage: number) => {
     const params = new URLSearchParams();
     if (q?.trim()) params.set("q", q.trim());
-    if (action && action !== "all") params.set("action", action);
+    if (validCategory) params.set("category", validCategory);
     if (result && result !== "all") params.set("result", result);
     params.set("page", String(targetPage));
     return `/logs?${params.toString()}`;
@@ -75,30 +82,30 @@ export default async function LogsPage({
     <>
       <PageHeader
         eyebrow="Nhật ký"
-        title="System Log"
-        description="Nhật ký thao tác toàn hệ thống — phục vụ audit và đối chiếu."
+        title="Nhật ký hoạt động"
+        description="Những việc nhân viên đã làm với liên hệ, chăm sóc lại và học viên — nhóm theo màu để dễ quét mắt."
         action={<LogsFilterBar />}
       />
 
       {rows.length === 0 ? (
         <EmptyState
           icon={ScrollText}
-          title={hasFilters ? "Không tìm thấy nhật ký phù hợp" : "Chưa có nhật ký nào"}
+          title={hasFilters ? "Không tìm thấy hoạt động phù hợp" : "Chưa có hoạt động nào"}
           description={
             hasFilters
-              ? "Thử đổi từ khoá tìm kiếm hoặc bộ lọc hành động/kết quả."
-              : "Mọi thao tác quan trọng trên hệ thống sẽ được ghi lại tại đây."
+              ? "Thử đổi từ khoá tìm kiếm hoặc bộ lọc nhóm hành động/kết quả."
+              : "Mọi thao tác của nhân viên trên liên hệ, chăm sóc lại và học viên sẽ xuất hiện tại đây."
           }
         />
       ) : (
-        <LogsTable rows={rows} totalItems={totalItems} />
+        <LogsFeed rows={rows} totalItems={totalItems} />
       )}
 
       {totalPages > 1 && (
         <div className="flex flex-col items-center justify-between gap-3 pt-4 sm:flex-row">
           <p className="text-xs text-muted-foreground">
             Trang <strong className="font-mono text-foreground">{page}</strong>/{totalPages} ·{" "}
-            <strong className="font-mono text-foreground">{totalItems}</strong> dòng nhật ký
+            <strong className="font-mono text-foreground">{totalItems}</strong> hoạt động
           </p>
           <div className="flex items-center gap-1">
             {page > 1 ? (

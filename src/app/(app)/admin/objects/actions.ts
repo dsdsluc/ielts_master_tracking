@@ -20,7 +20,7 @@ export async function createObject(input: { name: string } & z.input<typeof obje
   if (existing) throw new Error("Đã có đối tượng với tên này.");
 
   await prisma.customerObject.create({ data: { name, ...data } }).catch((err) => friendlyPrismaError(err, "Không tạo được đối tượng."));
-  revalidatePath("/admin/objects");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
@@ -28,13 +28,13 @@ export async function updateObject(name: string, input: z.input<typeof objectSch
   await requireAdmin();
   const data = parseOrThrow(objectSchema, input);
   await prisma.customerObject.update({ where: { name }, data }).catch((err) => friendlyPrismaError(err, "Không cập nhật được đối tượng."));
-  revalidatePath("/admin/objects");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }
 
 export async function setObjectActive(name: string, active: boolean) {
   await requireAdmin();
   await prisma.customerObject.update({ where: { name }, data: { active } }).catch((err) => friendlyPrismaError(err, "Không cập nhật được trạng thái."));
-  revalidatePath("/admin/objects");
+  revalidatePath("/admin/catalog");
   revalidatePath("/leads");
 }

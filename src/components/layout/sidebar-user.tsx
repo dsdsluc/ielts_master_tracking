@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/auth/actions";
+import { ThemeToggle } from "@/components/theme-toggle";
 import type { CurrentUser } from "@/lib/auth/dal";
 
 function initialsOf(fullName: string) {
@@ -42,16 +43,19 @@ export function SidebarUser({
         </span>
       </div>
       {!collapsed && (
-        <form action={logout}>
-          <button
-            type="submit"
-            aria-label="Đăng xuất"
-            title="Đăng xuất"
-            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <LogOut className="size-4" />
-          </button>
-        </form>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ThemeToggle />
+          <form action={logout}>
+            <button
+              type="submit"
+              aria-label="Đăng xuất"
+              title="Đăng xuất"
+              className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <LogOut className="size-4" />
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

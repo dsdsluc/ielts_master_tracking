@@ -41,7 +41,6 @@ export type FollowupCandidate = {
   lastActivityAt: string;
   conversationLink: string | null;
   rawLink: string;
-  needsSaleAssignment: boolean;
 };
 
 // "Khách im lặng" cần đối chiếu số lần chăm sóc của Sale (recordTouch) — không
@@ -111,18 +110,18 @@ export function FollowupView({
     });
   }
 
-  async function handlePush(targetSaleEmail: string, suggestion: string) {
+  async function handlePush(suggestion: string) {
     const { pushed, skipped } = await apiFetch<{ pushed: number; skipped: number }>(
       "/api/interactions/followup/push",
       {
         method: "POST",
-        body: JSON.stringify({ interactionIds: [...selected], targetSaleEmail, suggestion: suggestion || undefined }),
+        body: JSON.stringify({ interactionIds: [...selected], suggestion: suggestion || undefined }),
       }
     );
     toast.success(
       skipped > 0
-        ? `Đã gửi ${pushed} liên hệ — bỏ qua ${skipped} (đã đổi trạng thái/đã có Sale khác nhận trước đó).`
-        : `Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ.`
+        ? `Đã gửi ${pushed} liên hệ — bỏ qua ${skipped} (đã đổi trạng thái/đã gửi yêu cầu trước đó).`
+        : `Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ — Leader sẽ phân bổ Sale phụ trách.`
     );
     setSelected(new Set());
     router.refresh();
@@ -193,11 +192,6 @@ export function FollowupView({
                     <p className="max-w-56 truncate font-medium text-foreground" title={item.customerName}>
                       {item.customerName}
                     </p>
-                    {item.needsSaleAssignment && (
-                      <span className="mt-1 inline-flex items-center rounded-full bg-status-waiting-bg px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-status-waiting uppercase">
-                        Cần gắn Sale
-                      </span>
-                    )}
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">
                     {item.sourceName} · {item.fanpageName}
@@ -246,7 +240,7 @@ export function FollowupView({
 
       <div className="shadow-bubble sticky bottom-3 z-30 flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/95 p-3 backdrop-blur-md">
         <p className="text-xs text-muted-foreground">
-          Chọn Sale sẽ nhận yêu cầu cho <strong className="font-mono text-foreground">{selected.size}</strong> liên hệ đã chọn.
+          Gửi yêu cầu chăm sóc lại cho <strong className="font-mono text-foreground">{selected.size}</strong> liên hệ đã chọn — Leader sẽ phân bổ Sale phụ trách.
         </p>
         <Button
           type="button"

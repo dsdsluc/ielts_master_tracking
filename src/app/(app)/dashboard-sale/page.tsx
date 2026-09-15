@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, GraduationCap, PartyPopper, Sparkles } from "lucide-react";
+import { ArrowRight, ChevronRight, GraduationCap, MessageCircleMore, PartyPopper, Phone, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
@@ -7,10 +7,12 @@ import { StatusPill } from "@/components/status-pill";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD, STATUS, STUDENT_STAGE, STUDENT_STAGE_VALUES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { CAN_CREATE_OR_EDIT_LEAD, ROLES, STATUS, STUDENT_STAGE, STUDENT_STAGE_VALUES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { branchScopeWhere, getQueue } from "@/lib/interactions/queries";
 import { getStudentProfilesForActor } from "@/lib/students/queries";
+import { getLeadFormOptions } from "@/app/(app)/leads/get-lead-form-options";
 import { StageCountStrip } from "@/app/(app)/students/stage-count-strip";
+import { CreateLeadTaskCard } from "@/app/(app)/dashboard-sale/create-lead-task-card";
 
 const PREVIEW_LIMIT = 5;
 
@@ -24,11 +26,29 @@ export default async function DashboardSalePage() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [createdToday, touchesToday, qualifiedToday, needsFollowupOpen, queue, students] = await Promise.all([
+  // "Cần chăm sóc lại": Sale chỉ tính đúng phần Marketing nhắm tới email của
+  // họ (mirror followup-inbox/page.tsx) — Leader/Admin xem toàn phạm vi cơ sở.
+  const followupWhere = {
+    ...branchScopeWhere(user),
+    activeFlag: true,
+    needsFollowup: true,
+    ...(user.role === ROLES.SALES ? { followupTargetSaleEmail: user.email } : {}),
+  };
+
+  const [createdToday, touchesToday, qualifiedToday, openWorkspaceCount, followupCount, options, queue, students] = await Promise.all([
     prisma.interaction.count({ where: { createdByEmail: user.email, createdLeadAt: { gte: todayStart } } }),
     prisma.systemLog.count({ where: { actorEmail: user.email, action: SYSTEM_LOG_ACTION.TOUCH, loggedAt: { gte: todayStart } } }),
     prisma.interaction.count({ where: { updatedByEmail: user.email, statusName: STATUS.PHONE, closedAt: { gte: todayStart } } }),
-    prisma.interaction.count({ where: { ...branchScopeWhere(user), activeFlag: true, needsFollowup: true } }),
+    prisma.interaction.count({
+      where: {
+        workspaceClaims: { some: { saleEmail: user.email } },
+        activeFlag: true,
+        needsFollowup: false,
+        statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] },
+      },
+    }),
+    prisma.interaction.count({ where: followupWhere }),
+    getLeadFormOptions(),
     getQueue(user),
     getStudentProfilesForActor(user),
   ]);
@@ -39,7 +59,7 @@ export default async function DashboardSalePage() {
   // chỉ còn đại diện cho việc CỦA RIÊNG Sale này.
   const previewItems = queue.groups
     .flatMap((g) => g.items)
-    .filter((item) => item.workspaceClaimedByEmail === user.email)
+    .filter((item) => item.workspaceClaimantEmails.includes(user.email))
     .slice(0, PREVIEW_LIMIT);
 
   const totalStudents = students.length;
@@ -55,14 +75,52 @@ export default async function DashboardSalePage() {
       <PageHeader
         eyebrow="Tổng quan"
         title="Dashboard Sale"
-        description="Số liệu cá nhân trong ngày — dữ liệu ghi trực tiếp từ hoạt động của bạn."
+        description="Việc cần làm hôm nay — tạo liên hệ mới, chăm sóc liên hệ đang xử lý, gọi điện và chăm sóc lại."
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Liên hệ tạo hôm nay" value={createdToday} accentClassName="bg-foreground/50" />
-        <KpiCard label="Đã liên hệ hôm nay" value={touchesToday} accentClassName="bg-status-received" />
-        <KpiCard label="Đủ tiêu chuẩn hôm nay" value={qualifiedToday} accentClassName="bg-status-qualified" />
-        <KpiCard label="Cần chăm sóc lại" value={needsFollowupOpen} accentClassName="bg-status-waiting" />
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CreateLeadTaskCard options={options} createdToday={createdToday} />
+
+        <Link href="/workspace" className="shadow-bubble flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card p-4 hover:bg-secondary/30">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-status-received-bg text-status-received">
+              <MessageCircleMore className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-foreground">Chăm sóc liên hệ</p>
+              <p className="text-xs text-muted-foreground">
+                {openWorkspaceCount} đang xử lý · {qualifiedToday} đủ tiêu chuẩn hôm nay
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+
+        <Link href="/workspace" className="shadow-bubble flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card p-4 hover:bg-secondary/30">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Phone className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-foreground">Gọi điện</p>
+              <p className="text-xs text-muted-foreground">{touchesToday} lượt chăm sóc hôm nay</p>
+            </div>
+          </div>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+
+        <Link href="/followup-inbox" className="shadow-bubble flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card p-4 hover:bg-secondary/30">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-status-waiting-bg text-status-waiting">
+              <Sparkles className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-foreground">Chăm sóc lại</p>
+              <p className="text-xs text-muted-foreground">{followupCount} cần xử lý</p>
+            </div>
+          </div>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">

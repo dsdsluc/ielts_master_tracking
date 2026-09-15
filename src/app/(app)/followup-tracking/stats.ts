@@ -1,6 +1,11 @@
 import { FOLLOWUP_OUTCOME, STATUS } from "@/lib/interactions/constants";
 import type { FollowupTrackingRow } from "@/app/(app)/followup-tracking/followup-tracking-table";
 
+// Chỉ cần đúng 5 field này để tính KPI — khai riêng (thay vì đòi cả
+// FollowupTrackingRow) để những nơi chỉ cần con số tổng quan (vd Dashboard
+// Leader) không phải query/dựng đủ toàn bộ field của bảng chi tiết.
+export type FollowupStatRow = Pick<FollowupTrackingRow, "needsFollowup" | "followupOutcome" | "status" | "followupHandledAt" | "mktPushedAt">;
+
 export type FollowupStats = {
   total: number;
   pending: number;
@@ -18,7 +23,7 @@ export type FollowupStats = {
 /** Tính KPI chăm sóc lại từ 1 tập FollowupTrackingRow — dùng chung cho KPI
  * tổng ở trang /followup-tracking, từng nhóm Sale trên bảng tổng hợp, và KPI
  * ở trang chi tiết theo Sale, để 3 nơi luôn khớp công thức nhau. */
-export function computeFollowupStats(rows: FollowupTrackingRow[]): FollowupStats {
+export function computeFollowupStats(rows: FollowupStatRow[]): FollowupStats {
   const total = rows.length;
   const pending = rows.filter((r) => r.needsFollowup).length;
   const resolvedCount = total - pending;

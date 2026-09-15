@@ -32,8 +32,10 @@ export default async function FollowupInboxPage() {
         followupResolvedCount: true,
         assignedSaleEmail: true,
         assignedSale: { select: { fullName: true } },
-        workspaceClaimedByEmail: true,
-        workspaceClaimedBy: { select: { fullName: true } },
+        workspaceClaims: {
+          orderBy: { lastActivityAt: "desc" },
+          select: { saleEmail: true, sale: { select: { fullName: true } } },
+        },
         followupTargetSaleEmail: true,
         followupTargetSale: { select: { fullName: true } },
       },
@@ -53,8 +55,9 @@ export default async function FollowupInboxPage() {
     mktPushedByName: r.mktPushedBy?.fullName ?? null,
     followupResolvedCount: r.followupResolvedCount,
     maxBeforeSpam,
-    consultantEmail: r.assignedSaleEmail ?? r.workspaceClaimedByEmail,
-    consultantName: r.assignedSale?.fullName ?? r.workspaceClaimedBy?.fullName ?? null,
+    consultantEmail: r.assignedSaleEmail ?? r.workspaceClaims[0]?.saleEmail ?? null,
+    consultantName: r.assignedSale?.fullName ?? r.workspaceClaims[0]?.sale.fullName ?? null,
+    workspaceClaimantEmails: r.workspaceClaims.map((c) => c.saleEmail),
     targetSaleName: r.followupTargetSale?.fullName ?? null,
   }));
 

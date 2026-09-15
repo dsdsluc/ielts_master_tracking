@@ -5,6 +5,7 @@ import { BranchesPanel } from "@/app/(app)/admin/branches/branches-panel";
 import { SourcesPanel } from "@/app/(app)/admin/sources/sources-panel";
 import { FanpagesPanel } from "@/app/(app)/admin/fanpages/fanpages-panel";
 import { StatusesPanel } from "@/app/(app)/admin/statuses/statuses-panel";
+import { ObjectsPanel } from "@/app/(app)/admin/objects/objects-panel";
 import { AdminCatalogTabs } from "@/app/(app)/admin/catalog/admin-catalog-tabs";
 
 // Gộp 3 trang cấu hình danh mục dùng chung (Cơ sở/Nguồn/Fanpage) — trước đây
@@ -20,7 +21,7 @@ export default async function AdminCatalogPage() {
       <PageHeader
         eyebrow="Quản trị"
         title="Danh mục"
-        description="Cơ sở, Nguồn, Fanpage và Trạng thái dùng chung trong hệ thống — gộp về 1 nơi quản lý."
+        description="Cơ sở, Nguồn, Fanpage, Trạng thái và Đối tượng khách hàng dùng chung trong hệ thống — gộp về 1 nơi quản lý."
       />
 
       <AdminCatalogTabs
@@ -28,6 +29,7 @@ export default async function AdminCatalogPage() {
         sourcesPanel={<SourcesPanel />}
         fanpagesPanel={<FanpagesPanel />}
         statusesPanel={<StatusesPanel />}
+        objectsPanel={<ObjectsPanel />}
       />
     </>
   );

@@ -25,7 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { StatusPill } from "@/components/status-pill";
 import { FormMessage } from "@/components/form-message";
 import { useInteractionDetail } from "@/app/(app)/leads/use-interaction-detail";
-import { CopyButton } from "@/app/(app)/leads/copy-button";
+import { CopyButton } from "@/components/copy-button";
 import { TouchLogDialog } from "@/app/(app)/leads/touch-log-dialog";
 import { InfoRow } from "@/app/(app)/leads/info-row";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";

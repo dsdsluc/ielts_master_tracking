@@ -1,21 +1,23 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Building2, CircleDot, Flag, Share2 } from "lucide-react";
+import { Building2, CircleDot, Flag, Share2, Tag } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-type TabKey = "branches" | "sources" | "fanpages" | "statuses";
+type TabKey = "branches" | "sources" | "fanpages" | "statuses" | "objects";
 
 export function AdminCatalogTabs({
   branchesPanel,
   sourcesPanel,
   fanpagesPanel,
   statusesPanel,
+  objectsPanel,
 }: {
   branchesPanel: ReactNode;
   sourcesPanel: ReactNode;
   fanpagesPanel: ReactNode;
   statusesPanel: ReactNode;
+  objectsPanel: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("branches");
 
@@ -34,11 +36,15 @@ export function AdminCatalogTabs({
         <TabsTrigger value="statuses">
           <CircleDot className="size-3.5" /> Trạng thái
         </TabsTrigger>
+        <TabsTrigger value="objects">
+          <Tag className="size-3.5" /> Đối tượng khách hàng
+        </TabsTrigger>
       </TabsList>
       <TabsContent value="branches">{branchesPanel}</TabsContent>
       <TabsContent value="sources">{sourcesPanel}</TabsContent>
       <TabsContent value="fanpages">{fanpagesPanel}</TabsContent>
       <TabsContent value="statuses">{statusesPanel}</TabsContent>
+      <TabsContent value="objects">{objectsPanel}</TabsContent>
     </Tabs>
   );
 }

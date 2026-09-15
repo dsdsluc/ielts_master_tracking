@@ -26,7 +26,7 @@ export default async function WorkspacePage() {
     // lại" chỉ xử lý ở /followup-inbox, tránh 2 nơi cùng là chỗ Sale làm việc
     // trên 1 liên hệ (mirror buildInteractionWhere() ở lib/interactions/queries.ts).
     prisma.interaction.findMany({
-      where: { ...openStatusWhere, needsFollowup: false, workspaceClaimedByEmail: user.email },
+      where: { ...openStatusWhere, needsFollowup: false, workspaceClaims: { some: { saleEmail: user.email } } },
       include: listItemInclude,
       orderBy: { createdLeadAt: "asc" },
     }),

@@ -3,7 +3,7 @@ import { cached } from "@/lib/cache";
 import { STUDENT_STAGE, STUDENT_STAGE_VALUES } from "@/lib/interactions/constants";
 import { isLeaderLike } from "@/lib/interactions/scope";
 import { currentKpiMonth, getMonthlyKpiTarget } from "@/lib/interactions/settings";
-import { studentProfileScopeWhere } from "@/lib/students/queries";
+import { getAssignableSales, studentProfileScopeWhere } from "@/lib/students/queries";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -304,13 +304,18 @@ function startOfWeek(d: Date): Date {
   return date;
 }
 
-/** Chỉ tiêu CÁ NHÂN của 1 Sale trong tháng = số liên hệ được phân bổ × chính
- * tỷ lệ nhận đó (không nhân với KPI công ty — đã xác nhận trực tiếp với
- * người dùng): được phân bổ càng nhiều so với toàn công ty thì chỉ tiêu cá
- * nhân càng cao theo cấp số nhân của tỷ lệ đó.
- * Vd: Sale nhận 10/19 học viên toàn công ty (52.6%) thì chỉ tiêu cá nhân =
- * 10 × 52.6% ≈ 5. KPI công ty (companyTarget) chỉ giữ lại để hiển thị bối
- * cảnh, không còn là số nhân trong công thức.
+/** Chỉ tiêu CÁ NHÂN của 1 Sale trong tháng = chỉ tiêu CÔNG TY (companyTarget,
+ * Admin nhập ở "Cấu hình hệ thống") chia theo đúng TỶ TRỌNG số học viên được
+ * phân bổ cho Sale đó trên tổng số học viên phân bổ toàn công ty trong tháng:
+ * personalTarget = round(companyTarget × mineAssigned / totalAssigned).
+ * Vd: chỉ tiêu công ty 100, Sale nhận 10/19 học viên toàn công ty (52.6%) thì
+ * chỉ tiêu cá nhân ≈ round(100 × 52.6%) = 53. Cộng dồn chỉ tiêu cá nhân của
+ * mọi Sale lại đúng bằng chỉ tiêu công ty (sai số làm tròn không đáng kể).
+ *
+ * (Công thức trước đây — personalTarget = mineAssigned × shareRatio, tức là
+ * BÌNH PHƯƠNG mineAssigned chia totalAssigned — hoàn toàn không dùng tới
+ * companyTarget dù UI có hiển thị, và không có ý nghĩa nghiệp vụ rõ ràng. Đã
+ * xác nhận lại với người dùng đây là lỗi cần sửa, không phải chủ đích.)
  *
  * Chỉ tiêu ngày/tuần chia theo TIẾN ĐỘ CÒN LẠI (personalTarget trừ số đã chốt
  * trong tháng), trải đều cho số ngày/tuần còn lại của tháng — không phải chia
@@ -337,7 +342,7 @@ async function computeSalePersonalKpiUncached(email: string): Promise<SalePerson
   ]);
 
   const shareRatio = totalAssigned > 0 ? mineAssigned / totalAssigned : 0;
-  const personalTarget = Math.round(mineAssigned * shareRatio);
+  const personalTarget = Math.round(companyTarget * shareRatio);
   const remaining = Math.max(0, personalTarget - enrolledThisMonth);
 
   const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / MS_PER_DAY);
@@ -357,5 +362,76 @@ async function computeSalePersonalKpiUncached(email: string): Promise<SalePerson
 }
 
 export async function computeSalePersonalKpi(email: string): Promise<SalePersonalKpi> {
-  return cached(`sale-personal-kpi:v3:${email}:${currentKpiMonth()}`, 90, () => computeSalePersonalKpiUncached(email));
+  // v4: personalTarget đổi công thức — xem giải thích ở computeSalePersonalKpiUncached().
+  return cached(`sale-personal-kpi:v4:${email}:${currentKpiMonth()}`, 90, () => computeSalePersonalKpiUncached(email));
+}
+
+export type TeamKpiRow = {
+  email: string;
+  fullName: string;
+  mineAssigned: number;
+  personalTarget: number;
+  enrolled: number;
+  remaining: number;
+  met: boolean;
+};
+
+export type TeamPersonalKpi = {
+  month: string;
+  companyTarget: number;
+  totalAssigned: number;
+  rows: TeamKpiRow[];
+};
+
+/** Bản "cả team" của computeSalePersonalKpi — cùng công thức
+ * (personalTarget = round(companyTarget × mineAssigned/totalAssigned)) nhưng
+ * gộp query theo groupBy thay vì lặp N lần cho N Sale, để Dashboard Leader
+ * tải 1 lần cho cả đội thay vì 1 round-trip DB riêng mỗi người. Chỉ trả về
+ * Sale có ít nhất 1 học viên được phân bổ trong tháng — Sale chưa được giao
+ * gì thì chưa có chỉ tiêu để so sánh. */
+async function computeTeamPersonalKpiUncached(actor: CurrentUser): Promise<TeamPersonalKpi> {
+  const month = currentKpiMonth();
+  const { monthStart, monthEnd } = monthBounds(month);
+  const scope = studentProfileScopeWhere(actor);
+  const assignedInMonth: Prisma.StudentProfileWhereInput = { ...scope, assignedAt: { gte: monthStart, lt: monthEnd } };
+
+  const [companyTarget, totalAssigned, assignedGroups, enrolledGroups, sales] = await Promise.all([
+    getMonthlyKpiTarget(month),
+    prisma.studentProfile.count({ where: assignedInMonth }),
+    prisma.studentProfile.groupBy({ by: ["assignedToEmail"], where: assignedInMonth, _count: { _all: true } }),
+    prisma.studentProfile.groupBy({
+      by: ["assignedToEmail"],
+      where: { ...scope, enrolledAt: { gte: monthStart, lt: monthEnd } },
+      _count: { _all: true },
+    }),
+    getAssignableSales(actor),
+  ]);
+
+  const assignedByEmail = new Map(assignedGroups.map((g) => [g.assignedToEmail, g._count._all]));
+  const enrolledByEmail = new Map(enrolledGroups.map((g) => [g.assignedToEmail, g._count._all]));
+
+  const rows: TeamKpiRow[] = sales
+    .map((s) => {
+      const mineAssigned = assignedByEmail.get(s.email) ?? 0;
+      const shareRatio = totalAssigned > 0 ? mineAssigned / totalAssigned : 0;
+      const personalTarget = Math.round(companyTarget * shareRatio);
+      const enrolled = enrolledByEmail.get(s.email) ?? 0;
+      return {
+        email: s.email,
+        fullName: s.fullName,
+        mineAssigned,
+        personalTarget,
+        enrolled,
+        remaining: Math.max(0, personalTarget - enrolled),
+        met: enrolled >= personalTarget,
+      };
+    })
+    .filter((r) => r.mineAssigned > 0)
+    .sort((a, b) => b.remaining - a.remaining || b.mineAssigned - a.mineAssigned);
+
+  return { month, companyTarget, totalAssigned, rows };
+}
+
+export async function computeTeamPersonalKpi(actor: CurrentUser): Promise<TeamPersonalKpi> {
+  return cached(`team-personal-kpi:${scopeCacheKey(actor)}:${currentKpiMonth()}`, 90, () => computeTeamPersonalKpiUncached(actor));
 }
