@@ -2,8 +2,9 @@ import { Sparkles } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_PUSH_FOLLOWUP, STATUS } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { listItemInclude } from "@/lib/interactions/serialize";
@@ -19,7 +20,8 @@ export default async function FollowupPage({
 }: {
   searchParams: Promise<{ branch?: string; source?: string; status?: string; stale?: string }>;
 }) {
-  const user = await requireRole(...CAN_PUSH_FOLLOWUP);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "followup");
   const { branch, source, status, stale } = await searchParams;
 
   const [branches, sourceRows] = await Promise.all([

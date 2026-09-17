@@ -6,12 +6,13 @@ import { EmptyState } from "@/components/empty-state";
 import { StatusPill } from "@/components/status-pill";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD, ROLES, STATUS, STUDENT_STAGE, STUDENT_STAGE_VALUES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { INTERACTION_ACTIVITY, ROLES, STATUS, CUSTOMER_STAGE, CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 import { branchScopeWhere, getQueue } from "@/lib/interactions/queries";
-import { getStudentProfilesForActor } from "@/lib/students/queries";
+import { getCustomersForSale } from "@/lib/customers/queries";
 import { getLeadFormOptions } from "@/app/(app)/leads/get-lead-form-options";
-import { StageCountStrip } from "@/app/(app)/students/stage-count-strip";
+import { StageCountStrip } from "@/app/(app)/customers/stage-count-strip";
 import { CreateLeadTaskCard } from "@/app/(app)/dashboard-sale/create-lead-task-card";
 
 const PREVIEW_LIMIT = 5;
@@ -21,7 +22,8 @@ function formatDate(iso: string) {
 }
 
 export default async function DashboardSalePage() {
-  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "dashboardSale");
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -35,13 +37,15 @@ export default async function DashboardSalePage() {
     ...(user.role === ROLES.SALES ? { followupTargetSaleEmail: user.email } : {}),
   };
 
-  const [createdToday, touchesToday, qualifiedToday, openWorkspaceCount, followupCount, options, queue, students] = await Promise.all([
+  const [createdToday, touchesToday, qualifiedToday, openWorkspaceCount, followupCount, options, queue, myCustomers] = await Promise.all([
     prisma.interaction.count({ where: { createdByEmail: user.email, createdLeadAt: { gte: todayStart } } }),
-    prisma.systemLog.count({ where: { actorEmail: user.email, action: SYSTEM_LOG_ACTION.TOUCH, loggedAt: { gte: todayStart } } }),
+    prisma.interactionFieldLog.count({
+      where: { changedByEmail: user.email, fieldKey: INTERACTION_ACTIVITY.FOLLOWUP_RESOLVED, changedAt: { gte: todayStart } },
+    }),
     prisma.interaction.count({ where: { updatedByEmail: user.email, statusName: STATUS.PHONE, closedAt: { gte: todayStart } } }),
     prisma.interaction.count({
       where: {
-        workspaceClaims: { some: { saleEmail: user.email } },
+        assignedSaleEmail: user.email,
         activeFlag: true,
         needsFollowup: false,
         statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] },
@@ -50,7 +54,7 @@ export default async function DashboardSalePage() {
     prisma.interaction.count({ where: followupWhere }),
     getLeadFormOptions(),
     getQueue(user),
-    getStudentProfilesForActor(user),
+    getCustomersForSale(user.email),
   ]);
 
   // Chỉ lấy liên hệ ĐÃ CLAIM vào Workspace của chính Sale này — không còn hiển
@@ -59,15 +63,15 @@ export default async function DashboardSalePage() {
   // chỉ còn đại diện cho việc CỦA RIÊNG Sale này.
   const previewItems = queue.groups
     .flatMap((g) => g.items)
-    .filter((item) => item.workspaceClaimantEmails.includes(user.email))
+    .filter((item) => item.consultantEmail === user.email)
     .slice(0, PREVIEW_LIMIT);
 
-  const totalStudents = students.length;
-  const enrolledStudents = students.filter((p) => p.stage === STUDENT_STAGE.ENROLLED).length;
-  const studentConversionRate = totalStudents > 0 ? Math.round((enrolledStudents / totalStudents) * 1000) / 10 : 0;
-  const studentStageCounts = [
-    { label: "Chưa gọi", count: students.filter((p) => !p.stage).length },
-    ...STUDENT_STAGE_VALUES.map((stage) => ({ label: stage, count: students.filter((p) => p.stage === stage).length })),
+  const totalCustomers = myCustomers.length;
+  const enrolledCustomers = myCustomers.filter((c) => c.stage === CUSTOMER_STAGE.ENROLLED).length;
+  const customerConversionRate = totalCustomers > 0 ? Math.round((enrolledCustomers / totalCustomers) * 1000) / 10 : 0;
+  const customerStageCounts = [
+    { label: "Chưa gọi", count: myCustomers.filter((c) => !c.stage).length },
+    ...CUSTOMER_STAGE_VALUES.map((stage) => ({ label: stage, count: myCustomers.filter((c) => c.stage === stage).length })),
   ];
 
   return (
@@ -127,25 +131,25 @@ export default async function DashboardSalePage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
-              <GraduationCap className="size-4 text-status-received" /> Học viên đang tư vấn
+              <GraduationCap className="size-4 text-status-received" /> Khách hàng đang tư vấn
             </CardTitle>
-            <CardDescription>Tổng quan học viên bạn đang phụ trách tư vấn ghi danh</CardDescription>
+            <CardDescription>Tổng quan khách hàng bạn đang phụ trách tư vấn ghi danh</CardDescription>
           </CardHeader>
           <CardContent>
-            {totalStudents === 0 ? (
+            {totalCustomers === 0 ? (
               <EmptyState
                 icon={GraduationCap}
-                title="Chưa có học viên nào được phân bổ"
-                description="Học viên sẽ xuất hiện ở đây sau khi Leader phân bổ liên hệ đủ điều kiện cho bạn."
+                title="Chưa có khách hàng nào được phân bổ"
+                description="Khách hàng sẽ xuất hiện ở đây sau khi Leader phân bổ liên hệ đủ điều kiện cho bạn."
               />
             ) : (
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-3 gap-3">
-                  <KpiCard label="Tổng học viên" value={totalStudents} accentClassName="bg-foreground/50" />
-                  <KpiCard label="Đã chốt" value={enrolledStudents} accentClassName="bg-status-qualified" />
-                  <KpiCard label="Tỷ lệ chốt" value={`${studentConversionRate}%`} accentClassName="bg-status-received" />
+                  <KpiCard label="Tổng khách hàng" value={totalCustomers} accentClassName="bg-foreground/50" />
+                  <KpiCard label="Đã chốt" value={enrolledCustomers} accentClassName="bg-status-qualified" />
+                  <KpiCard label="Tỷ lệ chốt" value={`${customerConversionRate}%`} accentClassName="bg-status-received" />
                 </div>
-                <StageCountStrip counts={studentStageCounts} />
+                <StageCountStrip counts={customerStageCounts} />
                 <Link href="/workspace" className="flex items-center justify-center gap-1 text-xs font-medium text-primary hover:underline">
                   Xem chi tiết trong Workspace <ChevronRight className="size-3.5" />
                 </Link>
@@ -177,8 +181,8 @@ export default async function DashboardSalePage() {
                     className="group flex items-center justify-between gap-3 border-b border-border/60 py-3 last:border-0 hover:opacity-80"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{item.customerName}</p>
-                      <p className="truncate text-xs text-muted-foreground">
+                      <p className="truncate text-sm font-medium text-foreground" title={item.customerName}>{item.customerName}</p>
+                      <p className="truncate text-xs text-muted-foreground" title={`${item.fanpageName} · ${formatDate(item.createdLeadAt)}`}>
                         {item.fanpageName} · {formatDate(item.createdLeadAt)}
                       </p>
                     </div>

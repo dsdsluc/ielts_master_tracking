@@ -1,11 +1,10 @@
 import { PageHeader } from "@/components/page-header";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/prisma";
 import { AdsCostImportView } from "@/app/(app)/ads-cost/import/ads-cost-import-view";
 
 export default async function AdsCostImportPage() {
-  await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  await getCurrentUser();
 
   const [sources, fanpages, branches] = await Promise.all([
     prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),

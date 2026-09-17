@@ -33,10 +33,10 @@ export function SidebarUser({
           collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
         )}
       >
-        <span className="truncate text-sm font-medium text-foreground">
+        <span className="truncate text-sm font-medium text-foreground" title={user.fullName}>
           {user.fullName}
         </span>
-        <span className="truncate text-xs text-muted-foreground">
+        <span className="truncate text-xs text-muted-foreground" title={`${user.role}${user.branch ? ` · ${user.branch.name}` : ""}`}>
           {user.role}
           {user.branch ? ` · ${user.branch.name}` : ""}
         </span>

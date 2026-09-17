@@ -3,8 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Button } from "@/components/ui/button";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/prisma";
 import { isAdsCostCleanupEnabled } from "@/lib/interactions/settings";
 import { AdsCostDialog } from "@/app/(app)/ads-cost/ads-cost-dialog";
@@ -17,7 +16,7 @@ export default async function AdsCostPage({
 }: {
   searchParams: Promise<{ q?: string; source?: string; branch?: string; period?: string; costMin?: string; costMax?: string }>;
 }) {
-  await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  await getCurrentUser();
   const { q, source, branch, period, costMin, costMax } = await searchParams;
 
   const where: Prisma.AdsCostWhereInput = {};

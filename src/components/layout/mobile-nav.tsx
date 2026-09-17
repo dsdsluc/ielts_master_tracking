@@ -15,7 +15,7 @@ import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { SidebarUser } from "@/components/layout/sidebar-user";
 import type { CurrentUser } from "@/lib/auth/dal";
 
-export function MobileNav({ user }: { user: CurrentUser }) {
+export function MobileNav({ user, accessibleHrefs }: { user: CurrentUser; accessibleHrefs: readonly string[] }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -39,7 +39,7 @@ export function MobileNav({ user }: { user: CurrentUser }) {
         </SheetHeader>
         <ScrollArea className="min-h-0 flex-1">
           <div className="py-4">
-            <SidebarNav role={user.role} onNavigate={() => setOpen(false)} />
+            <SidebarNav accessibleHrefs={accessibleHrefs} onNavigate={() => setOpen(false)} />
           </div>
         </ScrollArea>
         <div className="border-t border-sidebar-border p-3">

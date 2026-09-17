@@ -67,7 +67,7 @@ export function ClosedReportsTable({ items }: { items: ClosedReportRow[] }) {
               >
                 <TableCell className="px-5 py-3.5 text-sm text-foreground">{formatDate(row.reportDate)}</TableCell>
                 <TableCell className="px-4 py-3.5 text-sm text-foreground">
-                  <p className="max-w-48 truncate">{row.fanpageName}</p>
+                  <p className="max-w-48 truncate" title={row.fanpageName}>{row.fanpageName}</p>
                 </TableCell>
                 <TableCell className="px-4 py-3.5 text-center font-mono text-sm text-foreground">{row.totalLeads}</TableCell>
                 <TableCell className="px-4 py-3.5 text-center font-mono text-sm text-status-qualified">{row.qualifiedLeads}</TableCell>
@@ -75,7 +75,7 @@ export function ClosedReportsTable({ items }: { items: ClosedReportRow[] }) {
                   <ConversionPill rate={row.conversionRate} />
                 </TableCell>
                 <TableCell className="px-4 py-3.5 pr-5 text-xs text-muted-foreground">
-                  <p className="max-w-40 truncate text-sm text-foreground">{row.closedByName ?? "—"}</p>
+                  <p className="max-w-40 truncate text-sm text-foreground" title={row.closedByName ?? "—"}>{row.closedByName ?? "—"}</p>
                   <p>{formatDateTime(row.closedAt)}</p>
                 </TableCell>
               </TableRow>

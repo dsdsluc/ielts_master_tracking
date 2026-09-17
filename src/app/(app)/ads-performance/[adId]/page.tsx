@@ -3,8 +3,8 @@ import { ArrowLeft, Megaphone } from "lucide-react";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { listItemInclude, toListItem } from "@/lib/interactions/serialize";
 import { prisma } from "@/lib/prisma";
@@ -16,7 +16,7 @@ export default async function AdPerformanceDetailPage({
 }: {
   params: Promise<{ adId: string }>;
 }) {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const user = await getCurrentUser();
   const { adId: rawAdId } = await params;
   const adId = decodeURIComponent(rawAdId);
 

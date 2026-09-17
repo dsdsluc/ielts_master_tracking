@@ -2,11 +2,12 @@
 // thông tin khách mà Sale nhập khi tạo/sửa một Interaction.
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/interactions/errors";
-import { canonicalizeLink, validateConversationLink } from "@/lib/interactions/link";
+import { EXTERNAL_LEAD_FANPAGE } from "@/lib/interactions/constants";
+import { canonicalizeLink, normalizePhone, validateConversationLink } from "@/lib/interactions/link";
 import { detectSourceFromLink, assertFanpageMatchesSource, suggestBranchFromFanpage, sourceRequiresAdId } from "@/lib/interactions/source-detection";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import type { CurrentUser } from "@/lib/auth/dal";
-import type { LeadInfoInput } from "@/lib/interactions/validation";
+import type { ExternalCreateLeadInput, LeadInfoInput } from "@/lib/interactions/validation";
 
 const DEFAULT_OBJECT = "Chưa rõ";
 
@@ -63,6 +64,50 @@ export async function resolveLeadInfo(actor: CurrentUser, input: LeadInfoInput):
     assignedBranchCode,
     suggestedBranchCode: suggestedBranchCode || assignedBranchCode,
     conversationLink,
+    duplicateConfirmed: !!input.duplicateConfirmed,
+    duplicateReason: (input.duplicateReason ?? "").trim(),
+  };
+}
+
+/**
+ * Tab "Ngoài" (không qua Link) — Sale tự chọn Nguồn, tự chọn Cơ sở, bắt buộc
+ * có SĐT ngay lúc tạo. Không có Link/Fanpage thật nên:
+ * - fanpageName gán cố định EXTERNAL_LEAD_FANPAGE (placeholder, xem
+ *   constants.ts) — chỉ để thỏa khóa ngoại bắt buộc, không đối chiếu lại với
+ *   sourceName (khác luồng Facebook, ở đây Sale được chọn Nguồn tự do).
+ * - canonicalLink sinh giả duy nhất theo SĐT đã chuẩn hóa, để tái dùng nguyên
+ *   cơ chế chống trùng lặp + customerKey theo canonicalLink (findDuplicateInfo/
+ *   makeCustomerKey) thay vì viết logic riêng cho luồng này.
+ */
+export async function resolveExternalLeadInfo(actor: CurrentUser, input: ExternalCreateLeadInput): Promise<ResolvedLeadInfo> {
+  const assignedBranchCode = input.assignedBranchCode.trim();
+  const branch = await prisma.branch.findFirst({ where: { code: assignedBranchCode, active: true } });
+  if (!branch) throw new ApiError(422, "VALIDATION_ERROR", "Cơ sở không có trong danh mục hoặc đang ngừng hoạt động.");
+  if (!canAccessBranch(actor, assignedBranchCode)) throw new ApiError(403, "FORBIDDEN", "Bạn không được tạo hội thoại cho cơ sở này.");
+
+  const source = await prisma.source.findFirst({ where: { name: input.sourceName, active: true } });
+  if (!source) throw new ApiError(422, "VALIDATION_ERROR", "Nguồn không có trong danh mục hoặc đang ngừng hoạt động.");
+
+  const customerObjectName = (input.customerObjectName || DEFAULT_OBJECT).trim() || DEFAULT_OBJECT;
+  const object = await prisma.customerObject.findFirst({ where: { name: customerObjectName, active: true } });
+  if (!object) throw new ApiError(422, "VALIDATION_ERROR", "Đối tượng không có trong danh mục.");
+
+  const phone = normalizePhone(input.phoneRaw);
+  if (!phone) throw new ApiError(422, "VALIDATION_ERROR", "Số điện thoại không hợp lệ.");
+
+  const canonicalLink = `external:phone:${phone}`;
+
+  return {
+    rawLink: canonicalLink,
+    canonicalLink,
+    customerName: input.customerName.trim(),
+    sourceName: source.name,
+    fanpageName: EXTERNAL_LEAD_FANPAGE,
+    adId: "",
+    customerObjectName,
+    assignedBranchCode,
+    suggestedBranchCode: assignedBranchCode,
+    conversationLink: "",
     duplicateConfirmed: !!input.duplicateConfirmed,
     duplicateReason: (input.duplicateReason ?? "").trim(),
   };

@@ -1,13 +1,12 @@
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/prisma";
 import { NewAdIdsView, type NewAdIdRow } from "@/app/(app)/new-ad-ids/new-ad-ids-view";
 import { ListPlus } from "lucide-react";
 
 export default async function NewAdIdsPage() {
-  await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  await getCurrentUser();
 
   const [leadRows, existingCosts, sources, fanpages, branches] = await Promise.all([
     prisma.interaction.findMany({

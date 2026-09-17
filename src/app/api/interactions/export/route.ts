@@ -40,7 +40,6 @@ export async function GET(request: Request) {
       { header: "Cơ sở", key: "assignedBranchCode", width: 12 },
       { header: "Tư vấn viên", key: "assignedSaleName", width: 20 },
       { header: "Trạng thái", key: "status", width: 16 },
-      { header: "Lần chăm sóc", key: "touchCount", width: 12 },
       { header: "Ngày tạo", key: "createdLeadAt", width: 18 },
     ];
     sheet.getRow(1).font = { bold: true };
@@ -56,7 +55,6 @@ export async function GET(request: Request) {
         assignedBranchCode: item.assignedBranchCode,
         assignedSaleName: item.assignedSaleName ?? "",
         status: item.status,
-        touchCount: item.touchCount,
         createdLeadAt: new Date(item.createdLeadAt).toLocaleString("vi-VN"),
       });
     }

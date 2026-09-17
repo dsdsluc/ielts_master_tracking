@@ -6,15 +6,46 @@ import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_REASSIGN, STATUS } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { computeSalePerformance } from "@/lib/interactions/sale-performance";
 import { prisma } from "@/lib/prisma";
-import { computeFollowupStats, type FollowupStatRow } from "@/app/(app)/followup-tracking/stats";
-import { computeMonthlyKpiProgress, computeTeamPersonalKpi } from "@/lib/students/stats";
+import { computeFollowupStats, type FollowupStatRow, type FollowupStats } from "@/app/(app)/followup-tracking/stats";
+import { computeMonthlyKpiProgress, computeTeamPersonalKpi } from "@/lib/customers/stats";
+import { cached } from "@/lib/cache";
+import type { CurrentUser } from "@/lib/auth/dal";
 
 const ACTIVITY_WINDOW_DAYS = 30;
+
+// Tách riêng để cache đúng kết quả CUỐI (đã map sang chuỗi ISO + tính xong
+// FollowupStats — thuần JSON, không Date) — KHÔNG cache thẳng findMany() vì
+// Redis serialize qua JSON, đọc lại Date sẽ mất kiểu (xem comment ở lib/cache.ts).
+async function computeFollowupStatsForLeader(actor: CurrentUser): Promise<FollowupStats> {
+  const followupWhere: Prisma.InteractionWhereInput = {
+    ...branchScopeWhere(actor),
+    activeFlag: true,
+    mktPushedAt: { not: null },
+  };
+  const followupRows = await prisma.interaction.findMany({
+    where: followupWhere,
+    select: { needsFollowup: true, followupOutcome: true, statusName: true, followupHandledAt: true, mktPushedAt: true },
+  });
+  const followupStatRows: FollowupStatRow[] = followupRows.map((r) => ({
+    needsFollowup: r.needsFollowup,
+    followupOutcome: r.followupOutcome,
+    status: r.statusName,
+    followupHandledAt: r.followupHandledAt?.toISOString() ?? null,
+    mktPushedAt: r.mktPushedAt!.toISOString(),
+  }));
+  return computeFollowupStats(followupStatRows);
+}
+
+function formatKpiMonth(month: string) {
+  const [y, m] = month.split("-");
+  return `${m}/${y}`;
+}
 
 function SectionHeader({
   icon: Icon,
@@ -43,41 +74,24 @@ function SectionHeader({
   );
 }
 
-function formatKpiMonth(month: string) {
-  const [y, m] = month.split("-");
-  return `${m}/${y}`;
-}
-
 export default async function LeaderDashboardPage() {
-  const actor = await requireRole(...CAN_REASSIGN);
+  const actor = await getCurrentUser();
+  await requireFeatureAccess(actor.role, "leaderDashboard");
 
-  const followupWhere: Prisma.InteractionWhereInput = {
-    ...branchScopeWhere(actor),
-    activeFlag: true,
-    mktPushedAt: { not: null },
-  };
+  // Cache 90s — mirror Dashboard tổng ("/"): dữ liệu công ty/chi nhánh, không
+  // phải của riêng actor, chịu được vài chục giây trễ để đổi lấy tốc độ tải.
+  // teamKpi/companyKpi không phụ thuộc actor nên dùng chung 1 key cho mọi
+  // Leader/Admin; followupStats/sale-perf lọc theo branchScopeWhere(actor) nên
+  // key phải khoá theo đúng phạm vi đó.
+  const scopeKey = JSON.stringify(branchScopeWhere(actor));
 
-  const [followupRows, unassignedStudentCount, teamKpi, companyKpi, perf] = await Promise.all([
-    prisma.interaction.findMany({
-      where: followupWhere,
-      select: { needsFollowup: true, followupOutcome: true, statusName: true, followupHandledAt: true, mktPushedAt: true },
-    }),
-    prisma.interaction.count({
-      where: { ...branchScopeWhere(actor), activeFlag: true, statusName: STATUS.PHONE, studentProfiles: { none: {} } },
-    }),
-    computeTeamPersonalKpi(actor),
-    computeMonthlyKpiProgress(actor),
-    computeSalePerformance(actor, ACTIVITY_WINDOW_DAYS),
+  const [followupStats, unassignedCustomerCount, teamKpi, companyKpi, perf] = await Promise.all([
+    cached(`leader-dash:v1:followup:${scopeKey}`, 90, () => computeFollowupStatsForLeader(actor)),
+    prisma.customer.count({ where: { currentStatusName: STATUS.PHONE, assignedToEmail: null } }),
+    cached("leader-dash:v1:team-kpi", 90, computeTeamPersonalKpi),
+    cached("leader-dash:v1:company-kpi", 90, computeMonthlyKpiProgress),
+    cached(`leader-dash:v1:sale-perf:${scopeKey}`, 90, () => computeSalePerformance(actor, ACTIVITY_WINDOW_DAYS)),
   ]);
-
-  const followupStatRows: FollowupStatRow[] = followupRows.map((r) => ({
-    needsFollowup: r.needsFollowup,
-    followupOutcome: r.followupOutcome,
-    status: r.statusName,
-    followupHandledAt: r.followupHandledAt?.toISOString() ?? null,
-    mktPushedAt: r.mktPushedAt!.toISOString(),
-  }));
-  const followupStats = computeFollowupStats(followupStatRows);
 
   const kpiRows = [...teamKpi.rows].sort((a, b) => (a.met === b.met ? b.remaining - a.remaining : a.met ? 1 : -1));
   const salesShortOfKpi = teamKpi.rows.filter((r) => !r.met).length;
@@ -90,7 +104,7 @@ export default async function LeaderDashboardPage() {
       <PageHeader
         eyebrow="Leader"
         title="Dashboard Leader"
-        description="Tổng quan để quản trị đội Sale — chăm sóc lại, phân bổ học viên, chỉ tiêu KPI và mức độ chăm chỉ làm lead."
+        description="Tổng quan để quản trị đội Sale — chăm sóc lại, phân bổ khách hàng, chỉ tiêu KPI và mức độ chăm chỉ làm lead."
       />
 
       <div className="flex flex-col gap-10">
@@ -136,14 +150,14 @@ export default async function LeaderDashboardPage() {
         <section>
           <SectionHeader
             icon={GraduationCap}
-            title="Phân bổ học viên"
-            description="Học viên chưa được phân bổ và chỉ tiêu KPI từng Sale trong tháng."
+            title="Phân bổ khách hàng"
+            description="Khách hàng chưa được phân bổ và chỉ tiêu KPI từng Sale trong tháng."
             action={
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/student-assignment" />}>
+                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customer-assignment" />}>
                   <UserRoundPlus className="size-3.5" /> Phân bổ ngay
                 </Button>
-                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/student-assignment/stats" />}>
+                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customers" />}>
                   Xem chi tiết <ChevronRight className="size-3.5" />
                 </Button>
               </div>
@@ -153,17 +167,17 @@ export default async function LeaderDashboardPage() {
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard
               label="Chưa phân bổ"
-              value={unassignedStudentCount}
-              accentClassName={unassignedStudentCount > 0 ? "bg-destructive" : "bg-status-qualified"}
-              href="/student-assignment"
+              value={unassignedCustomerCount}
+              accentClassName={unassignedCustomerCount > 0 ? "bg-destructive" : "bg-status-qualified"}
+              href="/customer-assignment"
             />
             <KpiCard
               label={`Đã chốt tháng ${formatKpiMonth(companyKpi.month)}`}
               value={companyKpi.enrolled}
               accentClassName="bg-status-qualified"
-              href="/student-assignment/stats"
+              href="/customers"
             />
-            <KpiCard label="Chỉ tiêu công ty tháng này" value={companyKpi.target} accentClassName="bg-primary" href="/student-assignment/stats" />
+            <KpiCard label="Chỉ tiêu công ty tháng này" value={companyKpi.target} accentClassName="bg-primary" href="/customers" />
             <KpiCard
               label="Sale thiếu KPI"
               value={salesShortOfKpi}
@@ -176,12 +190,12 @@ export default async function LeaderDashboardPage() {
             <div className="border-b border-border/70 px-5 py-3.5">
               <h3 className="text-sm font-semibold text-foreground">Chỉ tiêu cá nhân theo Sale — tháng {formatKpiMonth(teamKpi.month)}</h3>
               <p className="text-xs text-muted-foreground">
-                Chỉ tiêu cá nhân = chỉ tiêu công ty ({teamKpi.companyTarget}) × tỷ trọng học viên được phân bổ trên tổng {teamKpi.totalAssigned} học
-                viên toàn công ty tháng này.
+                Chỉ tiêu cá nhân = chỉ tiêu công ty ({teamKpi.companyTarget}) × tỷ trọng khách hàng được phân bổ trên tổng {teamKpi.totalAssigned} khách
+                hàng toàn công ty tháng này.
               </p>
             </div>
             {kpiRows.length === 0 ? (
-              <EmptyState icon={Users2} title="Chưa có Sale nào được phân bổ học viên tháng này" description="Chỉ tiêu cá nhân sẽ xuất hiện khi có học viên được phân bổ." />
+              <EmptyState icon={Users2} title="Chưa có Sale nào được phân bổ khách hàng tháng này" description="Chỉ tiêu cá nhân sẽ xuất hiện khi có khách hàng được phân bổ." />
             ) : (
               <Table>
                 <TableHeader className="bg-secondary/60">
@@ -197,13 +211,8 @@ export default async function LeaderDashboardPage() {
                   {kpiRows.map((row) => (
                     <TableRow key={row.email} className="odd:bg-secondary/10">
                       <TableCell className="min-w-40 px-5 py-3">
-                        <Link
-                          href={`/student-assignment/stats?sale=${encodeURIComponent(row.email)}`}
-                          className="block truncate font-medium text-foreground hover:text-primary hover:underline"
-                        >
-                          {row.fullName}
-                        </Link>
-                        <p className="truncate font-mono text-[11px] text-muted-foreground">{row.email}</p>
+                        <p className="truncate font-medium text-foreground" title={row.fullName}>{row.fullName}</p>
+                        <p className="truncate font-mono text-[11px] text-muted-foreground" title={row.email}>{row.email}</p>
                       </TableCell>
                       <TableCell className="px-4 text-center font-mono text-sm text-muted-foreground">{row.mineAssigned}</TableCell>
                       <TableCell className="px-4 text-center font-mono text-sm text-foreground">{row.personalTarget}</TableCell>
@@ -239,6 +248,19 @@ export default async function LeaderDashboardPage() {
             <KpiCard label="Tổng Sale đang hoạt động" value={perf.length} accentClassName="bg-foreground/50" />
           </div>
 
+          <p className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>Tỷ lệ xin được SĐT = Đủ tiêu chuẩn ÷ (Đủ tiêu chuẩn + Spam) trong {ACTIVITY_WINDOW_DAYS} ngày:</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-status-qualified" /> ≥30% tốt
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-status-received" /> 10–30% trung bình
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-muted-foreground" /> &lt;10% cần hỗ trợ
+            </span>
+          </p>
+
           <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
             {activityRows.length === 0 ? (
               <EmptyState icon={Users2} title="Chưa có Sale nào trong phạm vi" description="Thêm tài khoản Sale ở Trung tâm quản trị." />
@@ -257,8 +279,8 @@ export default async function LeaderDashboardPage() {
                   {activityRows.map((row) => (
                     <TableRow key={row.email} className="odd:bg-secondary/10">
                       <TableCell className="min-w-40 px-5 py-3">
-                        <p className="truncate font-medium text-foreground">{row.fullName}</p>
-                        <p className="truncate font-mono text-[11px] text-muted-foreground">{row.email}</p>
+                        <p className="truncate font-medium text-foreground" title={row.fullName}>{row.fullName}</p>
+                        <p className="truncate font-mono text-[11px] text-muted-foreground" title={row.email}>{row.email}</p>
                       </TableCell>
                       <TableCell className="px-4 text-center font-mono text-sm">
                         {row.created === 0 ? <span className="text-destructive">0</span> : <span className="text-foreground">{row.created}</span>}

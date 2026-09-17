@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { BranchesPanel } from "@/app/(app)/admin/branches/branches-panel";
 import { SourcesPanel } from "@/app/(app)/admin/sources/sources-panel";
 import { FanpagesPanel } from "@/app/(app)/admin/fanpages/fanpages-panel";
@@ -14,7 +14,8 @@ import { AdminCatalogTabs } from "@/app/(app)/admin/catalog/admin-catalog-tabs";
 // từng loại (branches/sources/fanpages) — chỉ thêm 1 "panel" bọc lại phần
 // bảng để nhúng vào tab thay vì lặp code.
 export default async function AdminCatalogPage() {
-  await requireRole(ROLES.ADMIN);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "adminCatalog");
 
   return (
     <>

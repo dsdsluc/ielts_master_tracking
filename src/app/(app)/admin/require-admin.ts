@@ -1,13 +1,9 @@
 import "server-only";
 import { getCurrentUser } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
 
-/** Chặn Server Action nếu người gọi không phải Quản trị hệ thống — trang có
- * thể ẩn nav với vai trò khác, nhưng action ghi dữ liệu vẫn phải tự kiểm tra. */
+// Hệ thống chưa phân quyền (đang xây lại từ đầu) — không còn chặn theo vai
+// trò. Giữ lại hàm này (thay vì xoá + sửa mọi nơi gọi) để việc gắn quyền admin
+// thật quay lại sau này chỉ cần sửa đúng 1 chỗ.
 export async function requireAdmin() {
-  const user = await getCurrentUser();
-  if (user.role !== ROLES.ADMIN) {
-    throw new Error("Chỉ Quản trị hệ thống được thực hiện chức năng này.");
-  }
-  return user;
+  return getCurrentUser();
 }

@@ -103,10 +103,16 @@ export async function findDuplicateInfo(
   };
 }
 
-/** Lần_tương_tác + First/Last_touch_Ad_ID — port getCustomerTouch_(). */
-export async function getCustomerTouch(customerKey: string, newAdId: string) {
+/**
+ * First/Last_touch_Ad_ID — port getCustomerTouch_(). Nhóm theo canonicalLink
+ * (KHÔNG phải customerKey) — customerKey chỉ có giá trị từ lúc liên hệ Đủ
+ * tiêu chuẩn, nhưng phải xác định được ad đầu/cuối ngay từ liên hệ đầu tiên
+ * (kể cả khi còn "Chờ"); canonicalLink luôn có sẵn nên dùng được xuyên suốt,
+ * không phụ thuộc đã có Customer hay chưa.
+ */
+export async function getCustomerTouch(canonicalLink: string, newAdId: string) {
   const rows = await prisma.interaction.findMany({
-    where: { customerKey, activeFlag: true },
+    where: { canonicalLink, activeFlag: true },
     orderBy: { createdAt: "asc" },
     select: { adId: true },
   });
@@ -115,6 +121,5 @@ export async function getCustomerTouch(customerKey: string, newAdId: string) {
   return {
     firstTouchAdId: ads[0] ?? null,
     lastTouchAdId: ads.length ? ads[ads.length - 1] : null,
-    sequence: rows.length + 1,
   };
 }

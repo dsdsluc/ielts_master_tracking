@@ -2,8 +2,8 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { INTERACTION_ACTIVITY, STATUS } from "@/lib/interactions/constants";
 import { listItemInclude, toListItem } from "@/lib/interactions/serialize";
 import { prisma } from "@/lib/prisma";
 import { AdLeadsTable } from "@/app/(app)/ads-performance/[adId]/ad-leads-table";
@@ -21,7 +21,7 @@ export default async function SalePerformanceDetailPage({
   params: Promise<{ email: string }>;
   searchParams: Promise<{ days?: string; from?: string; to?: string }>;
 }) {
-  await requireRole(ROLES.LEADER, ROLES.ADMIN);
+  await getCurrentUser();
   const { email: rawEmail } = await params;
   const email = decodeURIComponent(rawEmail);
   const { days: daysParam, from: fromParam, to: toParam } = await searchParams;
@@ -59,7 +59,7 @@ export default async function SalePerformanceDetailPage({
       where: { updatedByEmail: email, activeFlag: true, closedAt: createdWindow, statusName: { in: [STATUS.PHONE, STATUS.SPAM] } },
       _count: { _all: true },
     }),
-    prisma.systemLog.count({ where: { actorEmail: email, action: SYSTEM_LOG_ACTION.TOUCH, loggedAt: createdWindow } }),
+    prisma.interactionFieldLog.count({ where: { changedByEmail: email, fieldKey: INTERACTION_ACTIVITY.FOLLOWUP_RESOLVED, changedAt: createdWindow } }),
     prisma.interaction.findMany({
       where: { assignedSaleEmail: email, activeFlag: true, receivedAt: { not: null }, createdLeadAt: createdWindow },
       select: { createdLeadAt: true, receivedAt: true },

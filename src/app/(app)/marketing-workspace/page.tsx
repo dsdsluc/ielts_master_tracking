@@ -4,7 +4,8 @@ import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from "@/components/ui/card";
-import { requireRole } from "@/lib/auth/dal";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { prisma } from "@/lib/prisma";
@@ -23,7 +24,8 @@ function todayStr() {
 }
 
 export default async function MarketingWorkspacePage() {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "marketingWorkspace");
   const today = todayStr();
   const canClose = user.role === ROLES.ADMIN || user.canCloseMktReport;
 
@@ -201,8 +203,8 @@ export default async function MarketingWorkspacePage() {
               {recentCosts.map((c) => (
                 <div key={c.id} className="flex items-center justify-between gap-3 border-b border-border/60 py-2.5 text-sm last:border-0">
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{c.adName}</p>
-                    <p className="truncate font-mono text-xs text-muted-foreground">{c.adId}</p>
+                    <p className="truncate font-medium text-foreground" title={c.adName}>{c.adName}</p>
+                    <p className="truncate font-mono text-xs text-muted-foreground" title={c.adId}>{c.adId}</p>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="font-mono font-medium text-foreground">{formatVnd(c.costVnd.toString())}</p>

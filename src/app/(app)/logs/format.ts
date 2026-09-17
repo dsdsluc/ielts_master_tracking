@@ -17,6 +17,14 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   ASSIGN_STUDENT: "Phân bổ học viên",
   UPDATE_STUDENT_STAGE: "Cập nhật tiến trình tư vấn học viên",
   TRANSFER_STUDENT: "Chuyển giao học viên",
+  RESTORE_SPAM_TO_FOLLOWUP: "Khôi phục Spam, gửi chăm sóc lại",
+  DELETE_SPAM_INTERACTION: "Xoá liên hệ Spam",
+  ASSIGN_CUSTOMER: "Phân bổ khách hàng tư vấn",
+  TRANSFER_CUSTOMER: "Điều chuyển khách hàng tư vấn",
+  NOTIFY_NEW_QUALIFIED_LEAD: "Email: báo liên hệ mới Đủ tiêu chuẩn",
+  NOTIFY_LEAD_SPAMMED: "Email: báo liên hệ đã chuyển Spam",
+  KPI_REMINDER: "Email: nhắc chỉ tiêu KPI",
+  SLA_BREACH_DIGEST: "Email: tổng hợp quá hạn SLA",
 };
 
 export function actionLabel(action: string) {
@@ -46,10 +54,17 @@ export const ACTION_CATEGORY: Record<string, LogCategoryKey> = {
   CLOSE_MKT_PAGE_REPORT: "followup",
   REOPEN_MKT_PAGE_REPORT: "followup",
   SEND_BROADCAST_EMAIL: "followup",
+  RESTORE_SPAM_TO_FOLLOWUP: "followup",
+  NOTIFY_LEAD_SPAMMED: "followup",
   ASSIGN_STUDENT: "student",
   UPDATE_STUDENT_STAGE: "student",
   TRANSFER_STUDENT: "student",
+  ASSIGN_CUSTOMER: "student",
+  TRANSFER_CUSTOMER: "student",
+  NOTIFY_NEW_QUALIFIED_LEAD: "student",
   FLAG_SLA_BREACH: "sla",
+  SLA_BREACH_DIGEST: "sla",
+  DELETE_SPAM_INTERACTION: "lead",
 };
 
 export function actionCategory(action: string): LogCategoryKey | null {

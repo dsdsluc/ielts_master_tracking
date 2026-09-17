@@ -4,7 +4,8 @@ export type { LeadStatus, SpamReason };
 
 export type InteractionListItem = {
   interactionId: string;
-  customerKey: string;
+  // null khi liên hệ chưa Đủ tiêu chuẩn (chưa có SĐT) — chưa có dòng Customer.
+  customerKey: string | null;
   customerName: string;
   status: LeadStatus;
   sourceName: string;
@@ -13,19 +14,11 @@ export type InteractionListItem = {
   assignedBranchCode: string;
   assignedSaleEmail: string | null;
   assignedSaleName: string | null;
-  // Email của MỌI Sale đang có liên hệ này trong Workspace của họ — nhiều Sale
-  // có thể cùng claim 1 liên hệ (không còn độc quyền). Dùng để lọc "liên hệ
-  // của tôi" ở dashboard/Workspace mà không cần round-trip DB riêng.
-  workspaceClaimantEmails: string[];
-  // "Tư vấn viên" hiển thị cho người dùng: assignedSaleEmail chỉ có giá trị
-  // từ khi Đủ tiêu chuẩn (SĐT), nên trước đó lấy theo Sale claim liên hệ vào
-  // Workspace của họ GẦN NHẤT (lastActivityAt lớn nhất) — xem
-  // autoClaimWorkspace() trong mutations.ts và listItemInclude trong serialize.ts.
+  // Một nguồn sự thật duy nhất cho "Tư vấn viên" và Workspace cá nhân.
   consultantEmail: string | null;
   consultantName: string | null;
   createdByEmail: string;
   createdLeadAt: string; // ISO
-  touchCount: number;
   needsFollowup: boolean;
   phoneNormalized: string | null;
   conversationLink: string | null;
@@ -63,6 +56,11 @@ export type InteractionDetail = InteractionListItem & {
   };
   customerHistory: InteractionListItem[];
   touchLog: Array<{ loggedAt: string; actorName: string; actorEmail: string | null; note: string | null }>;
+  // Nhật ký ghi đè từng field khi Sửa thông tin (chỉ field TỪNG có giá trị bị
+  // ghi đè — điền lần đầu vào field trống không tính) — xem
+  // InteractionFieldLog trong schema.prisma và updateInteractionInfo() trong
+  // mutations.ts.
+  fieldChangeLog: Array<{ fieldLabel: string; oldValue: string | null; newValue: string | null; changedByName: string; changedAt: string }>;
   // Lịch sử email hệ thống đã gửi có nhắc tới liên hệ này (phân bổ chăm sóc
   // lại...) — ai xem được liên hệ này cũng xem được, không chỉ người gửi/nhận.
   emailMessages: Array<{

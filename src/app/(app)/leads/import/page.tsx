@@ -1,11 +1,13 @@
 import { PageHeader } from "@/components/page-header";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD, ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { ROLES } from "@/lib/interactions/constants";
 import { getLeadFormOptions } from "@/app/(app)/leads/get-lead-form-options";
 import { LeadsImportView } from "@/app/(app)/leads/import/leads-import-view";
 
 export default async function LeadsImportPage() {
-  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "leadsImport");
   const options = await getLeadFormOptions();
 
   // Sale luôn bị khoá đúng 1 cơ sở (theo quy tắc requireValidSaleBranchScope) —

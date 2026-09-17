@@ -4,15 +4,14 @@ import type { Prisma } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { listItemInclude, toListItem } from "@/lib/interactions/serialize";
 import { AdLeadsTable } from "@/app/(app)/ads-performance/[adId]/ad-leads-table";
 import { cn } from "@/lib/utils";
 
-const REPORT_ROLES = [ROLES.LEADER, ROLES.MARKETING, ROLES.BOARD, ROLES.ADMIN] as const;
 const DAYS_OPTIONS = [7, 30, 90];
 const MAX_ROWS = 300;
 
@@ -43,7 +42,7 @@ export default async function InteractionsOverviewPage({
     to?: string;
   }>;
 }) {
-  const user = await requireRole(...REPORT_ROLES);
+  const user = await getCurrentUser();
   const { status, days: daysParam, branch: branchParam, source: sourceParam, fanpage: fanpageParam, adId: adIdParam, from: fromParam, to: toParam } =
     await searchParams;
 

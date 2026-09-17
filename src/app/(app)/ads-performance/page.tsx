@@ -1,8 +1,8 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { prisma } from "@/lib/prisma";
@@ -79,7 +79,7 @@ export default async function AdsPerformancePage({
 }: {
   searchParams: Promise<{ days?: string; branch?: string; source?: string }>;
 }) {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const user = await getCurrentUser();
   const { days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
   const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
 

@@ -54,12 +54,12 @@ export function AdLeadsTable({ items, branchNames }: { items: InteractionListIte
               onClick={() => router.push(`/leads/${item.interactionId}`)}
             >
               <TableCell className="min-w-40 px-5 py-3.5">
-                <p className="max-w-56 truncate font-medium text-foreground">{item.customerName}</p>
-                <p className="truncate text-xs text-muted-foreground">{item.phoneNormalized ?? "Chưa có SĐT"}</p>
+                <p className="max-w-56 truncate font-medium text-foreground" title={item.customerName}>{item.customerName}</p>
+                <p className="truncate text-xs text-muted-foreground" title={item.phoneNormalized ?? "Chưa có SĐT"}>{item.phoneNormalized ?? "Chưa có SĐT"}</p>
               </TableCell>
               <TableCell className="px-4 text-sm text-muted-foreground">{branchNames[item.assignedBranchCode] ?? item.assignedBranchCode}</TableCell>
               <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">
-                <p className="max-w-40 truncate">{item.consultantName ?? "Chưa gán"}</p>
+                <p className="max-w-40 truncate" title={item.consultantName ?? "Chưa gán"}>{item.consultantName ?? "Chưa gán"}</p>
               </TableCell>
               <TableCell className="px-4">
                 <StatusPill status={item.status} />

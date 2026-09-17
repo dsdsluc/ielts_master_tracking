@@ -1,4 +1,4 @@
-import type { KpiPeriod, SalePersonalKpi } from "@/lib/students/stats";
+import type { KpiPeriod, SalePersonalKpi } from "@/lib/customers/stats";
 
 function formatKpiMonth(month: string) {
   const [y, m] = month.split("-");
@@ -37,7 +37,7 @@ export function WorkspaceKpiCard({ kpi }: { kpi: SalePersonalKpi }) {
           Chỉ tiêu cá nhân tháng {formatKpiMonth(kpi.month)}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Chưa được phân bổ học viên nào trong tháng này nên chưa có chỉ tiêu cụ thể.
+          Chưa được phân bổ khách hàng nào trong tháng này nên chưa có chỉ tiêu cụ thể.
         </p>
       </div>
     );
@@ -56,7 +56,7 @@ export function WorkspaceKpiCard({ kpi }: { kpi: SalePersonalKpi }) {
         <PeriodRow label="Cả tháng" period={kpi.monthly} />
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
-        Được phân bổ <strong className="font-mono text-foreground">{kpi.mineAssigned}</strong>/{kpi.totalAssigned} học viên toàn công ty tháng này (
+        Được phân bổ <strong className="font-mono text-foreground">{kpi.mineAssigned}</strong>/{kpi.totalAssigned} khách hàng toàn công ty tháng này (
         {sharePercent}%) — chỉ tiêu tháng của bạn = chỉ tiêu công ty × tỷ lệ nhận ={" "}
         {kpi.companyTarget} × {sharePercent}% ≈ <strong className="font-mono text-foreground">{kpi.monthly.target}</strong>. Chỉ tiêu ngày/tuần tự
         tính lại theo phần còn thiếu và số ngày/tuần còn lại trong tháng.

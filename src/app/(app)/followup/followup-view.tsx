@@ -43,8 +43,8 @@ export type FollowupCandidate = {
   rawLink: string;
 };
 
-// "Khách im lặng" cần đối chiếu số lần chăm sóc của Sale (recordTouch) — không
-// áp dụng khi Marketing tự đọc hội thoại và đóng Spam ngay tại đây.
+// "Khách im lặng" cần đối chiếu số lần chăm sóc của Sale — không áp dụng khi
+// Marketing tự đọc hội thoại và đóng Spam ngay tại đây.
 const MARKETING_SPAM_REASONS = SPAM_REASON_OPTIONS.filter((r) => r.code !== SPAM_REASON.NO_REPLY);
 
 const MAX_SELECTION = 50;
@@ -223,9 +223,14 @@ export function FollowupView({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        className="rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className={
+                          item.conversationLink
+                            ? "rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            : "cursor-not-allowed rounded-full text-muted-foreground opacity-50"
+                        }
                         aria-label="Đánh dấu Spam"
-                        onClick={() => openSpamDialog(item)}
+                        title={item.conversationLink ? undefined : "Chưa có link cuộc hội thoại — không thể đánh dấu Spam"}
+                        onClick={item.conversationLink ? () => openSpamDialog(item) : undefined}
                       >
                         <CircleOff className="size-3.5" />
                       </Button>
@@ -273,21 +278,27 @@ export function FollowupView({
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-muted-foreground">Lý do</Label>
-            <Select value={spamReason} onValueChange={(v) => setSpamReason(v ?? "")}>
-              <SelectTrigger className="h-10 w-full rounded-xl bg-background">
-                <SelectValue placeholder="Chọn lý do" />
-              </SelectTrigger>
-              <SelectContent>
-                {MARKETING_SPAM_REASONS.map((r) => (
-                  <SelectItem key={r.code} value={r.code}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {spamTarget && !spamTarget.conversationLink ? (
+            <FormMessage kind="error">
+              Liên hệ này chưa có link cuộc hội thoại — không thể đánh dấu Spam. Hãy bổ sung link hội thoại trước.
+            </FormMessage>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-muted-foreground">Lý do</Label>
+              <Select value={spamReason} onValueChange={(v) => setSpamReason(v ?? "")}>
+                <SelectTrigger className="h-10 w-full rounded-xl bg-background">
+                  <SelectValue placeholder="Chọn lý do" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MARKETING_SPAM_REASONS.map((r) => (
+                    <SelectItem key={r.code} value={r.code}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {spamError && <FormMessage kind="error">{spamError}</FormMessage>}
 
@@ -298,7 +309,7 @@ export function FollowupView({
             <Button
               type="button"
               className="rounded-full bg-destructive text-white hover:bg-destructive/90"
-              disabled={!spamReason || spamPending}
+              disabled={!spamReason || spamPending || !spamTarget?.conversationLink}
               onClick={handleMarkSpam}
             >
               {spamPending && <LoaderCircle className="animate-spin" />}

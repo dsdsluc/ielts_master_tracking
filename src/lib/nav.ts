@@ -13,19 +13,18 @@ import {
   Sparkles,
   Briefcase,
   ClipboardCheck,
+  KeyRound,
+  ShieldOff,
+  ListPlus,
+  MessageCircleOff,
 } from "lucide-react";
-import {
-  ROLES,
-  CAN_REASSIGN,
-} from "@/lib/interactions/constants";
-
-type AppRole = (typeof ROLES)[keyof typeof ROLES];
+import { ROLES } from "@/lib/interactions/constants";
+import { PERMISSION_FEATURES } from "@/app/(app)/admin/permissions/permission-types";
 
 export type NavItem = {
   title: string;
   href: string;
   icon: LucideIcon;
-  allowedRoles: readonly AppRole[];
 };
 
 export type NavGroup = {
@@ -33,26 +32,8 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-const REPORT_ROLES = [
-  ROLES.LEADER,
-  ROLES.MARKETING,
-  ROLES.BOARD,
-  ROLES.ADMIN,
-] as const;
-// Mỗi vai trò chỉ thấy đúng nhóm nav của mình — Admin luôn thấy tất cả nhóm.
-// Leader không thấy nhóm "Marketing" qua nav (vẫn có thể thao tác thay
-// Marketing nếu nghiệp vụ cho phép, chỉ là không lộ ra sidebar — xem "Menu chỉ
-// là lớp trình bày" ở dưới). Nhóm "Saler" thì Leader vẫn thấy đầy đủ — Leader
-// cũng là Saler theo nghiệp vụ, cần xem/dùng được toàn bộ công cụ của Sale
-// (Dashboard Sale, Liên hệ, Workspace, Chăm sóc lại, Tổng quan Sale) bên cạnh
-// "Dashboard Leader" riêng của mình.
-const SALER_NAV_ROLES = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
-const MARKETING_NAV_ROLES = [ROLES.MARKETING, ROLES.ADMIN] as const;
-const ADMIN_ROLES = [ROLES.ADMIN] as const;
-
-// Sale/Admin không được vào trang Dashboard tổng ("/") — home của họ là
-// Dashboard Sale. Các vai trò còn lại (Marketing, Leader, BGĐ, Admin) đều có
-// quyền vào "/".
+// Saler không được vào trang Dashboard tổng ("/") — home của họ là
+// Dashboard Sale. Các vai trò còn lại đều có quyền vào "/".
 export function getHomePathForRole(role: string): string {
   return role === ROLES.SALES ? "/dashboard-sale" : "/";
 }
@@ -70,17 +51,22 @@ export function getNavTitle(pathname: string): string {
   return prefixMatch?.title ?? "Theo dõi Liên hệ";
 }
 
-/**
- * Menu chỉ là lớp trình bày. Các page/API vẫn phải kiểm tra quyền ở server.
- * Trả về nhóm mới để navGroups gốc không bị mutate giữa các request/user.
- */
-export function getNavGroupsForRole(role: string): NavGroup[] {
+// Href nào khớp 1 tính năng trong PERMISSION_FEATURES (xem admin/permissions)
+// là mục bị chặn theo phân quyền — href còn lại (Dashboard tổng, Quản trị,
+// Nhật ký...) luôn hiện với mọi vai trò đã đăng nhập.
+const GATED_HREFS = new Set<string>(PERMISSION_FEATURES.map((f) => f.href));
+
+// `accessibleHrefs` lấy từ getAccessibleHrefsForRole() (lib/auth/feature-access.ts)
+// — tính sẵn theo role ở Server Component (layout.tsx) rồi truyền xuống vì
+// SidebarNav là Client Component, không tự query DB được. Admin đã được trả về
+// đủ accessibleHrefs (toàn bộ PERMISSION_FEATURES) nên không cần check role
+// riêng ở đây.
+export function getNavGroupsForRole(accessibleHrefs: readonly string[]): NavGroup[] {
+  const allowed = new Set(accessibleHrefs);
   return navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) =>
-        (item.allowedRoles as readonly string[]).includes(role),
-      ),
+      items: group.items.filter((item) => !GATED_HREFS.has(item.href) || allowed.has(item.href)),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -88,155 +74,57 @@ export function getNavGroupsForRole(role: string): NavGroup[] {
 export const navGroups: NavGroup[] = [
   {
     label: "Tổng quan",
-    items: [
-      {
-        title: "Dashboard",
-        href: "/",
-        icon: LayoutDashboard,
-        allowedRoles: REPORT_ROLES,
-      },
-    ],
+    items: [{ title: "Dashboard", href: "/", icon: LayoutDashboard }],
   },
   {
     label: "Saler",
     items: [
-      {
-        title: "Dashboard Sale",
-        href: "/dashboard-sale",
-        icon: Gauge,
-        allowedRoles: SALER_NAV_ROLES,
-      },
-      {
-        title: "Liên hệ",
-        href: "/leads",
-        icon: Inbox,
-        // NAV dùng SALER_NAV_ROLES (Sale/Leader/Admin) — hẹp hơn CAN_VIEW_LEAD
-        // (quyền server, có thêm cả Marketing). Trang /leads vẫn kiểm tra
-        // quyền riêng ở server, không phụ thuộc danh sách này.
-        allowedRoles: SALER_NAV_ROLES,
-      },
-      {
-        title: "Workspace của tôi",
-        href: "/workspace",
-        icon: Briefcase,
-        allowedRoles: SALER_NAV_ROLES,
-      },
-      {
-        title: "Cần chăm sóc lại",
-        href: "/followup-inbox",
-        icon: Sparkles,
-        allowedRoles: SALER_NAV_ROLES,
-      },
-      {
-        title: "Tổng quan Sale",
-        href: "/sale-overview",
-        icon: LayoutGrid,
-        allowedRoles: SALER_NAV_ROLES,
-      },
-      // "Học viên đang tư vấn" (/students) đã gộp vào "Workspace của tôi" —
-      // ẩn khỏi menu, route vẫn còn dùng được nếu truy cập trực tiếp.
+      { title: "Dashboard Sale", href: "/dashboard-sale", icon: Gauge },
+      { title: "Liên hệ", href: "/leads", icon: Inbox },
+      { title: "Workspace của tôi", href: "/workspace", icon: Briefcase },
+      { title: "Cần chăm sóc lại", href: "/followup-inbox", icon: Sparkles },
+      { title: "Tổng quan Sale", href: "/sale-overview", icon: LayoutGrid },
     ],
   },
   {
     label: "Leader",
     items: [
-      {
-        title: "Dashboard Leader",
-        href: "/leader-dashboard",
-        icon: Gauge,
-        allowedRoles: CAN_REASSIGN,
-      },
+      { title: "Dashboard Leader", href: "/leader-dashboard", icon: Gauge },
       // "Phân bổ chăm sóc lại", "Theo dõi hiệu quả chăm sóc lại" (chuyển sang
-      // nhóm Marketing — Leader/Admin không cần nữa) và "Phân bổ học viên" đã
-      // gộp thành các mục bấm được ngay trên Dashboard Leader — không còn là
-      // mục nav riêng để Leader chỉ cần vào 1 trang là làm được mọi việc.
-      {
-        title: "Khách hàng",
-        href: "/customers",
-        icon: Users,
-        allowedRoles: CAN_REASSIGN,
-      },
-      {
-        title: "Nhập từ Excel",
-        href: "/leads/import",
-        icon: FileSpreadsheet,
-        allowedRoles: CAN_REASSIGN,
-      },
+      // nhóm Marketing) đã gộp thành mục bấm được ngay trên Dashboard Leader —
+      // không còn là mục nav riêng.
+      { title: "Khách hàng", href: "/customers", icon: Users },
+      { title: "Nhập từ Excel", href: "/leads/import", icon: FileSpreadsheet },
     ],
   },
   {
     label: "Marketing",
     items: [
-      {
-        title: "Dashboard Marketing",
-        href: "/marketing-dashboard",
-        icon: Gauge,
-        allowedRoles: MARKETING_NAV_ROLES,
-      },
-      {
-        title: "Workspace Marketing",
-        href: "/marketing-workspace",
-        icon: Briefcase,
-        allowedRoles: MARKETING_NAV_ROLES,
-      },
-      {
-        title: "Ad ID",
-        href: "/ad-ids",
-        icon: Fingerprint,
-        allowedRoles: MARKETING_NAV_ROLES,
-      },
-      {
-        title: "Chăm sóc lại",
-        href: "/followup",
-        icon: Sparkles,
-        // Trước đây dùng CAN_PUSH_FOLLOWUP (quyền server, có cả Leader) —
-        // riêng ở NAV chỉ Marketing/Admin cần thấy, Leader có Dashboard Leader
-        // riêng. Route vẫn nhận Leader nếu truy cập trực tiếp.
-        allowedRoles: MARKETING_NAV_ROLES,
-      },
-      // "Theo dõi hiệu quả chăm sóc lại" (/followup-tracking) là việc của
-      // Leader, không phải Marketing — đã gỡ khỏi nhóm này. Leader xem qua
-      // mục bấm được ngay trên Dashboard Leader (xem comment ở nhóm Leader).
+      { title: "Dashboard Marketing", href: "/marketing-dashboard", icon: Gauge },
+      { title: "Workspace Marketing", href: "/marketing-workspace", icon: Briefcase },
+      { title: "Ad ID", href: "/ad-ids", icon: Fingerprint },
+      { title: "Chăm sóc lại", href: "/followup", icon: Sparkles },
     ],
   },
   // Nhóm "Thống kê" (Chi phí quảng cáo / Nhập chi phí từ Excel / Hiệu quả
   // quảng cáo) đã gỡ khỏi nav — cả 3 đều bấm được ngay trong Workspace
-  // Marketing (thêm/nhập chi phí, xem chi phí gần đây, xếp hạng hiệu quả),
-  // kèm link "Xem tất cả" sang đúng 3 route này khi cần xem đầy đủ.
+  // Marketing, kèm link "Xem tất cả" sang đúng 3 route này khi cần xem đầy đủ.
   {
     label: "Quản trị",
     items: [
-      {
-        title: "Trung tâm quản trị",
-        href: "/admin/monitoring",
-        icon: ShieldAlert,
-        allowedRoles: ADMIN_ROLES,
-      },
-      {
-        title: "Tổng quan báo cáo đã chốt",
-        href: "/page-report/closed",
-        icon: ClipboardCheck,
-        allowedRoles: ADMIN_ROLES,
-      },
-      {
-        title: "Danh mục",
-        href: "/admin/catalog",
-        icon: Building2,
-        allowedRoles: ADMIN_ROLES,
-      },
+      { title: "Trung tâm quản trị", href: "/admin/monitoring", icon: ShieldAlert },
+      { title: "Xử lý Spam", href: "/admin/spam-review", icon: ShieldOff },
+      { title: "Ad ID mới", href: "/admin/new-ad-ids", icon: ListPlus },
+      { title: "Thiếu link hội thoại", href: "/admin/missing-conversation", icon: MessageCircleOff },
+      { title: "Tổng quan báo cáo đã chốt", href: "/page-report/closed", icon: ClipboardCheck },
+      { title: "Danh mục", href: "/admin/catalog", icon: Building2 },
+      { title: "Phân quyền", href: "/admin/permissions", icon: KeyRound },
       // "Rà soát SLA", "Người dùng", "Cấu hình hệ thống" đã gộp thành section
-      // trong trang "Trung tâm quản trị" (/admin/monitoring) — không còn là mục riêng ở đây.
+      // trong trang "Trung tâm quản trị" (/admin/monitoring).
     ],
   },
   {
     label: "Nhật ký",
-    items: [
-      {
-        title: "Nhật ký hoạt động",
-        href: "/logs",
-        icon: ScrollText,
-        allowedRoles: ADMIN_ROLES,
-      },
-    ],
+    items: [{ title: "Nhật ký hoạt động", href: "/logs", icon: ScrollText }],
   },
 ];

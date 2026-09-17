@@ -5,8 +5,7 @@ import { ArrowLeft, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusPill } from "@/components/status-pill";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import {
@@ -30,7 +29,7 @@ export default async function SpamReviewDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole(ROLES.ADMIN);
+  await getCurrentUser();
   const { id } = await params;
 
   const interaction = await prisma.interaction.findUnique({
@@ -42,7 +41,6 @@ export default async function SpamReviewDetailPage({
       fanpageName: true,
       sourceName: true,
       assignedBranchCode: true,
-      touchCount: true,
       closedAt: true,
       conversationLink: true,
       assignedBranch: { select: { name: true } },
@@ -95,7 +93,6 @@ export default async function SpamReviewDetailPage({
             />
             <Field label="Fanpage" value={interaction.fanpageName} />
             <Field label="Nguồn" value={interaction.sourceName} />
-            <Field label="Lần chăm sóc" value={interaction.touchCount} />
             <Field
               label="Đóng lúc"
               value={

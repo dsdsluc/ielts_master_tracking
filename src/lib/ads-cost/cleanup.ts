@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { ROLES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { logAction } from "@/lib/interactions/audit";
 import { ApiError } from "@/lib/interactions/errors";
 import { isAdsCostCleanupEnabled } from "@/lib/interactions/settings";
@@ -9,9 +9,6 @@ import type { CurrentUser } from "@/lib/auth/dal";
 const MAX_DELETE_AT_ONCE = 500;
 
 export async function deleteAdsCostRows(actor: CurrentUser, ids: number[]): Promise<number> {
-  if (actor.role !== ROLES.MARKETING && actor.role !== ROLES.ADMIN) {
-    throw new ApiError(403, "FORBIDDEN", "Chỉ Marketing hoặc Quản trị hệ thống được dọn dẹp chi phí quảng cáo.");
-  }
   const enabled = await isAdsCostCleanupEnabled();
   if (!enabled) {
     throw new ApiError(403, "FORBIDDEN", "Chức năng dọn dẹp đang tắt — bật trong Cấu hình hệ thống trước.");

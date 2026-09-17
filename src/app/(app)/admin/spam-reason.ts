@@ -39,3 +39,27 @@ export function spamReasonLabel(code: string | null): string {
     return "Hệ thống tự động (vượt số lần chăm sóc lại cho phép)";
   return SPAM_REASON_OPTIONS.find((r) => r.code === code)?.label ?? code ?? "";
 }
+
+/** Bản gộp của getLatestSpamReason() cho nhiều liên hệ cùng lúc — dùng ở danh
+ * sách (vd. /admin/spam-review) để tránh N+1 query. */
+export async function getLatestSpamReasons(
+  interactionIds: string[],
+): Promise<Map<string, SpamCloseReason>> {
+  if (interactionIds.length === 0) return new Map();
+
+  const logs = await prisma.systemLog.findMany({
+    where: { interactionId: { in: interactionIds }, action: SYSTEM_LOG_ACTION.UPDATE_RESULT },
+    orderBy: { loggedAt: "desc" },
+    select: { interactionId: true, detailNew: true, technicalInfo: true },
+  });
+
+  const map = new Map<string, SpamCloseReason>();
+  for (const log of logs) {
+    if (!log.interactionId || map.has(log.interactionId)) continue;
+    const detail = log.detailNew as { status?: string; spamReason?: string } | null;
+    if (detail?.status === STATUS.SPAM) {
+      map.set(log.interactionId, { code: detail.spamReason ?? null, note: log.technicalInfo });
+    }
+  }
+  return map;
+}

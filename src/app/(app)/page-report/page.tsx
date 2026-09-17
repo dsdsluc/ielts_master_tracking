@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { requireRole } from "@/lib/auth/dal";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { ROLES } from "@/lib/interactions/constants";
 import { getPageReportRows } from "@/lib/marketing/page-report";
 import { PageReportDatePicker } from "@/app/(app)/page-report/page-report-date-picker";
@@ -20,7 +20,7 @@ export default async function PageReportPage({
 }: {
   searchParams: Promise<{ date?: string }>;
 }) {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const user = await getCurrentUser();
   const { date: dateParam } = await searchParams;
   const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr();
 

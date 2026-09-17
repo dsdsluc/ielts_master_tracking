@@ -1,8 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_PUSH_FOLLOWUP } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { prisma } from "@/lib/prisma";
@@ -19,7 +18,7 @@ export default async function FollowupTrackingPage({
 }: {
   searchParams: Promise<{ branch?: string; resolved?: string; days?: string }>;
 }) {
-  const user = await requireRole(...CAN_PUSH_FOLLOWUP);
+  const user = await getCurrentUser();
   const { branch, resolved, days } = await searchParams;
 
   const branches = await prisma.branch.findMany({ select: { code: true, name: true }, orderBy: { name: "asc" } });

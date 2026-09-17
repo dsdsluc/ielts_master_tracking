@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, LoaderCircle, Plus, Repeat2, RotateCcw, Search, Sparkles, TriangleAlert, User } from "lucide-react";
+import { ArrowRight, Building2, Repeat2, RotateCcw, Search, Sparkles, TriangleAlert, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusPill } from "@/components/status-pill";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PaginationBar } from "@/components/pagination-bar";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
-import { useToast } from "@/hooks/use-toast";
-import { apiFetch, apiErrorMessage } from "@/lib/api-client";
+
+const PAGE_SIZE = 20;
 
 export type FollowupInboxItem = {
   interactionId: string;
@@ -25,8 +26,6 @@ export type FollowupInboxItem = {
   maxBeforeSpam: number;
   consultantEmail: string | null;
   consultantName: string | null;
-  workspaceClaimantEmails: string[];
-  targetSaleName: string | null;
 };
 
 function daysSince(iso: string) {
@@ -36,23 +35,17 @@ function daysSince(iso: string) {
 export function FollowupInboxView({
   items,
   currentUserEmail,
-  currentUserName,
 }: {
   items: FollowupInboxItem[];
   currentUserEmail: string;
-  currentUserName: string;
 }) {
   const router = useRouter();
-  const { toast } = useToast();
-  const [pickingId, setPickingId] = useState<string | null>(null);
-  // Cập nhật lạc quan ngay sau khi "Nhận" — không đợi router.refresh() mới
-  // thấy tên tư vấn viên đổi, tránh cảm giác bấm xong mà giao diện đứng im.
-  const [pickedOverrides, setPickedOverrides] = useState<Record<string, { email: string; name: string }>>({});
   const [search, setSearch] = useState("");
   const [branch, setBranch] = useState("all");
   const [pusher, setPusher] = useState("all");
   const [resolvedCount, setResolvedCount] = useState("all");
   const [lastChanceOnly, setLastChanceOnly] = useState(false);
+  const [page, setPage] = useState(1);
 
   const visibleItems = items;
 
@@ -103,25 +96,37 @@ export function FollowupInboxView({
 
   const hasFilters = !!search.trim() || branch !== "all" || pusher !== "all" || resolvedCount !== "all" || lastChanceOnly;
 
-  async function handlePick(item: FollowupInboxItem) {
-    setPickingId(item.interactionId);
-    try {
-      const data = await apiFetch<{ conflicts?: string[] }>("/api/workspace/claim", {
-        method: "POST",
-        body: JSON.stringify({ interactionIds: [item.interactionId] }),
-      });
-      if (data.conflicts?.length) {
-        toast.error(`Không thể thêm ${item.customerName} vào Workspace — liên hệ đã đóng hoặc bạn không có quyền truy cập.`);
-      } else {
-        setPickedOverrides((prev) => ({ ...prev, [item.interactionId]: { email: currentUserEmail, name: currentUserName } }));
-        toast.success(`Đã nhận ${item.customerName} vào Workspace của bạn.`);
-      }
-      router.refresh();
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
-    } finally {
-      setPickingId(null);
-    }
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const activePage = Math.min(page, totalPages);
+  const pageItems = filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
+
+  function changeSearch(value: string) {
+    setSearch(value);
+    setPage(1);
+  }
+  function changeBranch(value: string) {
+    setBranch(value);
+    setPage(1);
+  }
+  function changePusher(value: string) {
+    setPusher(value);
+    setPage(1);
+  }
+  function changeResolvedCount(value: string) {
+    setResolvedCount(value);
+    setPage(1);
+  }
+  function toggleLastChanceOnly() {
+    setLastChanceOnly((v) => !v);
+    setPage(1);
+  }
+  function resetFilters() {
+    setSearch("");
+    setBranch("all");
+    setPusher("all");
+    setResolvedCount("all");
+    setLastChanceOnly(false);
+    setPage(1);
   }
 
   return (
@@ -131,12 +136,12 @@ export function FollowupInboxView({
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeSearch(e.target.value)}
             placeholder="Tìm tên khách, ghi chú…"
             className="h-10 rounded-xl bg-background pr-3 pl-9"
           />
         </div>
-        <Select items={branchItems} value={branch} onValueChange={(v) => setBranch(v ?? "all")}>
+        <Select items={branchItems} value={branch} onValueChange={(v) => changeBranch(v ?? "all")}>
           <SelectTrigger className="h-10 w-full rounded-xl bg-background sm:w-40">
             <Building2 className="size-3.5 text-muted-foreground" />
             <SelectValue placeholder="Tất cả cơ sở" />
@@ -150,7 +155,7 @@ export function FollowupInboxView({
             ))}
           </SelectContent>
         </Select>
-        <Select items={pusherItems} value={pusher} onValueChange={(v) => setPusher(v ?? "all")}>
+        <Select items={pusherItems} value={pusher} onValueChange={(v) => changePusher(v ?? "all")}>
           <SelectTrigger className="h-10 w-full rounded-xl bg-background sm:w-48">
             <User className="size-3.5 text-muted-foreground" />
             <SelectValue placeholder="Tất cả người yêu cầu" />
@@ -164,7 +169,7 @@ export function FollowupInboxView({
             ))}
           </SelectContent>
         </Select>
-        <Select items={resolvedCountItems} value={resolvedCount} onValueChange={(v) => setResolvedCount(v ?? "all")}>
+        <Select items={resolvedCountItems} value={resolvedCount} onValueChange={(v) => changeResolvedCount(v ?? "all")}>
           <SelectTrigger className="h-10 w-full rounded-xl bg-background sm:w-44">
             <Repeat2 className="size-3.5 text-muted-foreground" />
             <SelectValue placeholder="Số lần chăm sóc lại" />
@@ -186,7 +191,7 @@ export function FollowupInboxView({
               ? "h-10 rounded-xl border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
               : "h-10 rounded-xl border-border bg-background text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           }
-          onClick={() => setLastChanceOnly((v) => !v)}
+          onClick={toggleLastChanceOnly}
         >
           <TriangleAlert className="size-3.5" />
           Sắp chuyển Spam
@@ -198,13 +203,7 @@ export function FollowupInboxView({
             size="icon"
             aria-label="Xoá bộ lọc"
             className="rounded-xl text-status-received hover:bg-status-received-bg hover:text-status-received"
-            onClick={() => {
-              setSearch("");
-              setBranch("all");
-              setPusher("all");
-              setResolvedCount("all");
-              setLastChanceOnly(false);
-            }}
+            onClick={resetFilters}
           >
             <RotateCcw className="size-4" />
           </Button>
@@ -236,7 +235,6 @@ export function FollowupInboxView({
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Cơ sở</TableHead>
                   <TableHead className="min-w-56 px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Ghi chú từ Marketing</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Người yêu cầu</TableHead>
-                  <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Giao cho</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Thời gian yêu cầu</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Đã chăm sóc</TableHead>
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tư vấn viên</TableHead>
@@ -244,39 +242,31 @@ export function FollowupInboxView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((item) => {
+                {pageItems.map((item) => {
                   const idle = daysSince(item.mktPushedAt);
                   const nextCount = item.followupResolvedCount + 1;
                   const isLastChance = nextCount >= item.maxBeforeSpam;
-                  const picking = pickingId === item.interactionId;
-                  const override = pickedOverrides[item.interactionId];
-                  const consultantName = override?.name ?? item.consultantName;
-                  const isMine = !!override || item.workspaceClaimantEmails.includes(currentUserEmail) || item.consultantEmail === currentUserEmail;
+                  const isMine = item.consultantEmail === currentUserEmail;
                   return (
                     <TableRow
                       key={item.interactionId}
                       className="cursor-pointer odd:bg-secondary/10 align-top"
-                      onClick={() => router.push(`/leads/${item.interactionId}`)}
+                      onClick={() => router.push(`/followup-inbox/${item.interactionId}`)}
                     >
                       <TableCell className="min-w-40 px-5 py-3.5">
-                        <p className="max-w-48 truncate font-medium text-foreground">{item.customerName}</p>
+                        <p className="max-w-48 truncate font-medium text-foreground" title={item.customerName}>{item.customerName}</p>
                         <div className="mt-1">
                           <StatusPill status={item.status} />
                         </div>
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm text-muted-foreground">
-                        <p className="max-w-28 truncate">{item.branchName}</p>
+                        <p className="max-w-28 truncate" title={item.branchName}>{item.branchName}</p>
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm text-foreground">
-                        <p className="line-clamp-3 max-w-72 whitespace-pre-line">{item.mktSuggestion ?? "—"}</p>
+                        <p className="max-w-72 truncate" title={item.mktSuggestion ?? "—"}>{item.mktSuggestion ?? "—"}</p>
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm text-muted-foreground">
-                        <p className="max-w-36 truncate">{item.mktPushedByName ?? "—"}</p>
-                      </TableCell>
-                      <TableCell className="px-4 py-3.5 text-sm">
-                        <p className={item.targetSaleName === currentUserName ? "max-w-32 truncate font-medium text-status-received" : "max-w-32 truncate text-muted-foreground"}>
-                          {item.targetSaleName === currentUserName ? "Bạn" : (item.targetSaleName ?? "—")}
-                        </p>
+                        <p className="max-w-36 truncate" title={item.mktPushedByName ?? "—"}>{item.mktPushedByName ?? "—"}</p>
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-xs text-muted-foreground">
                         {formatDateTime(item.mktPushedAt)}
@@ -294,26 +284,9 @@ export function FollowupInboxView({
                         {isLastChance && <p className="mt-0.5 text-[11px] text-destructive">Lần cuối trước khi tự Spam</p>}
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm">
-                        {isMine ? (
-                          <p className="font-medium text-status-received">Bạn</p>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            {consultantName && <p className="max-w-24 truncate text-xs text-muted-foreground">{consultantName}</p>}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="shrink-0 rounded-full border-status-received/30 text-status-received hover:bg-status-received-bg hover:text-status-received"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePick(item);
-                              }}
-                              disabled={picking}
-                            >
-                              {picking ? <LoaderCircle className="animate-spin" /> : <Plus className="size-3.5" />}
-                              Nhận
-                            </Button>
-                          </div>
-                        )}
+                        {isMine
+                          ? <p className="font-medium text-status-received">Bạn</p>
+                          : <p className="max-w-32 truncate text-xs text-muted-foreground" title={item.consultantName ?? "Chưa gán"}>{item.consultantName ?? "Chưa gán"}</p>}
                       </TableCell>
                       <TableCell className="w-4 py-3.5 pr-5 pl-1">
                         <ArrowRight className="size-3.5 text-muted-foreground" />
@@ -324,6 +297,11 @@ export function FollowupInboxView({
               </TableBody>
             </Table>
           </div>
+          {totalPages > 1 && (
+            <div className="border-t border-border/70 px-5 py-3">
+              <PaginationBar page={activePage} totalPages={totalPages} totalItems={filtered.length} onPageChange={setPage} />
+            </div>
+          )}
         </div>
       )}
     </div>

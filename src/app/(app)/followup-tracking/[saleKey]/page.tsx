@@ -3,8 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_PUSH_FOLLOWUP } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
 import { prisma } from "@/lib/prisma";
@@ -24,7 +23,7 @@ export default async function FollowupTrackingSalerDetailPage({
   params: Promise<{ saleKey: string }>;
   searchParams: Promise<{ branch?: string; resolved?: string; days?: string }>;
 }) {
-  const user = await requireRole(...CAN_PUSH_FOLLOWUP);
+  const user = await getCurrentUser();
   const { saleKey: rawSaleKey } = await params;
   const saleKey = decodeURIComponent(rawSaleKey);
   const isUnassigned = saleKey === UNASSIGNED_KEY;

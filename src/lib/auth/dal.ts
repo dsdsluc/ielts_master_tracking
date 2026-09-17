@@ -3,7 +3,6 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { readSession, type SessionPayload } from "@/lib/auth/session";
-import { getHomePathForRole } from "@/lib/nav";
 
 // Optimistic: chỉ đọc payload từ cookie JWT, không chạm DB. Dùng cho các
 // trang cần biết "đã đăng nhập chưa" nhanh (redirect nếu chưa).
@@ -46,13 +45,5 @@ export const getCurrentUser = cache(async () => {
 
   return user;
 });
-
-export async function requireRole(...roles: string[]) {
-  const user = await getCurrentUser();
-  if (!roles.includes(user.role)) {
-    redirect(getHomePathForRole(user.role));
-  }
-  return user;
-}
 
 export type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;

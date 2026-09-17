@@ -1,14 +1,10 @@
 import { requireApiUser } from "@/lib/auth/api";
-import { errorResponse, ApiError } from "@/lib/interactions/errors";
-import { ROLES } from "@/lib/interactions/constants";
+import { errorResponse } from "@/lib/interactions/errors";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const actor = await requireApiUser();
-    if (actor.role !== ROLES.ADMIN) {
-      throw new ApiError(403, "FORBIDDEN", "Chỉ Quản trị hệ thống được xem danh sách này.");
-    }
+    await requireApiUser();
 
     const users = await prisma.user.findMany({
       where: { active: true },

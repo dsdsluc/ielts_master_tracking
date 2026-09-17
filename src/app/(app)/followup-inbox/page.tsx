@@ -1,13 +1,15 @@
 import { PageHeader } from "@/components/page-header";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD, ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { ROLES } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { getMaxFollowupBeforeSpam } from "@/lib/interactions/settings";
 import { prisma } from "@/lib/prisma";
 import { FollowupInboxView, type FollowupInboxItem } from "@/app/(app)/followup-inbox/followup-inbox-view";
 
 export default async function FollowupInboxPage() {
-  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "followupInbox");
 
   // Sale chỉ thấy đúng yêu cầu Marketing/Leader nhắm tới email của họ — không
   // còn là hàng đợi chung toàn cơ sở. Leader/Admin vẫn xem toàn bộ (theo phạm
@@ -32,12 +34,6 @@ export default async function FollowupInboxPage() {
         followupResolvedCount: true,
         assignedSaleEmail: true,
         assignedSale: { select: { fullName: true } },
-        workspaceClaims: {
-          orderBy: { lastActivityAt: "desc" },
-          select: { saleEmail: true, sale: { select: { fullName: true } } },
-        },
-        followupTargetSaleEmail: true,
-        followupTargetSale: { select: { fullName: true } },
       },
       orderBy: { mktPushedAt: "asc" },
     }),
@@ -55,10 +51,8 @@ export default async function FollowupInboxPage() {
     mktPushedByName: r.mktPushedBy?.fullName ?? null,
     followupResolvedCount: r.followupResolvedCount,
     maxBeforeSpam,
-    consultantEmail: r.assignedSaleEmail ?? r.workspaceClaims[0]?.saleEmail ?? null,
-    consultantName: r.assignedSale?.fullName ?? r.workspaceClaims[0]?.sale.fullName ?? null,
-    workspaceClaimantEmails: r.workspaceClaims.map((c) => c.saleEmail),
-    targetSaleName: r.followupTargetSale?.fullName ?? null,
+    consultantEmail: r.assignedSaleEmail,
+    consultantName: r.assignedSale?.fullName ?? null,
   }));
 
   return (
@@ -69,7 +63,7 @@ export default async function FollowupInboxPage() {
         description="Các liên hệ Marketing yêu cầu bạn chăm sóc lại — xử lý xong thì đánh dấu để tắt nhắc."
       />
 
-      <FollowupInboxView items={items} currentUserEmail={user.email} currentUserName={user.fullName} />
+      <FollowupInboxView items={items} currentUserEmail={user.email} />
     </>
   );
 }

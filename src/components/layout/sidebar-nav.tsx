@@ -16,16 +16,16 @@ function isActive(pathname: string, href: string) {
 }
 
 export function SidebarNav({
-  role,
+  accessibleHrefs,
   collapsed = false,
   onNavigate,
 }: {
-  role: string;
+  accessibleHrefs: readonly string[];
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const navGroups = getNavGroupsForRole(role);
+  const navGroups = getNavGroupsForRole(accessibleHrefs);
 
   return (
     <nav className="flex flex-col gap-5 px-2">

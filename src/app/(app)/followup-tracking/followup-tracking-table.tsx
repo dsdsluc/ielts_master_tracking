@@ -112,9 +112,9 @@ export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTra
                 onClick={() => setSelected(row)}
               >
                 <TableCell className="min-w-40 px-5 py-3.5">
-                  <p className="truncate font-medium text-foreground">{row.customerName}</p>
-                  <p className="truncate text-xs text-muted-foreground">Gửi lúc {formatDateTime(row.mktPushedAt)}</p>
-                  {row.mktSuggestion && <p className="mt-0.5 max-w-56 truncate text-xs text-muted-foreground">Gợi ý: {row.mktSuggestion}</p>}
+                  <p className="truncate font-medium text-foreground" title={row.customerName}>{row.customerName}</p>
+                  <p className="truncate text-xs text-muted-foreground" title={`Gửi lúc ${formatDateTime(row.mktPushedAt)}`}>Gửi lúc {formatDateTime(row.mktPushedAt)}</p>
+                  {row.mktSuggestion && <p className="mt-0.5 max-w-56 truncate text-xs text-muted-foreground" title={`Gợi ý: ${row.mktSuggestion}`}>Gợi ý: {row.mktSuggestion}</p>}
                 </TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">
                   {branchNames[row.assignedBranchCode] ?? row.assignedBranchCode}
@@ -125,7 +125,7 @@ export function FollowupTrackingTable({ rows, branchNames }: { rows: FollowupTra
                 <TableCell className="px-4">
                   <ResolvedPill pending={row.needsFollowup} outcome={row.followupOutcome} status={row.status} />
                   {!row.needsFollowup && row.followupHandledByName && (
-                    <p className="mt-1 truncate text-xs text-muted-foreground">bởi {row.followupHandledByName}</p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground" title={`bởi ${row.followupHandledByName}`}>bởi {row.followupHandledByName}</p>
                   )}
                 </TableCell>
                 <TableCell className="px-4 text-sm text-muted-foreground">

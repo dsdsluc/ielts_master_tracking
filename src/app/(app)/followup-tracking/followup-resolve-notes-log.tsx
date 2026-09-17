@@ -29,7 +29,7 @@ export function FollowupResolveNotesLog({ rows }: { rows: FollowupTrackingRow[] 
             className="flex flex-col gap-1.5 rounded-xl border border-border/60 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
           >
             <div className="min-w-0">
-              <p className="truncate font-medium text-foreground">{row.customerName}</p>
+              <p className="truncate font-medium text-foreground" title={row.customerName}>{row.customerName}</p>
               <p className="mt-0.5 text-sm whitespace-pre-wrap text-muted-foreground">{row.resolveNote}</p>
             </div>
             <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">

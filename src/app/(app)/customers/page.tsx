@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, FileDown, PhoneCall, User, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDown, PhoneCall, User, Users, X } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -15,9 +15,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { customerScopeWhere, qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
+import { StageBadge } from "@/app/(app)/customers/stage-badge";
+import { CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 
 const PAGE_SIZE = 20;
 
@@ -25,21 +27,27 @@ function formatDate(date: Date) {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// "none" là sentinel cho "Chưa gọi" (stage null) — không dùng chuỗi rỗng vì
+// URLSearchParams bỏ qua param rỗng, không phân biệt được với "không lọc".
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; stage?: string }>;
 }) {
-  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
-  const { page: pageParam } = await searchParams;
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "customers");
+  const { page: pageParam, stage: stageParam } = await searchParams;
   const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
+  const stageFilter =
+    stageParam === "none" || (stageParam && (CUSTOMER_STAGE_VALUES as readonly string[]).includes(stageParam)) ? stageParam : null;
 
   const where: Prisma.CustomerWhereInput = {
     ...customerScopeWhere(user),
     ...qualifiedCustomerWhere(),
+    ...(stageFilter ? { stage: stageFilter === "none" ? null : stageFilter } : {}),
   };
 
-  const pageHref = (targetPage: number) => `/customers?page=${targetPage}`;
+  const pageHref = (targetPage: number) => `/customers?page=${targetPage}${stageFilter ? `&stage=${encodeURIComponent(stageFilter)}` : ""}`;
 
   const exportHref = "/api/customers/export";
 
@@ -57,6 +65,8 @@ export default async function CustomersPage({
         currentStatusName: true,
         firstTouchAt: true,
         lastTouchAt: true,
+        stage: true,
+        assignedTo: { select: { fullName: true } },
         _count: { select: { interactions: true } },
       },
     }),
@@ -76,6 +86,16 @@ export default async function CustomersPage({
           </Button>
         }
       />
+
+      {stageFilter && (
+        <Link
+          href="/customers"
+          className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
+        >
+          Đang lọc theo mốc: {stageFilter === "none" ? "Chưa gọi" : stageFilter}
+          <X className="size-3.5" />
+        </Link>
+      )}
 
       {customers.length === 0 ? (
         <EmptyState
@@ -123,6 +143,7 @@ export default async function CustomersPage({
                 <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
                 <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">SĐT</TableHead>
                 <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Trạng thái</TableHead>
+                <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Tư vấn</TableHead>
                 <TableHead className="hidden px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Lượt liên hệ</TableHead>
                 <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Lần chạm đầu</TableHead>
                 <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Lần chạm cuối</TableHead>
@@ -137,8 +158,10 @@ export default async function CustomersPage({
                         <User className="size-3.5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="max-w-56 truncate font-medium text-foreground">{c.displayName}</p>
-                        <p className="max-w-56 truncate font-mono text-[11px] text-muted-foreground">{c.customerKey}</p>
+                        <Link href={`/customers/${c.customerKey}`} className="block max-w-56 truncate font-medium text-foreground hover:text-primary hover:underline" title={c.displayName}>
+                          {c.displayName}
+                        </Link>
+                        <p className="max-w-56 truncate font-mono text-[11px] text-muted-foreground" title={c.customerKey}>{c.customerKey}</p>
                       </div>
                     </div>
                   </TableCell>
@@ -155,6 +178,10 @@ export default async function CustomersPage({
                   </TableCell>
                   <TableCell className="px-4">
                     <StatusPill status={c.currentStatusName} />
+                  </TableCell>
+                  <TableCell className="hidden px-4 text-sm sm:table-cell">
+                    <StageBadge stage={c.stage} assigned={!!c.assignedTo} />
+                    {c.assignedTo && <p className="mt-1 truncate text-xs text-muted-foreground" title={c.assignedTo.fullName}>{c.assignedTo.fullName}</p>}
                   </TableCell>
                   <TableCell className="hidden px-4 text-center font-mono text-sm text-muted-foreground sm:table-cell">
                     {c._count.interactions}

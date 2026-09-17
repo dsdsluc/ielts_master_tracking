@@ -5,31 +5,139 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { ApiError, Errors } from "@/lib/interactions/errors";
 import {
-  CAN_CREATE_OR_EDIT_LEAD,
-  CAN_PUSH_FOLLOWUP,
-  CAN_REASSIGN,
   FOLLOWUP_OUTCOME,
-  IS_LEADER_LIKE,
+  INTERACTION_ACTIVITY,
   ROLES,
   STATUS,
-  SPAM_REASON,
   SYSTEM_LOG_ACTION,
   canonicalStatusKey,
   isOpenStatus,
 } from "@/lib/interactions/constants";
-import { requireRole, requireValidSaleBranchScope, canAccessBranch, isLeaderLike } from "@/lib/interactions/scope";
+import { requireValidSaleBranchScope, canAccessBranch, isLeaderLike } from "@/lib/interactions/scope";
 import { findDuplicateInfo, getCustomerTouch } from "@/lib/interactions/duplicate";
-import { resolveLeadInfo } from "@/lib/interactions/lead-info";
+import { resolveLeadInfo, resolveExternalLeadInfo, type ResolvedLeadInfo } from "@/lib/interactions/lead-info";
 import { normalizePhone } from "@/lib/interactions/link";
-import { newInteractionId } from "@/lib/interactions/ids";
-import { logAction } from "@/lib/interactions/audit";
-import { getMaxFollowupBeforeSpam, getSpamNoReplyMinAttempts } from "@/lib/interactions/settings";
+import { newInteractionId, makeCustomerKey } from "@/lib/interactions/ids";
+import { logAction, logInteractionActivity } from "@/lib/interactions/audit";
 import { detailInclude, toDetail } from "@/lib/interactions/serialize";
 import { appLink, sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/html-escape";
+import { spamReasonLabel } from "@/app/(app)/admin/spam-reason";
 import type { CurrentUser } from "@/lib/auth/dal";
-import type { LeadInfoInput, StatusUpdateInput } from "@/lib/interactions/validation";
+import type { CreateLeadInput, LeadInfoInput, StatusUpdateInput } from "@/lib/interactions/validation";
 import { getInteractionDetail } from "@/lib/interactions/queries";
+
+// ---------------------------------------------------------------------------
+// Thông báo chủ động qua email khi liên hệ đổi trạng thái (bổ sung cho
+// updateStatus() bên dưới) — cùng nguyên tắc với assignFollowup(): gửi mail
+// SAU khi transaction DB đã xong (I/O không nằm trong transaction), sendEmail()
+// tự nuốt lỗi nên không ảnh hưởng kết quả cập nhật trạng thái.
+// ---------------------------------------------------------------------------
+
+// Liên hệ lần đầu Đủ tiêu chuẩn (Customer vừa được tạo) — báo Leader/Admin
+// vào phân bổ tư vấn ngay, thay vì phải tự nhớ ghé /customer-assignment kiểm tra.
+async function notifyLeadersNewQualifiedLead(interactionId: string, customerName: string, customerKey: string) {
+  const recipients = await prisma.user.findMany({
+    where: { role: { in: [ROLES.LEADER, ROLES.ADMIN] }, active: true },
+    select: { email: true },
+  });
+  if (recipients.length === 0) return;
+
+  const [to, ...rest] = recipients.map((r) => r.email);
+  const link = appLink(`/customers/${customerKey}`);
+  const safeName = escapeHtml(customerName);
+  await sendEmail({
+    to,
+    bcc: rest,
+    subject: `Liên hệ mới Đủ tiêu chuẩn: ${customerName}`,
+    html: `<p>Liên hệ <strong>${safeName}</strong> vừa Đủ tiêu chuẩn và đang chờ phân bổ tư vấn.</p><p>${
+      link ? `<a href="${link}">Xem khách hàng</a> rồi vào mục Phân bổ khách hàng để xử lý.` : "Vào mục Phân bổ khách hàng để xử lý."
+    }</p>`,
+    action: SYSTEM_LOG_ACTION.NOTIFY_NEW_QUALIFIED_LEAD,
+    sentByEmail: null,
+    interactionIds: [interactionId],
+  });
+}
+
+// Đóng Spam 1 liên hệ đang có yêu cầu "Cần chăm sóc lại" còn mở — báo lại
+// đúng người Marketing đã gửi yêu cầu đó, thay vì họ phải tự vào lại từng
+// liên hệ mới biết kết quả.
+async function notifyMarketingLeadSpammed(
+  actor: CurrentUser,
+  interactionId: string,
+  customerName: string,
+  mktPushedByEmail: string,
+  spamReasonCode: string | null
+) {
+  const link = appLink(`/leads/${interactionId}`);
+  const safeName = escapeHtml(customerName);
+  const reasonLabel = escapeHtml(spamReasonLabel(spamReasonCode));
+  await sendEmail({
+    to: mktPushedByEmail,
+    subject: `Liên hệ đã chuyển Spam: ${customerName}`,
+    html: `<p>Liên hệ bạn từng gửi yêu cầu "Cần chăm sóc lại" — <strong>${safeName}</strong> — vừa bị đánh dấu Spam${
+      reasonLabel ? ` (lý do: ${reasonLabel})` : ""
+    }.</p><p>${link ? `<a href="${link}">Xem chi tiết</a>` : ""}</p>`,
+    action: SYSTEM_LOG_ACTION.NOTIFY_LEAD_SPAMMED,
+    sentByEmail: actor.email,
+    interactionIds: [interactionId],
+  });
+}
+
+/** Đếm riêng số lần Sale tạo liên hệ + số lần tạo ra đã Đủ điều kiện ngay lúc
+ * tạo — bảng riêng (SaleLeadStat), không tính lại bằng query Interaction. */
+async function bumpSaleLeadStat(tx: Prisma.TransactionClient, saleEmail: string, qualified: boolean): Promise<void> {
+  await tx.saleLeadStat.upsert({
+    where: { saleEmail },
+    update: { totalCreated: { increment: 1 }, ...(qualified ? { totalQualified: { increment: 1 } } : {}) },
+    create: { saleEmail, totalCreated: 1, totalQualified: qualified ? 1 : 0 },
+  });
+}
+
+/** Nhãn tiếng Việt của từng field được theo dõi thay đổi — denormalized vào
+ * InteractionFieldLog.fieldLabel tại thời điểm ghi (xem comment model trong
+ * schema.prisma), nên map này chỉ cần đúng tại THỜI ĐIỂM ghi log, đổi sau
+ * không ảnh hưởng log cũ. */
+const FIELD_LABELS: Record<string, string> = {
+  rawLink: "Link khách hàng",
+  customerName: "Tên khách hàng",
+  fanpageName: "Fanpage",
+  conversationLink: "Link hội thoại",
+  adId: "Ad ID",
+  customerObjectName: "Đối tượng",
+  assignedBranchCode: "Cơ sở phụ trách",
+};
+
+/** "" / null / undefined đều coi là "trống" khi so sánh — adId/conversationLink
+ * của ResolvedLeadInfo luôn là "" khi trống (không phải null) trong khi cột
+ * DB tương ứng là null, nên phải chuẩn hoá 2 phía về cùng 1 dạng trước khi so. */
+function normalizeEmpty(value: string | null | undefined): string | null {
+  return value === null || value === undefined || value === "" ? null : value;
+}
+
+/**
+ * Chỉ ghi log cho field nào TRƯỚC ĐÓ đã có giá trị (không trống) và giá trị
+ * mới khác giá trị cũ — điền lần đầu vào field đang trống không tính là "thay
+ * đổi" nên không ghi (xem comment model InteractionFieldLog trong schema.prisma).
+ */
+function buildFieldChangeLogs(
+  lead: { rawLink: string; customerName: string; fanpageName: string; conversationLink: string | null; adId: string | null; customerObjectName: string; assignedBranchCode: string },
+  info: ResolvedLeadInfo
+): { fieldKey: string; fieldLabel: string; oldValue: string | null; newValue: string | null }[] {
+  const pairs: { fieldKey: keyof typeof FIELD_LABELS; oldValue: string | null; newValue: string | null }[] = [
+    { fieldKey: "rawLink", oldValue: normalizeEmpty(lead.rawLink), newValue: normalizeEmpty(info.rawLink) },
+    { fieldKey: "customerName", oldValue: normalizeEmpty(lead.customerName), newValue: normalizeEmpty(info.customerName) },
+    { fieldKey: "fanpageName", oldValue: normalizeEmpty(lead.fanpageName), newValue: normalizeEmpty(info.fanpageName) },
+    { fieldKey: "conversationLink", oldValue: normalizeEmpty(lead.conversationLink), newValue: normalizeEmpty(info.conversationLink) },
+    { fieldKey: "adId", oldValue: normalizeEmpty(lead.adId), newValue: normalizeEmpty(info.adId) },
+    { fieldKey: "customerObjectName", oldValue: normalizeEmpty(lead.customerObjectName), newValue: normalizeEmpty(info.customerObjectName) },
+    { fieldKey: "assignedBranchCode", oldValue: normalizeEmpty(lead.assignedBranchCode), newValue: normalizeEmpty(info.assignedBranchCode) },
+  ];
+
+  return pairs
+    .filter((p) => p.oldValue !== null && p.oldValue !== p.newValue)
+    .map((p) => ({ fieldKey: p.fieldKey, fieldLabel: FIELD_LABELS[p.fieldKey], oldValue: p.oldValue, newValue: p.newValue }));
+}
 
 async function loadInteractionOr404(interactionId: string) {
   const row = await prisma.interaction.findUnique({ where: { interactionId } });
@@ -37,31 +145,13 @@ async function loadInteractionOr404(interactionId: string) {
   return row;
 }
 
-/** Sale thao tác lên 1 hội thoại (ghi nhận chăm sóc, đổi trạng thái, đánh dấu
- * đã xử lý chăm sóc lại, lưu thay đổi thông tin...) thì mặc nhiên "nhận" luôn
- * hội thoại đó vào Workspace của mình — như đã làm với create. Nhiều Sale có
- * thể cùng có mặt trong Workspace của 1 liên hệ (không còn độc quyền); ai vừa
- * thao tác thì lastActivityAt của họ mới nhất, quyết định "Tư vấn viên" hiển
- * thị ở UI (xem consultantEmail/consultantName trong serialize.ts). Chỉ áp
- * dụng cho vai trò Sale (Leader/Admin thao tác thay không tự nhận về mình). */
-async function autoClaimWorkspace(tx: Prisma.TransactionClient, actor: CurrentUser, interactionId: string): Promise<void> {
-  if (actor.role !== ROLES.SALES) return;
-  const now = new Date();
-  await tx.workspaceClaim.upsert({
-    where: { interactionId_saleEmail: { interactionId, saleEmail: actor.email } },
-    create: { interactionId, saleEmail: actor.email, claimedAt: now, lastActivityAt: now },
-    update: { lastActivityAt: now },
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Tạo Interaction mới
 // ---------------------------------------------------------------------------
-export async function createInteraction(actor: CurrentUser, input: LeadInfoInput) {
-  requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
+export async function createInteraction(actor: CurrentUser, input: CreateLeadInput) {
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
 
-  const info = await resolveLeadInfo(actor, input);
+  const info = input.channel === "external" ? await resolveExternalLeadInfo(actor, input) : await resolveLeadInfo(actor, input);
   const dup = await findDuplicateInfo(actor, info.canonicalLink, info.adId, info.fanpageName);
 
   if (dup.requiresConfirmation && !info.duplicateConfirmed) {
@@ -71,37 +161,42 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
     throw new ApiError(422, "VALIDATION_ERROR", "Vui lòng nhập lý do xác nhận đây là một lượt hội thoại mới thực tế.");
   }
 
-  const { makeCustomerKey } = await import("@/lib/interactions/ids");
-  const customerKey = dup.existingCustomerKey || makeCustomerKey("url:" + info.canonicalLink);
-  const touch = await getCustomerTouch(customerKey, info.adId);
+  const touch = await getCustomerTouch(info.canonicalLink, info.adId);
   const interactionType = dup.requiresConfirmation ? dup.confirmedClassification : dup.classification;
 
-  // Nhập kèm sẵn SĐT (vd. Excel tổng hợp liên hệ cũ) — tạo thẳng ở trạng thái
-  // "Đủ tiêu chuẩn" thay vì "Chờ", đúng ý nghĩa nghiệp vụ (Đủ tiêu chuẩn = đã
-  // có SĐT hợp lệ) — mirror đúng field set của updateStatus() khi chuyển
-  // WAITING/PROCESSING -> PHONE lần đầu.
+  // Tab Facebook: SĐT tùy chọn — có thì tạo thẳng "Đủ tiêu chuẩn" thay vì
+  // "Chờ" (mirror field set của updateStatus() khi chuyển WAITING/PROCESSING
+  // -> PHONE lần đầu). Tab Ngoài: SĐT luôn bắt buộc (đã validate ở
+  // resolveExternalLeadInfo) nên luôn "Đủ tiêu chuẩn" ngay từ đầu.
   const phoneNorm = input.phoneRaw ? normalizePhone(input.phoneRaw) : "";
   if (input.phoneRaw && !phoneNorm) {
     throw new ApiError(422, "VALIDATION_ERROR", "SĐT không hợp lệ — cần đúng định dạng số Việt Nam 10 chữ số.");
   }
-  const initialStatus = phoneNorm ? STATUS.PHONE : STATUS.WAITING;
+  const qualified = !!phoneNorm;
+  const initialStatus = qualified ? STATUS.PHONE : STATUS.WAITING;
+
+  // Chỉ sinh + ghi customerKey khi Đủ tiêu chuẩn — liên hệ "Chờ" chưa có
+  // Customer tương ứng (xem comment customerKey trong schema.prisma).
+  const customerKey = qualified ? dup.existingCustomerKey || makeCustomerKey("url:" + info.canonicalLink) : null;
 
   const now = new Date();
   const interactionId = newInteractionId();
 
   const detail = await prisma.$transaction(async (tx) => {
-    await tx.customer.upsert({
-      where: { customerKey },
-      update: { displayName: info.customerName, lastTouchAt: now, currentStatusName: initialStatus },
-      create: {
-        customerKey,
-        displayName: info.customerName,
-        canonicalLink: info.canonicalLink,
-        firstTouchAt: now,
-        lastTouchAt: now,
-        currentStatusName: initialStatus,
-      },
-    });
+    if (customerKey) {
+      await tx.customer.upsert({
+        where: { customerKey },
+        update: { displayName: info.customerName, lastTouchAt: now, currentStatusName: initialStatus },
+        create: {
+          customerKey,
+          displayName: info.customerName,
+          canonicalLink: info.canonicalLink,
+          firstTouchAt: now,
+          lastTouchAt: now,
+          currentStatusName: initialStatus,
+        },
+      });
+    }
 
     await tx.interaction.create({
       data: {
@@ -123,7 +218,7 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
         assignedBranchCode: info.assignedBranchCode,
         statusName: initialStatus,
         interactionType,
-        touchCount: touch.sequence,
+        assignedSaleEmail: actor.email,
         createdByEmail: actor.email,
         createdAt: now,
         updatedByEmail: actor.email,
@@ -136,18 +231,13 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
               phoneNormalized: phoneNorm,
               phoneCapturedAt: now,
               closedAt: now,
-              assignedSaleEmail: actor.email,
               receivedAt: now,
             }
           : {}),
       },
     });
 
-    // Người tạo liên hệ mặc nhiên là người sẽ làm việc với nó — tự thêm luôn
-    // vào Workspace của họ, khỏi phải quay lại trang Workspace bấm thêm thủ
-    // công. Luôn tạo mới được vì đây là dòng Interaction vừa tạo, không thể đã
-    // có claim nào từ trước.
-    await tx.workspaceClaim.create({ data: { interactionId, saleEmail: actor.email, claimedAt: now, lastActivityAt: now } });
+    await bumpSaleLeadStat(tx, actor.email, qualified);
 
     await logAction(
       tx,
@@ -170,7 +260,6 @@ export async function createInteraction(actor: CurrentUser, input: LeadInfoInput
 // Sửa thông tin hội thoại (chỉ khi còn mở — Chờ/Tiếp nhận)
 // ---------------------------------------------------------------------------
 export async function updateInteractionInfo(actor: CurrentUser, interactionId: string, input: LeadInfoInput & { expectedVersion: number }) {
-  requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
 
   const lead = await loadInteractionOr404(interactionId);
@@ -185,25 +274,31 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
     throw new ApiError(422, "VALIDATION_ERROR", "Vui lòng nhập lý do xác nhận hội thoại đang sửa là một lượt tương tác thực.");
   }
 
-  const { makeCustomerKey } = await import("@/lib/interactions/ids");
-  const customerKey = dup.existingCustomerKey || makeCustomerKey("url:" + info.canonicalLink);
-  const touch = await getCustomerTouch(customerKey, info.adId);
+  const touch = await getCustomerTouch(info.canonicalLink, info.adId);
   const interactionType = dup.requiresConfirmation ? dup.confirmedClassification : dup.classification;
   const now = new Date();
 
+  // Sửa thông tin không đổi trạng thái Đủ điều kiện — chỉ đụng tới Customer
+  // nếu hội thoại NÀY đã từng đủ điều kiện từ trước (đã có customerKey); nếu
+  // chưa (đang Chờ/Tiếp nhận), sửa Link/Tên... cũng không tự tạo Customer.
+  const wasQualified = !!lead.customerKey;
+  const customerKey = wasQualified ? dup.existingCustomerKey || makeCustomerKey("url:" + info.canonicalLink) : null;
+
   const detail = await prisma.$transaction(async (tx) => {
-    await tx.customer.upsert({
-      where: { customerKey },
-      update: { displayName: info.customerName, lastTouchAt: now },
-      create: {
-        customerKey,
-        displayName: info.customerName,
-        canonicalLink: info.canonicalLink,
-        firstTouchAt: now,
-        lastTouchAt: now,
-        currentStatusName: lead.statusName,
-      },
-    });
+    if (customerKey) {
+      await tx.customer.upsert({
+        where: { customerKey },
+        update: { displayName: info.customerName, lastTouchAt: now },
+        create: {
+          customerKey,
+          displayName: info.customerName,
+          canonicalLink: info.canonicalLink,
+          firstTouchAt: now,
+          lastTouchAt: now,
+          currentStatusName: lead.statusName,
+        },
+      });
+    }
 
     const result = await tx.interaction.updateMany({
       where: { interactionId, version: input.expectedVersion },
@@ -221,15 +316,29 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
         suggestedBranchCode: info.suggestedBranchCode,
         assignedBranchCode: info.assignedBranchCode,
         interactionType,
-        touchCount: touch.sequence,
         firstTouchAdId: touch.firstTouchAdId,
         lastTouchAdId: touch.lastTouchAdId,
+        ...(actor.role === ROLES.SALES ? { assignedSaleEmail: actor.email } : {}),
         updatedByEmail: actor.email,
         updatedAt: now,
       },
     });
     if (result.count === 0) throw Errors.staleVersion();
-    await autoClaimWorkspace(tx, actor, interactionId);
+
+    const fieldChanges = buildFieldChangeLogs(lead, info);
+    if (fieldChanges.length > 0) {
+      await tx.interactionFieldLog.createMany({
+        data: fieldChanges.map((c) => ({
+          interactionId,
+          fieldKey: c.fieldKey,
+          fieldLabel: c.fieldLabel,
+          oldValue: c.oldValue,
+          newValue: c.newValue,
+          changedByEmail: actor.email,
+          changedByName: actor.fullName,
+        })),
+      });
+    }
 
     await logAction(tx, actor, SYSTEM_LOG_ACTION.UPDATE_CONVERSATION_INFO, interactionId, { customerName: lead.customerName }, { customerName: info.customerName });
 
@@ -240,41 +349,6 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
 }
 
 // ---------------------------------------------------------------------------
-// Ghi 1 lần chăm sóc (không đổi trạng thái) — dùng làm bằng chứng cho quy
-// tắc "đủ 3 lần chăm sóc ở 3 thời điểm riêng biệt" khi đóng Spam vì im lặng.
-// ---------------------------------------------------------------------------
-export async function recordTouch(actor: CurrentUser, interactionId: string, note?: string) {
-  requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
-  const lead = await loadInteractionOr404(interactionId);
-  if (!canAccessBranch(actor, lead.assignedBranchCode) && !isLeaderLike(actor)) throw Errors.forbidden();
-  if (!isOpenStatus(lead.statusName)) throw Errors.forbidden("Hội thoại đã đóng, không ghi nhận thêm lượt chăm sóc.");
-
-  await prisma.$transaction(async (tx) => {
-    await logAction(tx, actor, SYSTEM_LOG_ACTION.TOUCH, interactionId, null, { note: note || null });
-    await tx.interaction.update({
-      where: { interactionId },
-      data: { updatedByEmail: actor.email, updatedAt: new Date() },
-    });
-    await autoClaimWorkspace(tx, actor, interactionId);
-  });
-
-  return getInteractionDetail(actor, interactionId);
-}
-
-/**
- * Đếm số NGÀY riêng biệt đã ghi nhận lượt chăm sóc (TOUCH log) — chặn việc
- * nhắn 3 tin liên tiếp trong cùng một lần trò chuyện rồi tính thành 3 lần.
- */
-async function countDistinctTouchDays(interactionId: string): Promise<number> {
-  const logs = await prisma.systemLog.findMany({
-    where: { interactionId, action: SYSTEM_LOG_ACTION.TOUCH },
-    select: { loggedAt: true },
-  });
-  const days = new Set(logs.map((l) => l.loggedAt.toISOString().slice(0, 10)));
-  return days.size;
-}
-
-// ---------------------------------------------------------------------------
 // Chuyển trạng thái — hàm lõi của toàn bộ workflow.
 // status không bao giờ nhận "Chờ" (chỉ hệ thống gán lúc tạo). Sale chỉ được
 // thao tác khi hội thoại đang mở (Chờ/Tiếp nhận); Leader/Admin có thể sửa cả
@@ -282,13 +356,8 @@ async function countDistinctTouchDays(interactionId: string): Promise<number> {
 // ---------------------------------------------------------------------------
 export async function updateStatus(actor: CurrentUser, interactionId: string, input: StatusUpdateInput) {
   // Ngoại lệ hẹp: Marketing được đóng thẳng Spam khi xem lại hội thoại ở
-  // trang "Chăm sóc lại" — đọc thấy khách rõ ràng không có nhu cầu thì khỏi
-  // cần đẩy cờ cho Sale xử lý nữa. Mọi trường hợp khác Marketing vẫn không có
-  // quyền đổi trạng thái (không mở rộng CAN_CREATE_OR_EDIT_LEAD nói chung).
+  // trang "Chăm sóc lại" — chỉ áp dụng cho hội thoại đang mở (xem check bên dưới).
   const isMarketingSpam = actor.role === ROLES.MARKETING && input.status === STATUS.SPAM;
-  if (!isMarketingSpam) {
-    requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
-  }
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
 
   const lead = await loadInteractionOr404(interactionId);
@@ -317,25 +386,20 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 
   if (afterKey === "SPAM") {
     if (!input.spamReason) throw new ApiError(422, "VALIDATION_ERROR", "Vui lòng chọn lý do Spam.");
-    if (input.spamReason === SPAM_REASON.NO_REPLY) {
-      if (!input.confirmedMinAttempts) {
-        const min = await getSpamNoReplyMinAttempts();
-        throw new ApiError(422, "VALIDATION_ERROR", `Nếu khách chỉ im lặng, vui lòng xác nhận đã chăm sóc đủ ${min} lần riêng biệt.`);
-      }
-      const min = await getSpamNoReplyMinAttempts();
-      const distinctDays = await countDistinctTouchDays(interactionId);
-      if (distinctDays < min) {
-        throw new ApiError(
-          422,
-          "VALIDATION_ERROR",
-          `Hệ thống mới ghi nhận ${distinctDays}/${min} lượt chăm sóc ở các thời điểm riêng biệt cho hội thoại này. Hãy dùng nút "Ghi nhận đã chăm sóc" ở mỗi lần liên hệ trước khi đóng Spam vì im lặng.`
-        );
-      }
+    // Không có link hội thoại thì không ai đối chiếu được đây có thực sự là
+    // Spam hay không — chặn ngay ở server (nguồn xác thực duy nhất), UI chỉ
+    // disable cho đẹp (xem SpamDialog/followup-view.tsx).
+    if (!lead.conversationLink) {
+      throw new ApiError(422, "VALIDATION_ERROR", "Liên hệ chưa có link cuộc hội thoại — không thể đánh dấu Spam.");
     }
   }
 
   const now = new Date();
   const businessChanged = beforeKey !== afterKey;
+  // Lần đầu chuyển sang Đủ tiêu chuẩn (chưa từng có customerKey) — sinh
+  // customerKey mới (deterministic theo canonicalLink, xem makeCustomerKey())
+  // để lúc này mới tạo dòng Customer tương ứng.
+  const customerKey = afterKey === "PHONE" ? (lead.customerKey ?? makeCustomerKey("url:" + lead.canonicalLink)) : lead.customerKey;
 
   const detail = await prisma.$transaction(async (tx) => {
     // Unchecked (không phải Checked) vì statusName backing quan hệ Status —
@@ -345,6 +409,8 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
       statusName: input.status,
       updatedByEmail: actor.email,
       updatedAt: now,
+      ...(actor.role === ROLES.SALES ? { assignedSaleEmail: actor.email } : {}),
+      ...(customerKey !== lead.customerKey ? { customerKey } : {}),
     };
 
     if (afterKey === "WAITING" || afterKey === "PROCESSING") {
@@ -354,7 +420,6 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
           phoneRaw: null,
           phoneNormalized: null,
           phoneCapturedAt: null,
-          assignedSaleEmail: null,
           receivedAt: null,
         });
       }
@@ -378,7 +443,6 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
         phoneRaw: null,
         phoneNormalized: null,
         phoneCapturedAt: null,
-        assignedSaleEmail: null,
         receivedAt: null,
       });
     }
@@ -395,12 +459,27 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 
     const result = await tx.interaction.updateMany({ where: { interactionId, version: input.expectedVersion }, data });
     if (result.count === 0) throw Errors.staleVersion();
-    await autoClaimWorkspace(tx, actor, interactionId);
-
-    if (afterKey === "PHONE" || afterKey === "SPAM") {
-      await tx.customer.update({ where: { customerKey: lead.customerKey }, data: { currentStatusName: input.status, lastTouchAt: now, ...(phoneNorm ? { phoneNormalized: phoneNorm } : {}) } });
-    } else {
-      await tx.customer.update({ where: { customerKey: lead.customerKey }, data: { currentStatusName: input.status, lastTouchAt: now } });
+    if (afterKey === "PHONE") {
+      // Lần đầu đủ điều kiện thì đây là lúc dòng Customer ra đời — trước đó
+      // (đang Chờ/Tiếp nhận) chưa từng ghi vào bảng customers.
+      await tx.customer.upsert({
+        where: { customerKey: customerKey! },
+        update: { currentStatusName: input.status, lastTouchAt: now, ...(phoneNorm ? { phoneNormalized: phoneNorm } : {}) },
+        create: {
+          customerKey: customerKey!,
+          displayName: lead.customerName,
+          canonicalLink: lead.canonicalLink,
+          firstTouchAt: now,
+          lastTouchAt: now,
+          currentStatusName: input.status,
+          phoneNormalized: phoneNorm || null,
+        },
+      });
+    } else if (lead.customerKey) {
+      // SPAM/Tiếp nhận: chỉ cập nhật nếu ĐÃ có Customer từ trước (từng đủ
+      // tiêu chuẩn) — updateMany thay vì update để không throw khi liên hệ
+      // này chưa từng đủ điều kiện (customerKey null, chưa có Customer nào).
+      await tx.customer.updateMany({ where: { customerKey: lead.customerKey }, data: { currentStatusName: input.status, lastTouchAt: now } });
     }
 
     await logAction(
@@ -413,9 +492,27 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
       "SUCCESS",
       input.note
     );
+    // Sale đóng Spam/Đủ tiêu chuẩn ngay trên trang chi tiết chăm sóc lại (thay
+    // vì bấm "Đánh dấu đã chăm sóc lại") — tắt cờ needsFollowup ở nhánh trên
+    // rồi, ghi thêm 1 dòng vào đúng chỗ getFollowupHistory() đọc để timeline
+    // "Lịch sử chăm sóc lại" không bị thiếu mốc kết thúc.
+    if (lead.needsFollowup && businessChanged) {
+      await logInteractionActivity(tx, actor, interactionId, INTERACTION_ACTIVITY.FOLLOWUP_RESOLVED, {
+        oldValue: lead.statusName,
+        newValue: input.status,
+        note: input.note ?? null,
+      });
+    }
 
     return getInteractionDetail(actor, interactionId, tx);
   });
+
+  if (afterKey === "PHONE" && customerKey && customerKey !== lead.customerKey) {
+    await notifyLeadersNewQualifiedLead(interactionId, lead.customerName, customerKey);
+  }
+  if (afterKey === "SPAM" && lead.needsFollowup && businessChanged && lead.mktPushedByEmail) {
+    await notifyMarketingLeadSpammed(actor, interactionId, lead.customerName, lead.mktPushedByEmail, input.spamReason ?? null);
+  }
 
   return detail;
 }
@@ -426,10 +523,13 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 // /followup-assign (xem assignFollowup() bên dưới) — tách trách nhiệm: Marketing
 // phát hiện & gửi, Leader quyết định ai xử lý. Liên hệ đã gửi rồi (needsFollowup
 // đang true, bất kể đã có Sale nhận hay chưa) không gửi lại được từ đây nữa.
+//
+// followupResolvedCount tăng +1 NGAY Ở ĐÂY — đếm số lần Marketing từng phải gửi
+// yêu cầu chăm sóc lại cho đúng liên hệ này qua suốt vòng đời của nó (không còn
+// đếm số lần Sale bấm "đã xử lý" như trước — xem resolveFollowup() bên dưới,
+// giờ luôn buộc tiến triển thật nên không còn khái niệm "bấm cho có" để đếm).
 // ---------------------------------------------------------------------------
 export async function pushFollowup(actor: CurrentUser, interactionIds: string[], suggestion?: string) {
-  requireRole(actor, CAN_PUSH_FOLLOWUP);
-
   let pushed = 0;
   let skipped = 0;
   const now = new Date();
@@ -455,16 +555,10 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
           mktPushedByEmail: actor.email,
           mktSuggestion: suggestion || null,
           followupTargetSaleEmail: null,
+          followupResolvedCount: { increment: 1 },
         },
       });
-      await logAction(
-        tx,
-        actor,
-        SYSTEM_LOG_ACTION.MKT_PUSH,
-        interactionId,
-        { status: lead.statusName },
-        { pushedBy: actor.email, suggestion: suggestion || null }
-      );
+      await logInteractionActivity(tx, actor, interactionId, INTERACTION_ACTIVITY.FOLLOWUP_PUSH, { newValue: suggestion || null });
     });
     pushed++;
   }
@@ -481,7 +575,6 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
 // 1 Sale — mirror reassignInteractions() ở trên.
 // ---------------------------------------------------------------------------
 async function applyAssignFollowup(interactionId: string, target: { email: string; fullName: string | null }, actor: CurrentUser) {
-  const now = new Date();
   return prisma.$transaction(async (tx) => {
     const lead = await tx.interaction.findUnique({ where: { interactionId } });
     if (!lead) throw Errors.notFound();
@@ -491,24 +584,17 @@ async function applyAssignFollowup(interactionId: string, target: { email: strin
 
     await tx.interaction.update({
       where: { interactionId },
-      data: { version: { increment: 1 }, followupTargetSaleEmail: target.email },
+      data: { version: { increment: 1 }, followupTargetSaleEmail: target.email, assignedSaleEmail: target.email },
     });
-    // Tự thêm vào Workspace của Sale được gán — khỏi bắt họ bấm "Nhận" thêm 1
-    // bước nữa ở /followup-inbox. Không ảnh hưởng claim của Sale khác (nếu có)
-    // đang có sẵn trên cùng liên hệ.
-    await tx.workspaceClaim.upsert({
-      where: { interactionId_saleEmail: { interactionId, saleEmail: target.email } },
-      create: { interactionId, saleEmail: target.email, claimedAt: now, lastActivityAt: now },
-      update: { lastActivityAt: now },
+    await logInteractionActivity(tx, actor, interactionId, INTERACTION_ACTIVITY.FOLLOWUP_ASSIGN, {
+      newValue: target.fullName ?? target.email,
     });
-    await logAction(tx, actor, SYSTEM_LOG_ACTION.FOLLOWUP_ASSIGN, interactionId, { followupTargetSaleEmail: null }, { followupTargetSaleEmail: target.email });
 
     return { customerName: lead.customerName, mktSuggestion: lead.mktSuggestion };
   });
 }
 
 export async function assignFollowup(actor: CurrentUser, interactionIds: string[], targetSaleEmail: string): Promise<{ assigned: number; skipped: number }> {
-  requireRole(actor, CAN_REASSIGN);
   const target = await validateReassignTarget(targetSaleEmail);
 
   let assigned = 0;
@@ -564,12 +650,17 @@ export async function assignFollowup(actor: CurrentUser, interactionIds: string[
 }
 
 // ---------------------------------------------------------------------------
-// Sale đánh dấu đã xử lý xong yêu cầu chăm sóc lại của Marketing — bắt buộc
-// ghi lại đã xử lý như thế nào (lưu vào Lịch sử chăm sóc, cùng chỗ với TOUCH
-// bình thường, để xem lại đúng ngữ cảnh sau này).
+// Sale đánh dấu đã chăm sóc lại xong yêu cầu của Marketing — LUÔN buộc lead
+// tiến triển thật: ép statusName về "Tiếp nhận" (kể cả khi đang Tiếp nhận sẵn
+// từ trước, followup vẫn có thể được gửi trên lead đang Tiếp nhận), tắt cờ
+// needsFollowup, ghi log. Không còn khái niệm "bấm cho có" (MANUAL_DISMISS) vì
+// nút này không còn là no-op nữa — 3 action duy nhất còn lại ở trang chi tiết
+// chăm sóc lại (nút này, Spam, Đủ tiêu chuẩn) đều là tiến triển thật, nên
+// followupOutcome ở đây luôn là STATUS_CHANGED. Vì vậy cũng không tăng
+// followupResolvedCount nữa — số đó giờ đếm số lần MARKETING gửi yêu cầu (xem
+// pushFollowup() ở trên), không phải số lần Sale xử lý.
 // ---------------------------------------------------------------------------
 export async function resolveFollowup(actor: CurrentUser, interactionId: string, note: string) {
-  requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
 
   const trimmedNote = note.trim();
@@ -582,68 +673,38 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string,
   }
 
   const now = new Date();
-  const resolvedCount = lead.followupResolvedCount + 1;
-  const maxBeforeSpam = await getMaxFollowupBeforeSpam();
-  // Đóng thủ công (bấm "Đánh dấu đã xử lý") mà vẫn còn mở sau đủ số lần cấu
-  // hình -> lead đang bị nhắc đi nhắc lại không tiến triển, tự động đóng Spam
-  // thay vì để treo vô hạn. Không áp dụng nếu lead đã rời trạng thái mở (an
-  // toàn phòng hờ — về lý thuyết needsFollowup chỉ true khi đang Chờ/Tiếp nhận).
-  const shouldAutoSpam = resolvedCount >= maxBeforeSpam && isOpenStatus(lead.statusName);
 
   return prisma.$transaction(async (tx) => {
     const data: Prisma.InteractionUncheckedUpdateInput = {
       version: { increment: 1 },
+      statusName: STATUS.PROCESSING,
       needsFollowup: false,
       followupTargetSaleEmail: null,
       followupHandledByEmail: actor.email,
       followupHandledAt: now,
-      followupOutcome: FOLLOWUP_OUTCOME.MANUAL_DISMISS,
-      followupResolvedCount: resolvedCount,
+      followupOutcome: FOLLOWUP_OUTCOME.STATUS_CHANGED,
+      updatedByEmail: actor.email,
+      updatedAt: now,
+      ...(actor.role === ROLES.SALES ? { assignedSaleEmail: actor.email } : {}),
     };
-
-    if (shouldAutoSpam) {
-      Object.assign(data, {
-        statusName: STATUS.SPAM,
-        closedAt: now,
-        phoneRaw: null,
-        phoneNormalized: null,
-        phoneCapturedAt: null,
-        assignedSaleEmail: null,
-        receivedAt: null,
-        updatedByEmail: actor.email,
-        updatedAt: now,
-      });
-    }
-
     await tx.interaction.update({ where: { interactionId }, data });
-    await autoClaimWorkspace(tx, actor, interactionId);
 
-    await logAction(
-      tx,
-      actor,
-      SYSTEM_LOG_ACTION.MKT_PUSH_RESOLVED,
-      interactionId,
-      { pushedAt: lead.mktPushedAt },
-      { resolvedAt: now, resolvedByEmail: actor.email, resolvedCount, note: trimmedNote }
-    );
-    // Ghi thêm 1 dòng TOUCH bình thường để nội dung xử lý xuất hiện luôn ở
-    // "Lịch sử chăm sóc" trên panel chi tiết — không chỉ nằm trong log kỹ
-    // thuật mà Admin mới xem được.
-    await logAction(tx, actor, SYSTEM_LOG_ACTION.TOUCH, interactionId, null, { note: `[Chăm sóc lại] ${trimmedNote}` });
-
-    if (shouldAutoSpam) {
-      await tx.customer.update({ where: { customerKey: lead.customerKey }, data: { currentStatusName: STATUS.SPAM, lastTouchAt: now } });
-      await logAction(
-        tx,
-        actor,
-        SYSTEM_LOG_ACTION.UPDATE_RESULT,
-        interactionId,
-        { status: lead.statusName },
-        { status: STATUS.SPAM, spamReason: SPAM_REASON.MAX_FOLLOWUP_EXCEEDED, autoTriggered: true, resolvedCount },
-        "SUCCESS",
-        `Tự động chuyển Spam: đã "Đánh dấu đã xử lý" chăm sóc lại ${resolvedCount}/${maxBeforeSpam} lần theo cấu hình hệ thống.`
-      );
+    // Đồng bộ Customer nếu lead này từng đủ tiêu chuẩn từ trước (customerKey đã
+    // có) — mirror nhánh Tiếp nhận trong updateStatus(). Phần lớn trường hợp
+    // followup chỉ áp dụng cho lead chưa từng đủ điều kiện nên customerKey
+    // thường vẫn null, updateMany bỏ qua an toàn.
+    if (lead.customerKey) {
+      await tx.customer.updateMany({ where: { customerKey: lead.customerKey }, data: { currentStatusName: STATUS.PROCESSING, lastTouchAt: now } });
     }
+
+    // 1 dòng duy nhất trong interaction_field_logs — vừa là "lịch sử chăm sóc
+    // lại" (getFollowupHistory() đọc theo fieldKey này) vừa để
+    // loadFollowupResolveNotes() (followup-tracking) tra lại ghi chú xử lý.
+    await logInteractionActivity(tx, actor, interactionId, INTERACTION_ACTIVITY.FOLLOWUP_RESOLVED, {
+      oldValue: lead.statusName,
+      newValue: STATUS.PROCESSING,
+      note: trimmedNote,
+    });
 
     return getInteractionDetail(actor, interactionId, tx);
   });
@@ -683,11 +744,15 @@ async function applyReassign(actor: CurrentUser, interactionId: string, targetEm
     });
     if (result.count === 0) throw Errors.staleVersion();
     await logAction(tx, actor, SYSTEM_LOG_ACTION.REASSIGN_PHONE_LEAD, interactionId, { assignedSaleEmail: lead.assignedSaleEmail }, { assignedSaleEmail: targetEmail }, "SUCCESS", reason);
+    await logInteractionActivity(tx, actor, interactionId, INTERACTION_ACTIVITY.REASSIGN, {
+      oldValue: lead.assignedSaleEmail,
+      newValue: targetEmail,
+      note: reason,
+    });
   });
 }
 
 export async function reassignInteraction(actor: CurrentUser, interactionId: string, targetEmail: string, reason: string, expectedVersion: number) {
-  requireRole(actor, CAN_REASSIGN);
   await validateReassignTarget(targetEmail);
   await applyReassign(actor, interactionId, targetEmail, reason, expectedVersion);
   return getInteractionDetail(actor, interactionId);
@@ -695,15 +760,13 @@ export async function reassignInteraction(actor: CurrentUser, interactionId: str
 
 // Điều chuyển hàng loạt — Leader/Admin chọn nhiều liên hệ Đủ tiêu chuẩn cùng
 // lúc, giao hết cho 1 Sale khác. Xử lý tuần tự, bỏ qua liên hệ nào lỗi (đổi
-// trạng thái/version từ lúc chọn đến lúc gửi) thay vì huỷ toàn bộ — mirror
-// đúng pattern createStudentAssignments() (lib/students/mutations.ts).
+// trạng thái/version từ lúc chọn đến lúc gửi) thay vì huỷ toàn bộ.
 export async function reassignInteractions(
   actor: CurrentUser,
   items: { interactionId: string; expectedVersion: number }[],
   targetEmail: string,
   reason: string
 ): Promise<{ reassigned: string[]; skipped: string[] }> {
-  requireRole(actor, CAN_REASSIGN);
   await validateReassignTarget(targetEmail);
 
   const reassigned: string[] = [];
@@ -717,6 +780,118 @@ export async function reassignInteractions(
     }
   }
   return { reassigned, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Admin xử lý Spam ở /admin/spam-review — mirror ý tưởng của pushFollowup()
+// (Marketing gửi "Chăm sóc lại") nhưng bắt đầu từ Spam thay vì Chờ/Tiếp nhận,
+// nên không tái dùng được nguyên hàm đó. 2 hành động: khôi phục về "Tiếp
+// nhận" rồi đẩy thẳng vào hàng đợi Chăm sóc lại (Leader phân bổ tiếp ở
+// /followup-assign), hoặc xoá hẳn liên hệ rác — chỉ áp dụng cho liên hệ ĐANG
+// Spam tại thời điểm xử lý (bỏ qua nếu đã đổi trạng thái từ lúc chọn).
+// ---------------------------------------------------------------------------
+export async function restoreSpamToFollowup(
+  actor: CurrentUser,
+  interactionIds: string[],
+  note?: string
+): Promise<{ restored: number; skipped: number }> {
+  let restored = 0;
+  let skipped = 0;
+  const now = new Date();
+
+  for (const interactionId of interactionIds) {
+    const lead = await prisma.interaction.findUnique({ where: { interactionId } });
+    if (!lead || canonicalStatusKey(lead.statusName) !== "SPAM") {
+      skipped++;
+      continue;
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.interaction.update({
+        where: { interactionId },
+        data: {
+          version: { increment: 1 },
+          statusName: STATUS.WAITING,
+          updatedByEmail: actor.email,
+          updatedAt: now,
+          closedAt: null,
+          phoneRaw: null,
+          phoneNormalized: null,
+          phoneCapturedAt: null,
+          receivedAt: null,
+          needsFollowup: true,
+          mktPushedAt: now,
+          mktPushedByEmail: actor.email,
+          mktSuggestion: note || null,
+          followupTargetSaleEmail: null,
+          followupResolvedCount: { increment: 1 },
+        },
+      });
+      if (lead.customerKey) {
+        // Hiếm khi xảy ra (liên hệ này từng Đủ tiêu chuẩn trước khi bị đóng
+        // Spam) — cập nhật lại Customer tương ứng cho khớp trạng thái mới.
+        await tx.customer.updateMany({
+          where: { customerKey: lead.customerKey },
+          data: { currentStatusName: STATUS.WAITING, lastTouchAt: now },
+        });
+      }
+      await logAction(
+        tx,
+        actor,
+        SYSTEM_LOG_ACTION.RESTORE_SPAM_TO_FOLLOWUP,
+        interactionId,
+        { status: lead.statusName },
+        { status: STATUS.WAITING },
+        "SUCCESS",
+        note
+      );
+      await logInteractionActivity(tx, actor, interactionId, INTERACTION_ACTIVITY.SPAM_RESTORE, {
+        oldValue: lead.statusName,
+        newValue: STATUS.WAITING,
+        note: note || null,
+      });
+    });
+    restored++;
+  }
+
+  return { restored, skipped };
+}
+
+export async function deleteSpamInteractions(
+  actor: CurrentUser,
+  interactionIds: string[],
+  reason?: string
+): Promise<{ deleted: number; skipped: number }> {
+  let deleted = 0;
+  let skipped = 0;
+
+  for (const interactionId of interactionIds) {
+    const lead = await prisma.interaction.findUnique({ where: { interactionId } });
+    if (!lead || canonicalStatusKey(lead.statusName) !== "SPAM") {
+      skipped++;
+      continue;
+    }
+    await prisma.$transaction(async (tx) => {
+      // Ghi log TRƯỚC khi xoá — system_log.interaction_id ON DELETE SET NULL
+      // (xem schema.prisma) nên dòng log này vẫn còn nguyên vẹn sau khi liên
+      // hệ bị xoá, chỉ mất liên kết. InteractionFieldLog thì cascade xoá theo
+      // (không cần giữ vì lịch sử "của" 1 liên hệ không còn tồn tại thì cũng
+      // hết ý nghĩa).
+      await logAction(
+        tx,
+        actor,
+        SYSTEM_LOG_ACTION.DELETE_SPAM_INTERACTION,
+        interactionId,
+        { customerName: lead.customerName, statusName: lead.statusName, fanpageName: lead.fanpageName },
+        null,
+        "SUCCESS",
+        reason
+      );
+      await tx.interaction.delete({ where: { interactionId } });
+    });
+    deleted++;
+  }
+
+  return { deleted, skipped };
 }
 
 export { detailInclude, toDetail };

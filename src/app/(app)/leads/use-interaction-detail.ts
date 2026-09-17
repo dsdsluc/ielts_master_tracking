@@ -1,36 +1,63 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { fetchInteractionDetail, logTouch, resolveFollowup, updateStatus } from "@/app/(app)/leads/leads-api";
+import { fetchInteractionDetail, resolveFollowup, updateStatus } from "@/app/(app)/leads/leads-api";
 import type { InteractionDetail } from "@/app/(app)/leads/types";
 import { useToast } from "@/hooks/use-toast";
+
+// Cache theo interactionId, sống suốt phiên làm việc (module-level, dùng
+// chung giữa mọi lần mở panel/trang chi tiết) — mở lại đúng 1 liên hệ đã xem
+// trước đó thì hiện ngay dữ liệu cũ, không bắt người dùng chờ loading lại từ
+// đầu. Vẫn âm thầm gọi lại API ngay sau đó (silent, không bật cờ loading) để
+// đồng bộ version/trạng thái mới nhất — quan trọng vì các hành động (Đủ tiêu
+// chuẩn/Spam/Điều chuyển...) đều cần đúng expectedVersion, dữ liệu cache có
+// thể đã cũ nếu người khác vừa sửa liên hệ này.
+const detailCache = new Map<string, InteractionDetail>();
 
 /** Tải chi tiết 1 liên hệ + các hành động dùng chung giữa panel xem nhanh
  * (lead-detail-sheet.tsx) và trang làm việc đầy đủ (leads/[id]) — 2 nơi khác
  * layout nhưng cùng 1 tập dữ liệu/hành động, tách ra để không viết lặp lại. */
 export function useInteractionDetail(interactionId: string | null, onChanged?: () => void) {
   const { toast } = useToast();
-  const [detail, setDetail] = useState<InteractionDetail | null>(null);
+  const [detail, setDetail] = useState<InteractionDetail | null>(() => (interactionId ? (detailCache.get(interactionId) ?? null) : null));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touchPending, setTouchPending] = useState(false);
   const [followupPending, setFollowupPending] = useState(false);
 
-  const load = useCallback((id: string) => {
-    setLoading(true);
+  const load = useCallback((id: string, silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     fetchInteractionDetail(id)
-      .then(setDetail)
-      .catch((err) => setError(err instanceof Error ? err.message : "Không tải được liên hệ."))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        detailCache.set(id, d);
+        setDetail(d);
+      })
+      .catch((err) => {
+        // Bản cache cũ (nếu có) đã hiện sẵn rồi — làm mới ngầm thất bại thì
+        // không cần đá người dùng về màn lỗi, âm thầm bỏ qua là đủ.
+        if (!silent) setError(err instanceof Error ? err.message : "Không tải được liên hệ.");
+      })
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
     // Fetch-on-open/mount: no external store to subscribe to for a REST
     // detail call, so this is the standard data-fetching effect shape.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (interactionId) load(interactionId);
-    else setDetail(null);
+    if (!interactionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDetail(null);
+      return;
+    }
+    const cached = detailCache.get(interactionId);
+    if (cached) {
+      setDetail(cached);
+      load(interactionId, true);
+    } else {
+      load(interactionId);
+    }
   }, [interactionId, load]);
 
   function refresh() {
@@ -38,34 +65,12 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
     onChanged?.();
   }
 
-  async function handleLogTouch(note?: string) {
-    if (!interactionId) return false;
-    setTouchPending(true);
-    try {
-      await logTouch(interactionId, note);
-      toast.success("Đã ghi nhận lượt liên hệ.");
-      refresh();
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Không ghi nhận được.";
-      setError(message);
-      toast.error(message);
-      return false;
-    } finally {
-      setTouchPending(false);
-    }
-  }
-
   async function handleResolveFollowup(note: string) {
     if (!interactionId) return;
     setFollowupPending(true);
     try {
-      const updated = await resolveFollowup(interactionId, note);
-      if (updated.status === "Spam") {
-        toast.info("Đã tự động chuyển Spam — liên hệ này đã bị nhắc chăm sóc lại quá số lần cho phép theo cấu hình hệ thống.");
-      } else {
-        toast.success("Đã đánh dấu xử lý xong yêu cầu chăm sóc lại.");
-      }
+      await resolveFollowup(interactionId, note);
+      toast.success("Đã đánh dấu chăm sóc lại — liên hệ chuyển sang Tiếp nhận.");
       refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Không cập nhật được.";
@@ -101,7 +106,6 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
     refresh,
     touchPending,
     followupPending,
-    handleLogTouch,
     handleResolveFollowup,
     handleMoveToInProgress,
   };

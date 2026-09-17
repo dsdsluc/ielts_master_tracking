@@ -57,7 +57,7 @@ export async function StatusesPanel() {
                     <Badge variant={s.requirePhone ? "default" : "outline"}>{s.requirePhone ? "Có" : "Không"}</Badge>
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">
-                    <p className="max-w-56 truncate">{s.note ?? "—"}</p>
+                    <p className="max-w-56 truncate" title={s.note ?? "—"}>{s.note ?? "—"}</p>
                   </TableCell>
                   <TableCell className="pr-4 pl-1">
                     <StatusDialog status={{ name: s.name, sortOrder: s.sortOrder, note: s.note }} />

@@ -46,9 +46,9 @@ export function FollowupTrackingSalerTable({
             {salers.map((s) => (
               <TableRow key={s.saleKey} className="odd:bg-secondary/10">
                 <TableCell className="min-w-48 px-5 py-3.5">
-                  <p className="truncate font-medium text-foreground">{s.saleName}</p>
+                  <p className="truncate font-medium text-foreground" title={s.saleName}>{s.saleName}</p>
                   {s.saleKey !== "unassigned" && (
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">{s.saleKey}</p>
+                    <p className="truncate font-mono text-[11px] text-muted-foreground" title={s.saleKey}>{s.saleKey}</p>
                   )}
                 </TableCell>
                 <TableCell className="px-4 text-center font-mono text-sm text-foreground">{s.stats.total}</TableCell>

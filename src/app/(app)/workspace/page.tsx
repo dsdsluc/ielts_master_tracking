@@ -1,17 +1,19 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { GraduationCap } from "lucide-react";
+import { Users } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { STATUS } from "@/lib/interactions/constants";
 import { listItemInclude, toListItem } from "@/lib/interactions/serialize";
 import { prisma } from "@/lib/prisma";
-import { computeSalePersonalKpi } from "@/lib/students/stats";
 import { WorkspaceView } from "@/app/(app)/workspace/workspace-view";
 import { WorkspaceKpiCard } from "@/app/(app)/workspace/workspace-kpi-card";
-import { StudentsSection } from "@/app/(app)/students/students-section";
+import { CustomersSection } from "@/app/(app)/customers/customers-section";
+import { computeSalePersonalKpi } from "@/lib/customers/stats";
 
 export default async function WorkspacePage() {
-  const user = await requireRole(ROLES.SALES, ROLES.LEADER, ROLES.ADMIN);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "workspace");
 
   // Chỉ những liên hệ "chưa đóng" (chưa Đủ tiêu chuẩn/Spam) mới còn nằm trong
   // Workspace — liên hệ đã đóng không có ý nghĩa để giữ ở đây nữa.
@@ -21,12 +23,12 @@ export default async function WorkspacePage() {
   };
 
   const [workspaceRows, kpi] = await Promise.all([
-    // Workspace của chính actor — liên hệ actor đã thêm (từ trang Liên hệ) và
-    // chưa giải phóng/đóng. Loại needsFollowup:true — liên hệ "Cần chăm sóc
-    // lại" chỉ xử lý ở /followup-inbox, tránh 2 nơi cùng là chỗ Sale làm việc
-    // trên 1 liên hệ (mirror buildInteractionWhere() ở lib/interactions/queries.ts).
+    // Workspace của chính actor — mọi liên hệ đang mở mà actor là Tư vấn
+    // viên. Loại needsFollowup:true — liên hệ "Cần chăm sóc lại" chỉ xử lý ở
+    // /followup-inbox, tránh 2 nơi cùng là chỗ Sale làm việc trên 1 liên hệ
+    // (mirror buildInteractionWhere() ở lib/interactions/queries.ts).
     prisma.interaction.findMany({
-      where: { ...openStatusWhere, needsFollowup: false, workspaceClaims: { some: { saleEmail: user.email } } },
+      where: { ...openStatusWhere, needsFollowup: false, assignedSaleEmail: user.email },
       include: listItemInclude,
       orderBy: { createdLeadAt: "asc" },
     }),
@@ -40,17 +42,17 @@ export default async function WorkspacePage() {
       <PageHeader
         eyebrow="Vận hành"
         title="Workspace của tôi"
-        description="Theo dõi liên hệ bạn đang xử lý và học viên đang được phân bổ tư vấn."
+        description="Theo dõi liên hệ bạn đang xử lý và khách hàng đang được phân bổ tư vấn."
       />
       <WorkspaceKpiCard kpi={kpi} />
       <WorkspaceView initialWorkspace={initialWorkspace} />
 
       <div className="mt-8 flex flex-col gap-3">
         <div className="flex items-center gap-2.5">
-          <GraduationCap className="size-4 text-status-received" />
-          <h2 className="font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Học viên đang tư vấn</h2>
+          <Users className="size-4 text-status-received" />
+          <h2 className="font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Khách hàng đang tư vấn</h2>
         </div>
-        <StudentsSection actor={user} />
+        <CustomersSection actor={user} />
       </div>
     </>
   );

@@ -18,9 +18,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import {
-  ROLES,
   SPAM_REASON,
   STATUS,
   SYSTEM_LOG_ACTION,
@@ -79,9 +79,9 @@ const SPAM_FOLLOWUP_SETTINGS = [
   {
     configGroup: "system",
     key: "MAX_FOLLOWUP_BEFORE_SPAM",
-    label: "Số lần chăm sóc lại tối đa trước khi tự động chuyển Spam",
+    label: "Ngưỡng cảnh báo bị Marketing nhắc chăm sóc lại nhiều lần",
     description:
-      'Mỗi lần Sale bấm "Đánh dấu đã xử lý" cho yêu cầu "Chăm sóc lại" của Marketing sẽ được đếm dồn cho liên hệ đó. Vượt quá số lần này mà liên hệ vẫn chưa đổi trạng thái, hệ thống tự động chuyển sang Spam.',
+      'Đếm số lần Marketing từng gửi yêu cầu "Chăm sóc lại" cho cùng 1 liên hệ — dùng để lọc "Sắp chuyển Spam" ở trang Cần chăm sóc lại. Chỉ để cảnh báo/theo dõi, không còn tự động đổi trạng thái.',
     fallback: "3",
   },
 ];
@@ -127,7 +127,8 @@ function SettingsSubheading({
 }
 
 export default async function AdminMonitoringPage() {
-  const admin = await requireRole(ROLES.ADMIN);
+  const admin = await getCurrentUser();
+  await requireFeatureAccess(admin.role, "adminMonitoring");
 
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - WINDOW_DAYS);
@@ -156,7 +157,6 @@ export default async function AdminMonitoringPage() {
         customerName: true,
         fanpageName: true,
         assignedBranchCode: true,
-        touchCount: true,
         closedAt: true,
         updatedBy: { select: { fullName: true } },
       },
@@ -298,9 +298,6 @@ export default async function AdminMonitoringPage() {
                   <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">
                     Lý do
                   </TableHead>
-                  <TableHead className="hidden px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">
-                    Lần chăm sóc
-                  </TableHead>
                   <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">
                     Đóng lúc
                   </TableHead>
@@ -316,10 +313,10 @@ export default async function AdminMonitoringPage() {
                       className="odd:bg-secondary/10"
                     >
                       <TableCell className="min-w-40 px-5 py-3.5">
-                        <p className="truncate font-medium text-foreground">
+                        <p className="truncate font-medium text-foreground" title={item.customerName}>
                           {item.customerName}
                         </p>
-                        <p className="truncate text-xs text-muted-foreground">
+                        <p className="truncate text-xs text-muted-foreground" title={item.fanpageName}>
                           {item.fanpageName}
                         </p>
                       </TableCell>
@@ -339,9 +336,6 @@ export default async function AdminMonitoringPage() {
                             {reason.note}
                           </p>
                         )}
-                      </TableCell>
-                      <TableCell className="hidden px-4 text-center font-mono text-sm text-muted-foreground md:table-cell">
-                        {item.touchCount}
                       </TableCell>
                       <TableCell className="hidden px-4 text-xs text-muted-foreground lg:table-cell">
                         {item.closedAt
@@ -392,7 +386,7 @@ export default async function AdminMonitoringPage() {
             <EmptyState
               icon={Users2}
               title="Chưa có Sale nào"
-              description="Thêm tài khoản Sale/Admin ở section Người dùng bên dưới."
+              description="Thêm tài khoản Saler ở section Người dùng bên dưới."
             />
           ) : (
             <Table>
@@ -422,10 +416,10 @@ export default async function AdminMonitoringPage() {
                 {perfRows.map((row) => (
                   <TableRow key={row.email} className="odd:bg-secondary/10">
                     <TableCell className="min-w-40 px-5 py-3.5">
-                      <p className="truncate font-medium text-foreground">
+                      <p className="truncate font-medium text-foreground" title={row.fullName}>
                         {row.fullName}
                       </p>
-                      <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      <p className="truncate font-mono text-[11px] text-muted-foreground" title={row.email}>
                         {row.email}
                       </p>
                     </TableCell>
@@ -536,7 +530,10 @@ export default async function AdminMonitoringPage() {
                         <User className="size-3.5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">
+                        <p
+                          className="truncate font-medium text-foreground"
+                          title={user.email === admin.email ? `${user.fullName} (bạn)` : user.fullName}
+                        >
                           {user.fullName}
                           {user.email === admin.email && (
                             <span className="ml-1.5 text-xs text-muted-foreground">
@@ -544,7 +541,7 @@ export default async function AdminMonitoringPage() {
                             </span>
                           )}
                         </p>
-                        <p className="truncate font-mono text-[11px] text-muted-foreground">
+                        <p className="truncate font-mono text-[11px] text-muted-foreground" title={user.email}>
                           {user.email}
                         </p>
                       </div>

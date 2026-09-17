@@ -7,7 +7,7 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
-import { STATUS } from "../src/lib/interactions/constants";
+import { ROLES, STATUS } from "../src/lib/interactions/constants";
 
 const DEFAULT_PASSWORD = "12345678";
 
@@ -40,7 +40,7 @@ const users = [
   {
     email: "tram.ntq12345@gmail.com",
     fullName: "Quỳnh Trâm",
-    role: "Sale/Admin",
+    role: ROLES.SALES,
     branchCode: "TDM" as string | null,
     active: true,
     viewAllBranches: false,
@@ -49,7 +49,7 @@ const users = [
   {
     email: "iamphson@gmail.com",
     fullName: "Hồng Sơn",
-    role: "Sale/Admin",
+    role: ROLES.SALES,
     branchCode: "Dĩ An" as string | null,
     active: true,
     viewAllBranches: false,
@@ -58,7 +58,7 @@ const users = [
   {
     email: "vananhlt03@gmail.com",
     fullName: "Vân Anh",
-    role: "Sale/Admin",
+    role: ROLES.SALES,
     branchCode: "TDM" as string | null,
     active: true,
     viewAllBranches: false,
@@ -67,7 +67,7 @@ const users = [
   {
     email: "trambtt1226@gmail.com",
     fullName: "Bích Trâm",
-    role: "Sale/Admin",
+    role: ROLES.SALES,
     branchCode: "TDM" as string | null,
     active: true,
     viewAllBranches: false,
@@ -76,7 +76,7 @@ const users = [
   {
     email: "hungnguyenieltsmaster@gmail.com",
     fullName: "Nguyễn Phúc Hưng",
-    role: "Quản trị hệ thống",
+    role: ROLES.ADMIN,
     branchCode: null as string | null,
     active: true,
     viewAllBranches: true,
@@ -103,7 +103,7 @@ const users = [
   {
     email: "binhduongieltsmaster@gmail.com",
     fullName: "Quản trị hệ thống",
-    role: "Quản trị hệ thống",
+    role: ROLES.ADMIN,
     branchCode: null as string | null,
     active: true,
     viewAllBranches: true,
@@ -112,7 +112,7 @@ const users = [
   {
     email: "huy.nguyen@ieltsmastervn.edu.vn",
     fullName: "Nguyễn Đình Huy",
-    role: "BGĐ",
+    role: ROLES.ADMIN,
     branchCode: null as string | null,
     active: true,
     viewAllBranches: true,
@@ -121,7 +121,7 @@ const users = [
   {
     email: "thanhtuan111020@gmail.com",
     fullName: "Tuấn",
-    role: "Sale/Admin",
+    role: ROLES.SALES,
     branchCode: "TDM" as string | null,
     active: true,
     viewAllBranches: false,

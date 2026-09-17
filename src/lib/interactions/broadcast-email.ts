@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { ROLES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
-import { requireRole } from "@/lib/interactions/scope";
+import { SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { logAction } from "@/lib/interactions/audit";
 import { ApiError } from "@/lib/interactions/errors";
 import { sendEmail } from "@/lib/email";
@@ -13,8 +12,6 @@ export async function sendBroadcastEmail(
   actor: CurrentUser,
   input: { subject: string; body: string; recipientEmails: string[] }
 ): Promise<{ sent: number }> {
-  requireRole(actor, [ROLES.ADMIN]);
-
   const subject = input.subject.trim();
   const body = input.body.trim();
   const recipientEmails = [...new Set(input.recipientEmails)].filter(Boolean);

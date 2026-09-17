@@ -4,10 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Fingerprint, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
-import { AdsCostDialog } from "@/app/(app)/ads-cost/ads-cost-dialog";
 import { ConversionPill } from "@/app/(app)/ads-performance/ads-performance-table";
 import { formatDate, formatVnd } from "@/app/(app)/ads-cost/format";
 
@@ -19,32 +17,23 @@ export type AdIdRegistryRow = {
   firstSeenAt: string | null;
   totalLeads: number;
   qualified: number;
-  totalCost: number | null;
+  totalCost: number;
 };
 
-export function AdIdRegistryView({
-  rows,
-  sourceOptions,
-  fanpageOptions,
-  branchOptions,
-}: {
-  rows: AdIdRegistryRow[];
-  sourceOptions: string[];
-  fanpageOptions: string[];
-  branchOptions: { code: string; name: string }[];
-}) {
+// Chỉ Ad ID ĐÃ có bản ghi "Chi phí quảng cáo" — Ad ID mới phát hiện (xuất
+// hiện trong liên hệ nhưng chưa nhập chi phí) đã tách hẳn sang trang quản trị
+// /admin/new-ad-ids, trang này chỉ còn đúng 1 việc: theo dõi hiệu quả Ad ID
+// đã đăng ký, phù hợp hơn với vai trò Marketing (không lẫn việc "phát hiện").
+export function AdIdRegistryView({ rows }: { rows: AdIdRegistryRow[] }) {
   const [search, setSearch] = useState("");
-  const [missingOnly, setMissingOnly] = useState(false);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("vi");
-    return rows.filter((r) => {
-      const matchesSearch =
-        !needle || r.adId.toLocaleLowerCase("vi").includes(needle) || (r.adName?.toLocaleLowerCase("vi").includes(needle) ?? false);
-      const matchesMissing = !missingOnly || r.totalCost == null;
-      return matchesSearch && matchesMissing;
-    });
-  }, [rows, search, missingOnly]);
+    if (!needle) return rows;
+    return rows.filter(
+      (r) => r.adId.toLocaleLowerCase("vi").includes(needle) || (r.adName?.toLocaleLowerCase("vi").includes(needle) ?? false)
+    );
+  }, [rows, search]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,18 +47,6 @@ export function AdIdRegistryView({
             className="h-10 rounded-xl bg-background pr-3 pl-9"
           />
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className={
-            missingOnly
-              ? "h-10 rounded-xl border-status-waiting/40 bg-status-waiting-bg text-status-waiting hover:bg-status-waiting-bg/80"
-              : "h-10 rounded-xl border-border bg-background text-muted-foreground hover:bg-status-waiting-bg hover:text-status-waiting"
-          }
-          onClick={() => setMissingOnly((v) => !v)}
-        >
-          Chỉ hiện chưa có chi phí
-        </Button>
       </div>
 
       {filtered.length === 0 ? (
@@ -98,16 +75,16 @@ export function AdIdRegistryView({
               <TableBody>
                 {filtered.map((row) => {
                   const rate = row.totalLeads > 0 ? (row.qualified / row.totalLeads) * 100 : 0;
-                  const costPerLead = row.totalCost != null && row.totalCost > 0 && row.totalLeads > 0 ? row.totalCost / row.totalLeads : null;
+                  const costPerLead = row.totalCost > 0 && row.totalLeads > 0 ? row.totalCost / row.totalLeads : null;
                   return (
                     <TableRow key={row.adId} className="odd:bg-secondary/10">
                       <TableCell className="min-w-40 px-5 py-3.5">
-                        <p className="max-w-56 truncate font-medium text-foreground">{row.adName ?? row.adId}</p>
-                        <p className="max-w-56 truncate font-mono text-[11px] text-muted-foreground">{row.adId}</p>
+                        <p className="max-w-56 truncate font-medium text-foreground" title={row.adName ?? row.adId}>{row.adName ?? row.adId}</p>
+                        <p className="max-w-56 truncate font-mono text-[11px] text-muted-foreground" title={row.adId}>{row.adId}</p>
                       </TableCell>
                       <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">
                         {row.sourceName ? (
-                          <p className="max-w-40 truncate">
+                          <p className="max-w-40 truncate" title={`${row.sourceName} · ${row.fanpageName}`}>
                             {row.sourceName} · {row.fanpageName}
                           </p>
                         ) : (
@@ -122,34 +99,18 @@ export function AdIdRegistryView({
                         {row.totalLeads > 0 ? <ConversionPill rate={rate} /> : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="px-4 text-right">
-                        {row.totalCost != null ? (
-                          <span className="font-mono text-sm text-foreground">{formatVnd(row.totalCost)}</span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-status-waiting-bg px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-status-waiting uppercase">
-                            Chưa có
-                          </span>
-                        )}
+                        <span className="font-mono text-sm text-foreground">{formatVnd(row.totalCost)}</span>
                       </TableCell>
                       <TableCell className="hidden px-4 text-right font-mono text-xs text-muted-foreground md:table-cell">
                         {costPerLead != null ? formatVnd(Math.round(costPerLead)) : "—"}
                       </TableCell>
                       <TableCell className="pr-5 pl-1 text-right">
-                        {row.totalCost == null ? (
-                          <AdsCostDialog
-                            mode="create"
-                            defaultAdId={row.adId}
-                            sourceOptions={sourceOptions}
-                            fanpageOptions={fanpageOptions}
-                            branchOptions={branchOptions}
-                          />
-                        ) : (
-                          <Link
-                            href={`/ads-performance/${encodeURIComponent(row.adId)}`}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-status-received hover:underline"
-                          >
-                            Xem chi tiết <ArrowRight className="size-3.5" />
-                          </Link>
-                        )}
+                        <Link
+                          href={`/ads-performance/${encodeURIComponent(row.adId)}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-status-received hover:underline"
+                        >
+                          Xem chi tiết <ArrowRight className="size-3.5" />
+                        </Link>
                       </TableCell>
                     </TableRow>
                   );

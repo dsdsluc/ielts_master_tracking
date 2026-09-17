@@ -160,8 +160,11 @@ export function ComposeMailButton() {
                         >
                           <Checkbox checked={checked} onCheckedChange={() => toggleOne(m.email)} />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-foreground">{m.fullName}</p>
-                            <p className="truncate text-xs text-muted-foreground">
+                            <p className="truncate text-sm text-foreground" title={m.fullName}>{m.fullName}</p>
+                            <p
+                              className="truncate text-xs text-muted-foreground"
+                              title={`${m.email} · ${m.role}${m.branchName ? ` · ${m.branchName}` : ""}`}
+                            >
                               {m.email} · {m.role}
                               {m.branchName ? ` · ${m.branchName}` : ""}
                             </p>

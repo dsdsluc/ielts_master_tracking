@@ -2,8 +2,6 @@ import { Workbook } from "exceljs";
 import type { Prisma } from "@/generated/prisma/client";
 import { requireApiUser } from "@/lib/auth/api";
 import { errorResponse } from "@/lib/interactions/errors";
-import { ApiError } from "@/lib/interactions/errors";
-import { ROLES } from "@/lib/interactions/constants";
 import { prisma } from "@/lib/prisma";
 import { formatDate } from "@/app/(app)/ads-cost/format";
 
@@ -11,10 +9,7 @@ const EXPORT_LIMIT = 5000;
 
 export async function GET(request: Request) {
   try {
-    const actor = await requireApiUser();
-    if (actor.role !== ROLES.MARKETING && actor.role !== ROLES.ADMIN) {
-      throw new ApiError(403, "FORBIDDEN", "Chỉ Marketing hoặc Quản trị hệ thống được xuất dữ liệu này.");
-    }
+    await requireApiUser();
 
     const url = new URL(request.url);
     const q = url.searchParams.get("q") ?? undefined;

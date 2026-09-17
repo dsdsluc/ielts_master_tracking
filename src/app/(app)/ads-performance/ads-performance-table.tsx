@@ -85,8 +85,8 @@ export function AdsPerformanceTable({ rows }: { rows: AdPerfRow[] }) {
               >
                 <TableCell className="px-5 py-3.5 font-mono text-xs text-foreground">{row.adId}</TableCell>
                 <TableCell className="min-w-40 px-4 text-sm text-foreground">
-                  <p className="max-w-56 truncate">{row.adName ?? "—"}</p>
-                  <p className="truncate text-xs text-muted-foreground">{row.fanpageName}</p>
+                  <p className="max-w-56 truncate" title={row.adName ?? "—"}>{row.adName ?? "—"}</p>
+                  <p className="truncate text-xs text-muted-foreground" title={row.fanpageName}>{row.fanpageName}</p>
                 </TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">{row.sourceName}</TableCell>
                 <TableCell className="px-4 text-center font-mono text-sm text-foreground">{row.totalLeads}</TableCell>

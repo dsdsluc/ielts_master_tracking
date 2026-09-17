@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SETTABLE_STATUSES, SPAM_REASON } from "@/lib/interactions/constants";
+import { EXTERNAL_LEAD_SOURCES, SETTABLE_STATUSES, SPAM_REASON } from "@/lib/interactions/constants";
 
 const noteSchema = z.string().trim().max(2000, "Ghi chú quá dài. Vui lòng rút gọn dưới 2.000 ký tự.");
 
@@ -24,6 +24,30 @@ export const updateLeadInfoSchema = leadInfoSchema.extend({
 });
 export type UpdateLeadInfoInput = z.infer<typeof updateLeadInfoSchema>;
 
+// Tạo liên hệ mới có 2 luồng riêng (xem new-lead-dialog.tsx):
+// - "facebook": y hệt leadInfoSchema hiện có (Link bắt buộc, SĐT tùy chọn).
+// - "external": không có Link — Tên/Nguồn/SĐT/Cơ sở đều bắt buộc, Sale tự
+//   chọn Nguồn (khác "facebook" luôn tự suy ra nguồn từ domain của Link).
+// Chỉ áp dụng cho TẠO MỚI — sửa liên hệ (updateLeadInfoSchema) không đổi.
+const facebookCreateLeadSchema = leadInfoSchema.extend({
+  channel: z.literal("facebook"),
+});
+
+const externalCreateLeadSchema = z.object({
+  channel: z.literal("external"),
+  customerName: z.string().trim().min(1, "Vui lòng nhập tên khách hàng."),
+  sourceName: z.enum(EXTERNAL_LEAD_SOURCES),
+  phoneRaw: z.string().trim().min(1, "Vui lòng nhập số điện thoại."),
+  assignedBranchCode: z.string().trim().min(1, "Vui lòng chọn cơ sở."),
+  customerObjectName: z.string().trim().optional(),
+  duplicateConfirmed: z.boolean().optional(),
+  duplicateReason: z.string().trim().optional(),
+});
+
+export const createLeadSchema = z.discriminatedUnion("channel", [facebookCreateLeadSchema, externalCreateLeadSchema]);
+export type CreateLeadInput = z.infer<typeof createLeadSchema>;
+export type ExternalCreateLeadInput = Extract<CreateLeadInput, { channel: "external" }>;
+
 export const listInteractionsQuerySchema = z.object({
   // "status" nhận 1 giá trị hoặc nhiều giá trị nối bằng dấu phẩy (vd. tab "Đã
   // đóng" cần gộp cả "Đủ tiêu chuẩn" và "Spam" trong 1 lần truy vấn phân trang).
@@ -34,10 +58,6 @@ export const listInteractionsQuerySchema = z.object({
   search: z.string().trim().max(200, "Từ khoá tìm kiếm quá dài.").optional(),
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
-});
-
-export const touchSchema = z.object({
-  note: noteSchema.optional(),
 });
 
 export const statusUpdateSchema = z

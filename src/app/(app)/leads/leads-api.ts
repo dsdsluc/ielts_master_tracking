@@ -4,6 +4,7 @@ import { apiFetch, apiRequest, ApiClientError } from "@/lib/api-client";
 import type {
   DuplicateConflict,
   InteractionDetail,
+  InteractionListItem,
   LeadStatus,
   PagedInteractions,
   QueueResponse,
@@ -30,15 +31,41 @@ export async function fetchInteractions(params: {
   return apiFetch<PagedInteractions>(`/api/interactions?${search.toString()}`, { cache: "no-store" });
 }
 
-export async function fetchInteractionDetail(id: string): Promise<InteractionDetail> {
-  return apiFetch<InteractionDetail>(`/api/interactions/${id}`, { cache: "no-store" });
+const OPEN_INTERACTIONS_CACHE_TTL_MS = 30_000;
+let openInteractionsCache: { userKey: string; items: InteractionListItem[]; expiresAt: number } | null = null;
+let openInteractionsRequest: { userKey: string; promise: Promise<InteractionListItem[]> } | null = null;
+
+export function getCachedOpenInteractions(userKey: string): InteractionListItem[] | null {
+  return openInteractionsCache?.userKey === userKey ? openInteractionsCache.items : null;
 }
 
-export async function logTouch(id: string, note?: string): Promise<void> {
-  await apiFetch(`/api/interactions/${id}/touches`, {
-    method: "POST",
-    body: JSON.stringify({ note }),
-  });
+/** Cache module-level sống xuyên các lần điều hướng SPA; request đồng thời được
+ * gộp lại để React Strict Mode hoặc nhiều consumer không gọi DB trùng nhau. */
+export async function fetchOpenInteractions(options: { userKey: string; force?: boolean }): Promise<InteractionListItem[]> {
+  const now = Date.now();
+  if (!options.force && openInteractionsCache?.userKey === options.userKey && openInteractionsCache.expiresAt > now) {
+    return openInteractionsCache.items;
+  }
+  if (openInteractionsRequest?.userKey === options.userKey) return openInteractionsRequest.promise;
+
+  const request = apiFetch<{ items: InteractionListItem[] }>("/api/interactions/open", { cache: "no-store" })
+    .then(({ items }) => {
+      openInteractionsCache = { userKey: options.userKey, items, expiresAt: Date.now() + OPEN_INTERACTIONS_CACHE_TTL_MS };
+      return items;
+    })
+    .finally(() => {
+      if (openInteractionsRequest?.promise === request) openInteractionsRequest = null;
+    });
+  openInteractionsRequest = { userKey: options.userKey, promise: request };
+  return request;
+}
+
+export function invalidateOpenInteractionsCache(): void {
+  openInteractionsCache = null;
+}
+
+export async function fetchInteractionDetail(id: string): Promise<InteractionDetail> {
+  return apiFetch<InteractionDetail>(`/api/interactions/${id}`, { cache: "no-store" });
 }
 
 export async function updateStatus(
@@ -110,7 +137,20 @@ export type LeadInfoPayload = {
   duplicateReason?: string;
 };
 
-export type CreateInteractionInput = LeadInfoPayload;
+// Tạo mới có 2 luồng (xem new-lead-dialog.tsx) — sửa lead vẫn dùng nguyên
+// LeadInfoPayload (chỉ luồng Facebook/theo Link, không đổi).
+export type CreateFacebookLeadInput = LeadInfoPayload & { channel: "facebook" };
+export type CreateExternalLeadInput = {
+  channel: "external";
+  customerName: string;
+  sourceName: string;
+  phoneRaw: string;
+  assignedBranchCode: string;
+  customerObjectName?: string;
+  duplicateConfirmed?: boolean;
+  duplicateReason?: string;
+};
+export type CreateInteractionInput = CreateFacebookLeadInput | CreateExternalLeadInput;
 
 export async function createInteraction(
   input: CreateInteractionInput

@@ -4,12 +4,9 @@
 // snapshot cố định trong mkt_page_reports, không tính lại nữa.
 import { prisma } from "@/lib/prisma";
 import { ROLES, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
-import { requireRole } from "@/lib/interactions/scope";
 import { logAction } from "@/lib/interactions/audit";
 import { ApiError } from "@/lib/interactions/errors";
 import type { CurrentUser } from "@/lib/auth/dal";
-
-const CAN_CLOSE_REPORT = [ROLES.MARKETING, ROLES.ADMIN] as const;
 
 export type PageReportRow = {
   fanpageName: string;
@@ -31,7 +28,6 @@ export function parseDayRange(dateStr: string): { dayStart: Date; dayEnd: Date }
 }
 
 function requireCanClose(actor: CurrentUser) {
-  requireRole(actor, CAN_CLOSE_REPORT);
   if (actor.role !== ROLES.ADMIN && !actor.canCloseMktReport) {
     throw new ApiError(403, "FORBIDDEN", "Bạn không có quyền chốt báo cáo Marketing — liên hệ Quản trị hệ thống để được cấp quyền.");
   }
@@ -127,7 +123,6 @@ export async function closeAllPageReports(actor: CurrentUser, dateStr: string) {
 }
 
 export async function reopenPageReport(actor: CurrentUser, dateStr: string, fanpageName: string) {
-  requireRole(actor, [ROLES.ADMIN]);
   const { dayStart } = parseDayRange(dateStr);
 
   await prisma.$transaction(async (tx) => {

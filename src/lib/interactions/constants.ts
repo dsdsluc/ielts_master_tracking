@@ -4,10 +4,9 @@
 
 export const ROLES = {
   MARKETING: "Marketing",
-  SALES: "Sale/Admin",
+  SALES: "Saler",
   LEADER: "Leader",
-  BOARD: "BGĐ",
-  ADMIN: "Quản trị hệ thống",
+  ADMIN: "Admin",
 } as const;
 
 export const STATUS = {
@@ -59,6 +58,14 @@ export const INTERACTION_TYPE = {
   SUSPECT_DUP: "Nghi trùng 24h",
 } as const;
 
+// Tab "Ngoài" ở form tạo liên hệ (không qua Link) — Nguồn Sale tự chọn (khác
+// tab Facebook, nguồn luôn tự suy ra từ domain của Link). Fanpage placeholder
+// dùng chung cho mọi liên hệ tạo từ tab này — chỉ để thỏa khóa ngoại bắt buộc
+// của Interaction.fanpageName, KHÔNG đại diện cho 1 fanpage thật (xem
+// resolveExternalLeadInfo() trong lead-info.ts, migration 20260916030000).
+export const EXTERNAL_LEAD_SOURCES = ["Zalo", "TikTok", "Giới thiệu", "Khác"] as const;
+export const EXTERNAL_LEAD_FANPAGE = "Ngoài kênh online";
+
 // Kết quả xử lý yêu cầu "Chăm sóc lại" — dùng để tách "chăm sóc thật" (có đổi
 // trạng thái) khỏi "bấm cho xong" (đóng thủ công không kèm hành động).
 export const FOLLOWUP_OUTCOME = {
@@ -67,6 +74,31 @@ export const FOLLOWUP_OUTCOME = {
 } as const;
 
 export type FollowupOutcome = (typeof FOLLOWUP_OUTCOME)[keyof typeof FOLLOWUP_OUTCOME];
+
+// Mã hành động dùng cho InteractionFieldLog (interaction_field_logs) khi dòng
+// đó KHÔNG phải sửa 1 field cụ thể — đặt trong đúng `fieldKey`, `fieldLabel`
+// tương ứng là nhãn hiển thị. Đây là "lịch sử của 1 liên hệ" (hiện trên trang
+// chi tiết của nó), khác với SYSTEM_LOG_ACTION (nhật ký audit toàn hệ thống ở
+// /logs) — 2 bảng phục vụ 2 mục đích khác nhau, không thay thế nhau.
+export const INTERACTION_ACTIVITY = {
+  TOUCH: "TOUCH",
+  STATUS_CHANGE: "STATUS_CHANGE",
+  FOLLOWUP_PUSH: "FOLLOWUP_PUSH",
+  FOLLOWUP_ASSIGN: "FOLLOWUP_ASSIGN",
+  FOLLOWUP_RESOLVED: "FOLLOWUP_RESOLVED",
+  REASSIGN: "REASSIGN",
+  SPAM_RESTORE: "SPAM_RESTORE",
+} as const;
+
+export const INTERACTION_ACTIVITY_LABEL: Record<(typeof INTERACTION_ACTIVITY)[keyof typeof INTERACTION_ACTIVITY], string> = {
+  TOUCH: "Chăm sóc",
+  STATUS_CHANGE: "Đổi trạng thái",
+  FOLLOWUP_PUSH: "Marketing gửi yêu cầu chăm sóc lại",
+  FOLLOWUP_ASSIGN: "Leader phân bổ yêu cầu cho Sale",
+  FOLLOWUP_RESOLVED: "Sale đánh dấu đã chăm sóc lại",
+  REASSIGN: "Điều chuyển người phụ trách",
+  SPAM_RESTORE: "Admin khôi phục từ Spam, gửi chăm sóc lại",
+};
 
 export const SYSTEM_LOG_ACTION = {
   CREATE_CONVERSATION: "CREATE_CONVERSATION",
@@ -89,21 +121,27 @@ export const SYSTEM_LOG_ACTION = {
   ASSIGN_STUDENT: "ASSIGN_STUDENT",
   UPDATE_STUDENT_STAGE: "UPDATE_STUDENT_STAGE",
   TRANSFER_STUDENT: "TRANSFER_STUDENT",
+  ASSIGN_CUSTOMER: "ASSIGN_CUSTOMER",
+  UPDATE_CUSTOMER_PROFILE: "UPDATE_CUSTOMER_PROFILE",
+  UPDATE_CUSTOMER_STAGE: "UPDATE_CUSTOMER_STAGE",
+  LOG_CUSTOMER_CARE: "LOG_CUSTOMER_CARE",
+  TRANSFER_CUSTOMER: "TRANSFER_CUSTOMER",
+  RESTORE_SPAM_TO_FOLLOWUP: "RESTORE_SPAM_TO_FOLLOWUP",
+  DELETE_SPAM_INTERACTION: "DELETE_SPAM_INTERACTION",
+  // Email chủ động (không do ai bấm gửi) — xem notifyLeadersNewQualifiedLead()/
+  // notifyMarketingLeadSpammed() (lib/interactions/mutations.ts) và 2 route
+  // /api/cron/* cho KPI/SLA. Tách hẳn khỏi UPDATE_RESULT/FLAG_SLA_BREACH vì
+  // đây là tag của EMAIL gửi ra, không phải hành động nghiệp vụ đã xảy ra.
+  NOTIFY_NEW_QUALIFIED_LEAD: "NOTIFY_NEW_QUALIFIED_LEAD",
+  NOTIFY_LEAD_SPAMMED: "NOTIFY_LEAD_SPAMMED",
+  KPI_REMINDER: "KPI_REMINDER",
+  SLA_BREACH_DIGEST: "SLA_BREACH_DIGEST",
 } as const;
 
-// Vai trò được phép thao tác — mirror requireRole_([...]) ở từng hàm gốc.
-export const CAN_CREATE_OR_EDIT_LEAD = [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] as const;
-export const CAN_PUSH_FOLLOWUP = [ROLES.MARKETING, ROLES.LEADER, ROLES.ADMIN] as const;
-export const CAN_REASSIGN = [ROLES.LEADER, ROLES.ADMIN] as const;
-export const IS_LEADER_LIKE = [ROLES.LEADER, ROLES.ADMIN] as const;
-// BGĐ chỉ xem báo cáo tổng hợp (xem canViewLead trong scope.ts) — không có mặt ở đây.
-export const CAN_VIEW_LEAD = [ROLES.SALES, ROLES.LEADER, ROLES.MARKETING, ROLES.ADMIN] as const;
-
-// Phễu tư vấn ghi danh học viên (Hướng A — tách khỏi STATUS của Interaction).
-// Đại diện cho MỐC XA NHẤT Sale đã đạt được; null (chưa gán giá trị) nghĩa là
-// chưa gọi lần nào. Không có "trạng thái rớt" riêng — dùng stageReason (trên
-// StudentProfile) để giải thích vì sao hồ sơ đang dừng ở 1 mốc bất kỳ.
-export const STUDENT_STAGE = {
+// Phễu tư vấn ghi danh (mốc xa nhất Sale đã đạt được với 1 Customer). null
+// (chưa gán giá trị) = chưa gọi lần nào. Không có "trạng thái rớt" riêng —
+// dùng Customer.stageReason để giải thích vì sao đang dừng ở 1 mốc bất kỳ.
+export const CUSTOMER_STAGE = {
   CALLED: "Đã gọi",
   INTERESTED: "Quan tâm",
   NOT_INTERESTED: "Không quan tâm",
@@ -114,5 +152,6 @@ export const STUDENT_STAGE = {
   ENROLLED: "Đã chốt",
 } as const;
 
-export const STUDENT_STAGE_VALUES = Object.values(STUDENT_STAGE);
-export type StudentStage = (typeof STUDENT_STAGE)[keyof typeof STUDENT_STAGE];
+export const CUSTOMER_STAGE_VALUES = Object.values(CUSTOMER_STAGE);
+export type CustomerStage = (typeof CUSTOMER_STAGE)[keyof typeof CUSTOMER_STAGE];
+

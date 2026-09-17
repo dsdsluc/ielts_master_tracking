@@ -21,7 +21,10 @@ export async function getSpamNoReplyMinAttempts(): Promise<number> {
   return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 3;
 }
 
-/** Số lần "Đánh dấu đã xử lý" chăm sóc lại tối đa trước khi tự động chuyển Spam — mặc định 3. */
+/** Ngưỡng cảnh báo số lần Marketing từng gửi yêu cầu "Chăm sóc lại" cho cùng 1
+ * liên hệ (followupResolvedCount, xem pushFollowup() trong mutations.ts) — chỉ
+ * dùng để hiển thị/lọc "Sắp chuyển Spam" ở /followup-inbox, không tự động đổi
+ * trạng thái. Mặc định 3. */
 export async function getMaxFollowupBeforeSpam(): Promise<number> {
   const raw = await getAppSetting("system", "MAX_FOLLOWUP_BEFORE_SPAM");
   const v = Number(raw);

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronRight, LoaderCircle, MessageCircleMore, Plus, TimerOff } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, LoaderCircle, MessageCircleMore, Search } from "lucide-react";
 import { StatusPill } from "@/components/status-pill";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { PaginationBar } from "@/components/pagination-bar";
 import {
   Table,
   TableBody,
@@ -12,9 +12,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/hooks/use-toast";
-import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import type { InteractionListItem } from "@/app/(app)/leads/types";
+
+export type LeadsSort = {
+  key: "customer" | "createdAt";
+  direction: "asc" | "desc";
+};
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("vi-VN", {
@@ -30,17 +33,13 @@ export function LeadRow({
   onOpen,
   isSample = false,
   currentUserEmail,
-  picking,
-  onPick,
 }: {
   item: InteractionListItem;
   onOpen: (id: string) => void;
   isSample?: boolean;
   currentUserEmail: string;
-  picking: boolean;
-  onPick: (item: InteractionListItem) => void;
 }) {
-  const isMine = item.workspaceClaimantEmails.includes(currentUserEmail) || item.consultantEmail === currentUserEmail;
+  const isMine = item.consultantEmail === currentUserEmail;
 
   function handleActivate() {
     if (isSample) return;
@@ -65,45 +64,22 @@ export function LeadRow({
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-status-received-bg text-status-received transition-colors group-hover:bg-status-received group-hover:text-white">
             <MessageCircleMore className="size-3.5" />
           </span>
-          <span className="min-w-0 max-w-48 flex-1 truncate font-medium text-foreground">{item.customerName}</span>
-          {item.slaOverdue && (
-            <span className="flex shrink-0 items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-condensed text-[9px] font-semibold tracking-wide text-destructive uppercase">
-              <TimerOff className="size-3" /> Quá hạn SLA
-            </span>
-          )}
+          <span className="min-w-0 max-w-48 flex-1 truncate font-medium text-foreground" title={item.customerName}>{item.customerName}</span>
         </div>
-        <p className="mt-1 truncate pl-10 text-xs text-muted-foreground sm:hidden">
+        <p className="mt-1 truncate pl-10 text-xs text-muted-foreground sm:hidden" title={`${item.fanpageName} · ${formatDate(item.createdLeadAt)}`}>
           {item.fanpageName} · {formatDate(item.createdLeadAt)}
         </p>
       </TableCell>
       <TableCell className="hidden max-w-56 px-4 text-muted-foreground sm:table-cell">
-        <p className="truncate font-medium text-foreground/80">{item.fanpageName}</p>
-        <p className="mt-0.5 truncate text-xs">{item.sourceName}</p>
+        <p className="truncate font-medium text-foreground/80" title={item.fanpageName}>{item.fanpageName}</p>
+        <p className="mt-0.5 truncate text-xs" title={item.sourceName}>{item.sourceName}</p>
       </TableCell>
       <TableCell className="hidden px-4 text-muted-foreground lg:table-cell" onClick={(e) => e.stopPropagation()}>
         {isMine ? (
           <p className="max-w-32 truncate font-medium text-status-received">Bạn</p>
-        ) : isSample ? (
-          item.consultantName ? <p className="max-w-32 truncate">{item.consultantName}</p> : <span className="text-muted-foreground">Chưa gán</span>
         ) : (
-          <div className="flex items-center gap-1.5">
-            {item.consultantName && <p className="max-w-20 truncate text-xs">{item.consultantName}</p>}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 shrink-0 rounded-full border-status-received/30 px-2.5 text-xs text-status-received hover:bg-status-received-bg hover:text-status-received"
-              onClick={() => onPick(item)}
-              disabled={picking}
-            >
-              {picking ? <LoaderCircle className="size-3 animate-spin" /> : <Plus className="size-3" />}
-              Nhận
-            </Button>
-          </div>
+          item.consultantName ? <p className="max-w-32 truncate" title={item.consultantName}>{item.consultantName}</p> : <span className="text-muted-foreground">Chưa gán</span>
         )}
-      </TableCell>
-      <TableCell className="hidden px-4 font-mono text-xs text-muted-foreground md:table-cell">
-        {item.touchCount} lần
       </TableCell>
       <TableCell className="hidden px-4 text-xs text-muted-foreground xl:table-cell">
         {formatDate(item.createdLeadAt)}
@@ -118,86 +94,128 @@ export function LeadRow({
 
 export function LeadsTable({
   items,
+  totalItems,
   onOpen,
   isSample = false,
   currentUserEmail,
-  currentUserName,
+  search,
+  onSearchChange,
+  sort,
+  onSortChange,
+  refreshing = false,
+  pagination,
 }: {
   items: InteractionListItem[];
+  totalItems: number;
   onOpen: (id: string) => void;
   isSample?: boolean;
   currentUserEmail: string;
-  currentUserName: string;
+  search?: string;
+  onSearchChange?: (value: string) => void;
+  sort: LeadsSort;
+  onSortChange: (sort: LeadsSort) => void;
+  refreshing?: boolean;
+  pagination?: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void };
 }) {
-  const { toast } = useToast();
-  const [overrides, setOverrides] = useState<Record<string, { email: string; name: string }>>({});
-  const [pickingId, setPickingId] = useState<string | null>(null);
-
-  async function handlePick(item: InteractionListItem) {
-    setPickingId(item.interactionId);
-    try {
-      const data = await apiFetch<{ conflicts?: string[] }>("/api/workspace/claim", {
-        method: "POST",
-        body: JSON.stringify({ interactionIds: [item.interactionId] }),
-      });
-      if (data.conflicts?.length) {
-        toast.error(`Không thể thêm ${item.customerName} vào Workspace — liên hệ đã đóng hoặc bạn không có quyền truy cập.`);
-      } else {
-        setOverrides((prev) => ({ ...prev, [item.interactionId]: { email: currentUserEmail, name: currentUserName } }));
-        toast.success(`Đã nhận ${item.customerName} vào Workspace của bạn.`);
-      }
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
-    } finally {
-      setPickingId(null);
-    }
-  }
-
   return (
     <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
-      <div className="flex items-center justify-between border-b border-border/70 bg-card px-5 py-3">
-        <p className="text-xs text-muted-foreground"><strong className="font-mono text-foreground">{items.length}</strong> liên hệ hiển thị</p>
-        {isSample && <span className="rounded-full border border-status-received/20 bg-status-received-bg px-2.5 py-1 font-condensed text-[9px] font-semibold tracking-wider text-status-received uppercase">Dữ liệu mẫu</span>}
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border/70 bg-card px-5 py-3">
+        <div className="flex shrink-0 items-center gap-2">
+          <p className="text-xs whitespace-nowrap text-muted-foreground"><strong className="font-mono text-foreground">{totalItems}</strong> liên hệ</p>
+          {isSample && <span className="rounded-full border border-status-received/20 bg-status-received-bg px-2.5 py-1 font-condensed text-[9px] font-semibold tracking-wider text-status-received uppercase">Dữ liệu mẫu</span>}
+          {refreshing && <LoaderCircle className="size-3 animate-spin text-muted-foreground" aria-label="Đang đồng bộ dữ liệu" />}
+        </div>
+        {onSearchChange ? (
+          <div className="relative mx-auto w-full max-w-sm">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search ?? ""}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Tìm tên, SĐT, Fanpage, tư vấn viên…"
+              className="h-9 rounded-lg bg-background pr-3 pl-8 text-sm"
+            />
+          </div>
+        ) : (
+          <span />
+        )}
+        <div className="shrink-0 justify-self-end">
+          {pagination && (
+            <PaginationBar
+              compact
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              onPageChange={pagination.onPageChange}
+            />
+          )}
+        </div>
       </div>
       <Table className="sm:min-w-[720px]">
         <TableHeader className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-md">
           <TableRow className="hover:bg-transparent">
-            <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
+            <SortableHead
+              className="px-5"
+              label="Khách hàng"
+              active={sort.key === "customer"}
+              direction={sort.key === "customer" ? sort.direction : undefined}
+              onClick={() => onSortChange(sort.key === "customer" ? { key: "createdAt", direction: "desc" } : { key: "customer", direction: "asc" })}
+            />
             <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">Nguồn / Fanpage</TableHead>
             <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Tư vấn viên</TableHead>
-            <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Chăm sóc</TableHead>
-            <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase xl:table-cell">Ngày tạo</TableHead>
+            <SortableHead
+              className="hidden px-4 xl:table-cell"
+              label="Ngày tạo"
+              active={sort.key === "createdAt"}
+              direction={sort.key === "createdAt" ? sort.direction : undefined}
+              onClick={() => onSortChange({ key: "createdAt", direction: sort.key === "createdAt" && sort.direction === "desc" ? "asc" : "desc" })}
+            />
             <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Trạng thái</TableHead>
             <TableHead className="w-10"><span className="sr-only">Mở</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
+          {items.length === 0 && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={6} className="h-28 text-center text-sm text-muted-foreground">
+                Không có liên hệ phù hợp. Bạn có thể sửa từ khóa hoặc xóa bộ lọc.
+              </TableCell>
+            </TableRow>
+          )}
           {items.map((item) => {
-            const override = overrides[item.interactionId];
-            const displayItem = override
-              ? {
-                  ...item,
-                  consultantEmail: override.email,
-                  consultantName: override.name,
-                  workspaceClaimantEmails: item.workspaceClaimantEmails.includes(override.email)
-                    ? item.workspaceClaimantEmails
-                    : [...item.workspaceClaimantEmails, override.email],
-                }
-              : item;
             return (
               <LeadRow
                 key={item.interactionId}
-                item={displayItem}
+                item={item}
                 onOpen={onOpen}
                 isSample={isSample}
                 currentUserEmail={currentUserEmail}
-                picking={pickingId === item.interactionId}
-                onPick={handlePick}
               />
             );
           })}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+function SortableHead({ label, active, direction, onClick, className }: {
+  label: string;
+  active: boolean;
+  direction?: "asc" | "desc";
+  onClick: () => void;
+  className?: string;
+}) {
+  const Icon = !active ? ArrowUpDown : direction === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead className={className} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center gap-1 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        {label}
+        <Icon className="size-3" aria-hidden="true" />
+      </button>
+    </TableHead>
   );
 }

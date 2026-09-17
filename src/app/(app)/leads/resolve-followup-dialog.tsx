@@ -59,12 +59,14 @@ export function ResolveFollowupDialog({
               <Sparkles className="size-5 text-gold" />
             </span>
             <p className="font-condensed text-[10px] tracking-[0.2em] text-gold uppercase">Chăm sóc lại</p>
-            <DialogTitle className="text-lg">Đánh dấu đã xử lý</DialogTitle>
-            <DialogDescription>Ghi lại đã xử lý như thế nào — nội dung này sẽ lưu vào Lịch sử chăm sóc của liên hệ.</DialogDescription>
+            <DialogTitle className="text-lg">Đánh dấu đã chăm sóc lại</DialogTitle>
+            <DialogDescription>
+              Ghi lại đã chăm sóc như thế nào — liên hệ sẽ chuyển sang trạng thái Tiếp nhận và nội dung này lưu vào Lịch sử chăm sóc.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="resolve-followup-note">Đã xử lý như thế nào</Label>
+            <Label htmlFor="resolve-followup-note">Đã chăm sóc như thế nào</Label>
             <Textarea
               id="resolve-followup-note"
               value={note}
@@ -83,7 +85,7 @@ export function ResolveFollowupDialog({
             </Button>
             <Button type="submit" className="glossy shadow-bubble rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary/90" disabled={pending || !note.trim()}>
               {pending && <LoaderCircle className="animate-spin" />}
-              Xác nhận đã xử lý
+              Xác nhận đã chăm sóc lại
             </Button>
           </DialogFooter>
         </form>

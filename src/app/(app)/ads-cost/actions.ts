@@ -4,17 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
 import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
-/** Chặn Server Action nếu người gọi không phải Marketing/Admin — trang có thể
- * ẩn nav với vai trò khác, nhưng action ghi dữ liệu vẫn phải tự kiểm tra. */
-async function requireAdsCostAccess() {
-  const user = await getCurrentUser();
-  if (user.role !== ROLES.MARKETING && user.role !== ROLES.ADMIN) {
-    throw new Error("Chỉ Marketing hoặc Quản trị hệ thống được thực hiện chức năng này.");
-  }
-  return user;
+function requireAdsCostAccess() {
+  return getCurrentUser();
 }
 
 const NONE = "none";

@@ -3,8 +3,8 @@
 // đã xem đầy đủ + tự chỉnh (Tên/SĐT/Link chuẩn/Trạng thái — không tự suy luận
 // ngầm nữa), rồi xoá các bản ghi thừa.
 import { prisma } from "@/lib/prisma";
-import { CAN_CREATE_OR_EDIT_LEAD, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
-import { requireRole, canAccessBranch } from "@/lib/interactions/scope";
+import { STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { canAccessBranch } from "@/lib/interactions/scope";
 import { logAction } from "@/lib/interactions/audit";
 import { ApiError } from "@/lib/interactions/errors";
 import type { CurrentUser } from "@/lib/auth/dal";
@@ -24,8 +24,6 @@ export async function mergeCustomers(
   removeCustomerKeys: string[],
   updates: MergeCustomerUpdates
 ) {
-  requireRole(actor, CAN_CREATE_OR_EDIT_LEAD);
-
   const removeKeys = [...new Set(removeCustomerKeys)].filter((k) => k !== keepCustomerKey);
   if (removeKeys.length === 0) {
     throw new ApiError(422, "VALIDATION_ERROR", "Không có bản ghi nào để gộp.");

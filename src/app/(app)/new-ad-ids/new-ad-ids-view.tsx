@@ -45,7 +45,9 @@ function toEditable(row: NewAdIdRow): EditableRow {
     branchCode: row.suggestedBranchCode,
     periodStart: row.firstSeenAt.slice(0, 10),
     periodEnd: todayStr(),
-    costVnd: "",
+    // Mặc định 0 — nhiều quảng cáo không mất phí (organic, đổi trả nội bộ...),
+    // Marketing không phải tự gõ "0" cho từng dòng mới có thể lưu được.
+    costVnd: "0",
   };
 }
 

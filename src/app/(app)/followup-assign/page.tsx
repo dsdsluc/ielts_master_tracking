@@ -1,12 +1,11 @@
 import { PageHeader } from "@/components/page-header";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_REASSIGN } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { prisma } from "@/lib/prisma";
 import { FollowupAssignView, type FollowupAssignItem } from "@/app/(app)/followup-assign/followup-assign-view";
 
 export default async function FollowupAssignPage() {
-  const user = await requireRole(...CAN_REASSIGN);
+  const user = await getCurrentUser();
 
   const [branches, rows] = await Promise.all([
     prisma.branch.findMany({ select: { code: true, name: true } }),

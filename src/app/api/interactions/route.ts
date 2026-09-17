@@ -3,7 +3,7 @@ import { requireApiUser } from "@/lib/auth/api";
 import { ApiError, errorResponse } from "@/lib/interactions/errors";
 import { listInteractions } from "@/lib/interactions/queries";
 import { createInteraction } from "@/lib/interactions/mutations";
-import { leadInfoSchema, listInteractionsQuerySchema } from "@/lib/interactions/validation";
+import { createLeadSchema, listInteractionsQuerySchema } from "@/lib/interactions/validation";
 import { buildDuplicateConflictResponse, type DuplicateInfo } from "@/lib/interactions/duplicate";
 
 export async function GET(request: NextRequest) {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireApiUser();
-    const body = leadInfoSchema.parse(await request.json());
+    const body = createLeadSchema.parse(await request.json());
 
     const { lead } = await createInteraction(actor, body);
     return Response.json({ interactionId: lead.interactionId }, { status: 201 });

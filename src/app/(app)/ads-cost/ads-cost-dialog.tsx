@@ -51,7 +51,9 @@ const EMPTY: AdsCostFormValues = {
   sourceName: "none",
   fanpageName: "none",
   branchCode: "none",
-  costVnd: "",
+  // Mặc định 0 — nhiều quảng cáo không mất phí, không bắt Marketing phải tự
+  // gõ "0" mới submit được (input vẫn required nên rỗng sẽ chặn submit).
+  costVnd: "0",
   note: "",
 };
 
@@ -73,6 +75,8 @@ export function AdsCostDialog({
   mode,
   row,
   defaultAdId,
+  initialValues,
+  triggerLabel,
   sourceOptions,
   fanpageOptions,
   branchOptions,
@@ -82,13 +86,23 @@ export function AdsCostDialog({
   // Gợi ý sẵn Ad ID khi tạo mới từ 1 dòng đã biết trước (vd. đăng ký Ad ID mới
   // phát hiện) — người dùng vẫn sửa được nếu cần, không khoá field.
   defaultAdId?: string;
+  // Gợi ý sẵn các field còn lại (nguồn/fanpage/cơ sở/kỳ báo cáo...) khi biết
+  // trước từ ngữ cảnh gọi (vd. /admin/new-ad-ids suy ra từ chính liên hệ tạo
+  // ra Ad ID này) — chỉ áp dụng cho mode "create", vẫn sửa được như bình thường.
+  initialValues?: Partial<AdsCostFormValues>;
+  // Nhãn nút mở dialog khi mode "create" — mặc định "Thêm chi phí" (trang
+  // /ads-cost), đổi lại cho khớp ngữ cảnh khi tái dùng ở nơi khác (vd. "Điền
+  // thông tin" ở /admin/new-ad-ids).
+  triggerLabel?: string;
   sourceOptions: string[];
   fanpageOptions: string[];
   branchOptions: { code: string; name: string }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<AdsCostFormValues>(row ? toFormValues(row) : { ...EMPTY, adId: defaultAdId ?? "" });
+  const [form, setForm] = useState<AdsCostFormValues>(
+    row ? toFormValues(row) : { ...EMPTY, adId: defaultAdId ?? "", ...initialValues }
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,7 +111,7 @@ export function AdsCostDialog({
   }
 
   function reset() {
-    setForm(row ? toFormValues(row) : { ...EMPTY, adId: defaultAdId ?? "" });
+    setForm(row ? toFormValues(row) : { ...EMPTY, adId: defaultAdId ?? "", ...initialValues });
     setError(null);
   }
 
@@ -141,7 +155,7 @@ export function AdsCostDialog({
       >
         {mode === "create" ? (
           <>
-            <Plus className="size-4" /> Thêm chi phí
+            <Plus className="size-4" /> {triggerLabel ?? "Thêm chi phí"}
           </>
         ) : (
           <Pencil className="size-3.5" />

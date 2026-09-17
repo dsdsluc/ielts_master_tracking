@@ -1,4 +1,4 @@
-export function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+export function InfoRow({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
       <span className="text-muted-foreground">{label}</span>

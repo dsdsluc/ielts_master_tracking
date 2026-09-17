@@ -1,83 +1,60 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import {
-  ArrowLeft,
-  ExternalLink,
-  History,
-  LoaderCircle,
-  Mail,
-  MessageCircleMore,
-  PhoneCall,
-  Save,
-  Search,
-  Sparkles,
-  TriangleAlert,
-} from "lucide-react";
-import {
-  Autocomplete,
-  AutocompleteClear,
-  AutocompleteEmpty,
-  AutocompleteIcon,
-  AutocompleteInput,
-  AutocompleteInputGroup,
-  AutocompleteItem,
-  AutocompleteList,
-  AutocompletePopup,
-  AutocompletePortal,
-  AutocompletePositioner,
-} from "@/components/ui/autocomplete";
+import { cloneElement, useState, type ReactElement } from "react";
+import { ArrowLeft, History, LoaderCircle, Mail, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FormMessage } from "@/components/form-message";
 import { StatusPill } from "@/components/status-pill";
-import { InfoRow } from "@/app/(app)/leads/info-row";
-import { CopyButton } from "@/components/copy-button";
-import { TouchLogDialog } from "@/app/(app)/leads/touch-log-dialog";
+import { ContactInfoCard, FIELD_LABELS, fieldKind, getFieldValue } from "@/app/(app)/leads/contact-info-card";
+import { OtherInfoCard } from "@/app/(app)/leads/other-info-card";
+import { EditFieldDialog } from "@/app/(app)/leads/edit-field-dialog";
+import { useContactInfoEditor } from "@/app/(app)/leads/use-contact-info-editor";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { useInteractionDetail } from "@/app/(app)/leads/use-interaction-detail";
-import { detectSourceName, type LeadFormOptions } from "@/app/(app)/leads/lead-form-options";
-import { updateInteractionInfo } from "@/app/(app)/leads/leads-api";
-import type { DuplicateConflict } from "@/app/(app)/leads/types";
+import type { LeadFormOptions } from "@/app/(app)/leads/lead-form-options";
 import { QualifyDialog } from "@/app/(app)/leads/qualify-dialog";
 import { SpamDialog } from "@/app/(app)/leads/spam-dialog";
 import { ResolveFollowupDialog } from "@/app/(app)/leads/resolve-followup-dialog";
-import { useToast } from "@/hooks/use-toast";
 
-type EditForm = {
-  rawLink: string;
-  customerName: string;
-  fanpageName: string;
-  adId: string;
-  customerObjectName: string;
-  assignedBranchCode: string;
-  conversationLink: string;
-};
-
-const EMPTY_FORM: EditForm = {
-  rawLink: "",
-  customerName: "",
-  fanpageName: "",
-  adId: "",
-  customerObjectName: "",
-  assignedBranchCode: "",
-  conversationLink: "",
-};
+/** Bọc 1 action button đã bị khoá (hết áp dụng theo trạng thái hiện tại) bằng
+ * Tooltip giải thích lý do — KHÔNG đổi kích thước/layout: không bọc thêm span,
+ * không đổi className của Button. Cố tình không dùng `disabled` thật (Button
+ * disabled có `pointer-events-none`, xem button.tsx, nên sẽ không bao giờ
+ * hover tới được để hiện tooltip) — thay vào đó tắt hẳn onClick + đánh dấu
+ * aria-disabled ngay trên chính Button qua cloneElement, giữ nguyên mọi class. */
+function LockableAction({
+  locked,
+  reason,
+  children,
+}: {
+  locked: boolean;
+  reason: string;
+  children: ReactElement<{ className?: string; onClick?: () => void }>;
+}) {
+  if (!locked) return children;
+  const lockedChild = cloneElement(children, {
+    onClick: undefined,
+    "aria-disabled": true,
+    className: `${children.props.className ?? ""} cursor-not-allowed opacity-50`,
+  } as Partial<{ className?: string; onClick?: () => void }>);
+  return (
+    <Tooltip>
+      <TooltipTrigger render={lockedChild} />
+      <TooltipContent>{reason}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function LeadWorkspace({ interactionId, options }: { interactionId: string; options: LeadFormOptions }) {
-  const { toast } = useToast();
   const {
     detail,
     loading,
     error,
     touchPending,
     followupPending,
-    handleLogTouch,
     handleResolveFollowup,
     handleMoveToInProgress,
     refresh,
@@ -86,92 +63,33 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
   const [spamOpen, setSpamOpen] = useState(false);
   const [resolveFollowupOpen, setResolveFollowupOpen] = useState(false);
 
-  const [form, setForm] = useState<EditForm>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveDuplicate, setSaveDuplicate] = useState<DuplicateConflict["duplicate"] | null>(null);
-  const [justSaved, setJustSaved] = useState(false);
+  const {
+    editingField,
+    editDialogOpen,
+    setEditDialogOpen,
+    detectedSourceName,
+    openEditDialog,
+    fieldSelectOptions,
+    handleFieldSave,
+  } = useContactInfoEditor(detail, options, refresh);
 
-  useEffect(() => {
-    // Chỉ đồng bộ form khi CHUYỂN sang 1 liên hệ khác (id đổi) — không phải mỗi
-    // lần detail refresh sau 1 hành động (Ghi nhận/Tiếp nhận...), để không xoá
-    // mất nội dung Sale đang gõ dở trong form chỉnh sửa.
-    if (detail) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setForm({
-        rawLink: detail.rawLink,
-        customerName: detail.customerName,
-        fanpageName: detail.fanpageName,
-        adId: detail.adId ?? "",
-        customerObjectName: detail.customerObjectName,
-        assignedBranchCode: detail.assignedBranchCode,
-        conversationLink: detail.conversationLink ?? "",
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail?.interactionId]);
-
-  function update<K extends keyof EditForm>(key: K, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    setJustSaved(false);
-  }
-
-  const detectedSourceName = useMemo(() => detectSourceName(form.rawLink, options.sourceDomains), [form.rawLink, options.sourceDomains]);
-  const filteredFanpages = useMemo(
-    () => (detectedSourceName ? options.fanpages.filter((f) => f.defaultSourceName === detectedSourceName) : options.fanpages),
-    [detectedSourceName, options.fanpages]
-  );
-  const adItems = useMemo(
-    () => options.adSuggestions.map((a) => ({ value: a.adId, label: a.adId, adName: a.adName })),
-    [options.adSuggestions]
-  );
-
-  useEffect(() => {
-    if (form.fanpageName && !filteredFanpages.some((f) => f.name === form.fanpageName)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      update("fanpageName", "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredFanpages]);
-
-  async function handleSave(duplicateReason?: string) {
-    if (!detail) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const result = await updateInteractionInfo(detail.interactionId, {
-        rawLink: form.rawLink,
-        customerName: form.customerName,
-        fanpageName: form.fanpageName,
-        adId: form.adId || undefined,
-        customerObjectName: form.customerObjectName,
-        assignedBranchCode: form.assignedBranchCode,
-        conversationLink: form.conversationLink || undefined,
-        duplicateConfirmed: duplicateReason ? true : undefined,
-        duplicateReason,
-        expectedVersion: detail.version,
-      });
-
-      if ("status" in result && result.status === 409) {
-        setSaveDuplicate(result.duplicate);
-        return;
-      }
-
-      setSaveDuplicate(null);
-      setJustSaved(true);
-      toast.success("Đã lưu thay đổi.");
-      refresh();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Không lưu được thay đổi.";
-      setSaveError(message);
-      toast.error(message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const isOpenStatus = detail?.status === "Chờ" || detail?.status === "Tiếp nhận";
   const canEdit = detail?.permissions.canEditInfo ?? false;
+
+  // Mỗi action chỉ áp dụng đúng 1 lần theo vòng đời trạng thái — bấm xong thì
+  // khoá lại, tránh gây hiểu lầm là bấm được nữa/nhấn lại vô hại.
+  const isWaiting = detail?.status === "Chờ";
+  const isClosed = detail?.status === "Đủ tiêu chuẩn" || detail?.status === "Spam";
+  const moveToProcessingLocked = !isWaiting;
+  const moveToProcessingReason = isClosed ? "Liên hệ đã đóng, không thể chuyển Tiếp nhận." : "Đã chuyển sang Tiếp nhận.";
+  const missingConversationLink = !detail?.conversationLink;
+  const spamLocked = isClosed || missingConversationLink;
+  const spamReason = isClosed
+    ? detail?.status === "Spam"
+      ? "Đã đánh dấu Spam."
+      : "Liên hệ đã Đủ tiêu chuẩn, không thể chuyển Spam."
+    : "Chưa có link cuộc hội thoại — không thể đánh dấu Spam.";
+  const qualifyLocked = isClosed;
+  const qualifyReason = detail?.status === "Đủ tiêu chuẩn" ? "Đã đánh dấu Đủ tiêu chuẩn." : "Liên hệ đã Spam, không thể chuyển Đủ tiêu chuẩn.";
 
   return (
     <>
@@ -220,191 +138,12 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                   disabled={followupPending}
                 >
                   {followupPending && <LoaderCircle className="animate-spin" />}
-                  Đánh dấu đã xử lý
+                  Đánh dấu đã chăm sóc lại
                 </Button>
               </div>
             )}
 
-            <div className="shadow-bubble rounded-3xl border border-border bg-card p-6 sm:p-8 lg:p-10">
-              <div className="mb-7 flex items-center justify-between gap-2">
-                <h2 className="font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Thông tin liên hệ</h2>
-                {!canEdit && <span className="text-xs text-muted-foreground">Chỉ xem — không thể chỉnh sửa hội thoại này</span>}
-              </div>
-
-              {canEdit ? (
-                <div className="flex flex-col gap-8">
-                  <div className="flex flex-col gap-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="edit-rawLink" className="text-base">Link khách hàng</Label>
-                      {form.rawLink.trim() &&
-                        (detectedSourceName ? (
-                          <span className="rounded-full bg-status-received-bg px-2 py-0.5 font-condensed text-[10px] font-semibold tracking-wide text-status-received uppercase">
-                            Nguồn: {detectedSourceName}
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 font-condensed text-[10px] font-semibold tracking-wide text-destructive uppercase">
-                            <TriangleAlert className="size-3" /> Chưa nhận diện được nguồn
-                          </span>
-                        ))}
-                    </div>
-                    <Input id="edit-rawLink" value={form.rawLink} onChange={(e) => update("rawLink", e.target.value)} className="h-12 rounded-xl text-base" />
-                  </div>
-
-                  <div className="grid gap-6 sm:grid-cols-2">
-                    <div className="flex flex-col gap-2.5">
-                      <Label htmlFor="edit-customerName" className="text-base">Tên khách</Label>
-                      <Input id="edit-customerName" value={form.customerName} onChange={(e) => update("customerName", e.target.value)} className="h-12 rounded-xl text-base" />
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      <Label htmlFor="edit-adId" className="text-base">Ad ID (tuỳ chọn)</Label>
-                      <Autocomplete
-                        items={adItems}
-                        value={form.adId}
-                        onValueChange={(v) => update("adId", v)}
-                        itemToStringValue={(item) => item.value}
-                        filter={(item, query) => {
-                          const q = query.trim().toLowerCase();
-                          if (!q) return true;
-                          return item.value.toLowerCase().includes(q) || item.adName.toLowerCase().includes(q);
-                        }}
-                        openOnInputClick
-                      >
-                        <AutocompleteInputGroup className="h-12">
-                          <AutocompleteIcon>
-                            <Search className="size-4" />
-                          </AutocompleteIcon>
-                          <AutocompleteInput id="edit-adId" placeholder="Dán hoặc tìm Ad ID / tên quảng cáo…" className="text-base" />
-                          <AutocompleteClear />
-                        </AutocompleteInputGroup>
-                        <AutocompletePortal>
-                          <AutocompletePositioner>
-                            <AutocompletePopup>
-                              <AutocompleteEmpty>
-                                Chưa có Ad ID này trong danh sách — có thể quảng cáo chưa được đồng bộ, vẫn nhập/dán tay được.
-                              </AutocompleteEmpty>
-                              <AutocompleteList>
-                                {(item: { value: string; label: string; adName: string }) => (
-                                  <AutocompleteItem key={item.value} value={item}>
-                                    <span className="truncate font-mono text-xs text-foreground">{item.value}</span>
-                                    <span className="truncate text-xs text-muted-foreground">{item.adName}</span>
-                                  </AutocompleteItem>
-                                )}
-                              </AutocompleteList>
-                            </AutocompletePopup>
-                          </AutocompletePositioner>
-                        </AutocompletePortal>
-                      </Autocomplete>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-6 sm:grid-cols-2">
-                    <div className="flex flex-col gap-2.5">
-                      <Label className="text-base">Fanpage</Label>
-                      <Select value={form.fanpageName} onValueChange={(v) => update("fanpageName", v ?? "")}>
-                        <SelectTrigger className="h-12 w-full rounded-xl text-base">
-                          <SelectValue placeholder="Chọn fanpage" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {filteredFanpages.map((f) => (
-                            <SelectItem key={f.name} value={f.name}>
-                              {f.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      <Label className="text-base">Đối tượng</Label>
-                      <Select value={form.customerObjectName} onValueChange={(v) => update("customerObjectName", v ?? "")}>
-                        <SelectTrigger className="h-12 w-full rounded-xl text-base">
-                          <SelectValue placeholder="Chọn đối tượng" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {options.objects.map((o) => (
-                            <SelectItem key={o} value={o}>
-                              {o}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      <Label className="text-base">Cơ sở phụ trách</Label>
-                      <Select value={form.assignedBranchCode} onValueChange={(v) => update("assignedBranchCode", v ?? "")}>
-                        <SelectTrigger className="h-12 w-full rounded-xl text-base">
-                          <SelectValue placeholder="Chọn cơ sở" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {options.branches.map((b) => (
-                            <SelectItem key={b.code} value={b.code}>
-                              {b.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2.5">
-                    <Label htmlFor="edit-conversationLink" className="text-base">Link hội thoại (tuỳ chọn)</Label>
-                    <Input id="edit-conversationLink" value={form.conversationLink} onChange={(e) => update("conversationLink", e.target.value)} className="h-12 rounded-xl text-base" />
-                  </div>
-
-                  {saveDuplicate && (
-                    <Alert variant="destructive">
-                      <AlertDescription>
-                        Nghi trùng với liên hệ <strong className="text-foreground">{saveDuplicate.customerName}</strong> tạo lúc{" "}
-                        {new Date(saveDuplicate.createdLeadAt).toLocaleString("vi-VN")}
-                        {saveDuplicate.assignedSaleName ? ` (${saveDuplicate.assignedSaleName})` : ""}. Vẫn muốn lưu?
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  {saveError && <FormMessage kind="error">{saveError}</FormMessage>}
-
-                  <div className="flex items-center gap-3 pt-2">
-                    {saveDuplicate ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="glossy h-11 rounded-full border-gold/40 bg-accent px-6 text-base text-accent-foreground hover:bg-accent/80"
-                        disabled={saving}
-                        onClick={() => handleSave("Sale xác nhận không trùng, vẫn lưu thay đổi")}
-                      >
-                        {saving && <LoaderCircle className="animate-spin" />}
-                        Vẫn lưu thay đổi
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        className="glossy shadow-bubble h-11 rounded-full bg-primary px-6 text-base text-primary-foreground hover:bg-primary/90"
-                        disabled={saving}
-                        onClick={() => handleSave()}
-                      >
-                        {saving ? <LoaderCircle className="animate-spin" /> : <Save className="size-4" />}
-                        Lưu thay đổi
-                      </Button>
-                    )}
-                    {justSaved && !saveDuplicate && <span className="text-xs text-status-qualified">Đã lưu.</span>}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col">
-                  <InfoRow
-                    label="Link khách hàng"
-                    value={
-                      <a className="underline underline-offset-2" href={detail.canonicalLink} target="_blank" rel="noreferrer">
-                        {detail.rawLink}
-                      </a>
-                    }
-                  />
-                  <InfoRow label="Tên khách" value={detail.customerName} />
-                  <InfoRow label="Fanpage" value={detail.fanpageName} />
-                  <InfoRow label="Ad ID" value={detail.adId ?? "Chưa có"} />
-                  <InfoRow label="Đối tượng" value={detail.customerObjectName} />
-                  <InfoRow label="Cơ sở phụ trách" value={detail.assignedBranchCode} />
-                </div>
-              )}
-            </div>
+            <ContactInfoCard detail={detail} canEdit={canEdit} detectedSourceName={detectedSourceName} onEdit={openEditDialog} />
 
             {(detail.touchLog.length > 0 || detail.customerHistory.length > 0) && (
               <div className="rounded-2xl border border-border bg-card p-5">
@@ -446,6 +185,30 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
               </div>
             )}
 
+            {detail.fieldChangeLog.length > 0 && (
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <p className="mb-2 flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  <History className="size-3.5" /> Lịch sử chỉnh sửa thông tin
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  {detail.fieldChangeLog.map((entry, i) => (
+                    <div key={`${entry.changedAt}-${i}`} className="flex items-start justify-between gap-3 text-sm">
+                      <span className="text-foreground">
+                        <strong className="font-medium">{entry.changedByName}</strong> đã thay đổi{" "}
+                        <strong className="font-medium">{entry.fieldLabel}</strong>
+                        {(entry.oldValue || entry.newValue) && (
+                          <span className="block text-xs text-muted-foreground">
+                            {entry.oldValue ?? "—"} → {entry.newValue ?? "—"}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(entry.changedAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {detail.emailMessages.length > 0 && (
               <div className="rounded-2xl border border-border bg-card p-5">
                 <p className="mb-2 flex items-center gap-1.5 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -475,77 +238,34 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
           </div>
 
           <div className="flex flex-col gap-6">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h2 className="mb-3 font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Thông tin khác</h2>
-              <InfoRow label="Cơ sở gợi ý" value={detail.suggestedBranchCode} />
-              <InfoRow label="Tư vấn viên" value={detail.consultantName ?? "Chưa gán"} />
-              <InfoRow
-                label="SĐT"
-                value={
-                  detail.phoneNormalized ? (
-                    <span className="flex items-center justify-end gap-1.5 font-mono">
-                      <PhoneCall className="size-3.5" />
-                      {detail.phoneNormalized}
-                      <CopyButton value={detail.phoneNormalized} label="Đã copy số điện thoại" />
-                    </span>
-                  ) : (
-                    "Chưa có"
-                  )
-                }
-              />
-              <InfoRow label="Lần chăm sóc" value={detail.touchCount} />
-              <InfoRow label="Tạo lúc" value={formatDateTime(detail.createdAt)} />
-              {detail.closedAt && <InfoRow label="Đóng lúc" value={formatDateTime(detail.closedAt)} />}
+            <OtherInfoCard detail={detail} />
 
-              <div className="mt-4 flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-5">
+              <h2 className="mb-1 font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Hành động</h2>
+              <LockableAction locked={moveToProcessingLocked} reason={moveToProcessingReason}>
                 <Button
+                  variant="secondary"
                   size="sm"
-                  variant="outline"
-                  nativeButton={false}
-                  className="rounded-full border-status-received/25 bg-status-received-bg/50 text-status-received hover:bg-status-received-bg"
-                  render={<a href={detail.conversationLink ?? detail.canonicalLink} target="_blank" rel="noreferrer" />}
+                  className="rounded-full bg-status-received-bg text-status-received hover:bg-status-received-bg/70"
+                  onClick={handleMoveToInProgress}
+                  disabled={touchPending}
                 >
-                  <MessageCircleMore className="size-3.5" />
-                  {detail.conversationLink ? "Mở hội thoại" : "Mở trang khách"}
+                  Đã tiếp nhận
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  nativeButton={false}
-                  className="rounded-full border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  render={<a href={detail.canonicalLink} target="_blank" rel="noreferrer" />}
-                >
-                  <ExternalLink className="size-3.5" />
-                  Link chuẩn
-                </Button>
-              </div>
-            </div>
-
-            {isOpenStatus && (
-              <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-5">
-                <h2 className="mb-1 font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Hành động</h2>
-                <TouchLogDialog onSubmit={handleLogTouch} pending={touchPending} className="rounded-full border-status-received/25 bg-status-received-bg/50 text-status-received hover:bg-status-received-bg" />
-                {detail.status === "Chờ" && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="rounded-full bg-status-received-bg text-status-received hover:bg-status-received-bg/70"
-                    onClick={handleMoveToInProgress}
-                    disabled={touchPending}
-                  >
-                    Chuyển Tiếp nhận
-                  </Button>
-                )}
-                <div className="flex gap-2 pt-1">
+              </LockableAction>
+              <div className="flex gap-2 pt-1">
+                <LockableAction locked={spamLocked} reason={spamReason}>
                   <Button variant="destructive" size="sm" className="flex-1 rounded-full border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20" onClick={() => setSpamOpen(true)}>
                     Spam
                   </Button>
+                </LockableAction>
+                <LockableAction locked={qualifyLocked} reason={qualifyReason}>
                   <Button size="sm" className="glossy shadow-bubble flex-1 rounded-full bg-status-qualified text-white hover:bg-status-qualified/90" onClick={() => setQualifyOpen(true)}>
                     Đủ tiêu chuẩn
                   </Button>
-                </div>
+                </LockableAction>
               </div>
-            )}
+            </div>
 
             {error && <FormMessage kind="error">{error}</FormMessage>}
           </div>
@@ -555,8 +275,24 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
       {detail && (
         <>
           <QualifyDialog open={qualifyOpen} onOpenChange={setQualifyOpen} interactionId={detail.interactionId} expectedVersion={detail.version} onDone={refresh} />
-          <SpamDialog open={spamOpen} onOpenChange={setSpamOpen} interactionId={detail.interactionId} expectedVersion={detail.version} touchCount={detail.touchCount} onDone={refresh} />
+          <SpamDialog
+            open={spamOpen}
+            onOpenChange={setSpamOpen}
+            interactionId={detail.interactionId}
+            expectedVersion={detail.version}
+            hasConversationLink={!!detail.conversationLink}
+            onDone={refresh}
+          />
           <ResolveFollowupDialog open={resolveFollowupOpen} onOpenChange={setResolveFollowupOpen} onConfirm={handleResolveFollowup} />
+          <EditFieldDialog
+            open={editDialogOpen}
+            onOpenChange={setEditDialogOpen}
+            label={FIELD_LABELS[editingField ?? "customerName"]}
+            kind={fieldKind(editingField ?? "customerName")}
+            currentValue={getFieldValue(editingField ?? "customerName", detail)}
+            selectOptions={fieldSelectOptions(editingField ?? "customerName")}
+            onSave={(newValue, duplicateReason) => handleFieldSave(editingField ?? "customerName", newValue, duplicateReason)}
+          />
         </>
       )}
     </>

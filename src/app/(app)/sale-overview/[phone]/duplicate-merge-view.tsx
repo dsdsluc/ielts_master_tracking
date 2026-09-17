@@ -133,7 +133,7 @@ export function DuplicateMergeView({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-foreground">{c.displayName}</p>
+                  <p className="truncate font-medium text-foreground" title={c.displayName}>{c.displayName}</p>
                   <p className="font-mono text-[11px] text-muted-foreground">{c.customerKey}</p>
                 </div>
                 <Button

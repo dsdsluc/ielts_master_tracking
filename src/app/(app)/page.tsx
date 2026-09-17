@@ -1,18 +1,22 @@
 import Link from "next/link";
-import { ChevronRight, Fingerprint, Megaphone, TrendingUp, Users } from "lucide-react";
+import { ChevronRight, Fingerprint, ListPlus, Megaphone, MessageCircleOff, ShieldOff, TrendingUp, Users } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES, STATUS, STUDENT_STAGE, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { canAccessFeature, requireFeatureAccess } from "@/lib/auth/feature-access";
+import { INTERACTION_ACTIVITY, ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
+import { computeFunnelSummary, CUSTOMER_STAGE_ORDER } from "@/lib/customers/stats";
+import { qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
+import { getNewAdIdRows } from "@/lib/marketing/new-ad-ids";
 import { cached } from "@/lib/cache";
 import { ConversionPill } from "@/app/(app)/ads-performance/ads-performance-table";
+import { StageCountStrip } from "@/app/(app)/customers/stage-count-strip";
 
-const REPORT_ROLES = [ROLES.LEADER, ROLES.MARKETING, ROLES.BOARD, ROLES.ADMIN] as const;
 const WINDOW_DAYS = 30;
 
 type DashboardKpi = { total: number; waiting: number; processing: number; qualified: number; spam: number };
@@ -80,10 +84,11 @@ type SalePerfRow = {
 
 // Ghép từ nhiều groupBy rẻ (không include/join nặng) — cùng cách admin/page.tsx
 // đã làm cho bảng "So sánh hiệu suất Sale", bổ sung thêm số lần chăm sóc thật
-// (SystemLog TOUCH — touchCount trên Interaction chỉ là số thứ tự lượt chạm
-// của KHÁCH, không phải số lần Sale thao tác) và thời gian trung bình từ lúc
-// tạo lead đến lúc đủ tiêu chuẩn (không có mốc "liên hệ lần đầu" riêng trong
-// schema nên đây là proxy gần nhất cho tốc độ xử lý).
+// (interaction_field_logs, fieldKey=FOLLOWUP_RESOLVED — mốc Sale thực sự xử lý
+// xong 1 yêu cầu chăm sóc lại, xem resolveFollowup()/updateStatus() trong
+// mutations.ts) và thời gian trung bình từ lúc tạo lead đến lúc đủ tiêu chuẩn
+// (không có mốc "liên hệ lần đầu" riêng trong schema nên đây là proxy gần
+// nhất cho tốc độ xử lý).
 async function computeSalePerformance(
   scope: Prisma.InteractionWhereInput,
   windowStart: Date,
@@ -108,7 +113,11 @@ async function computeSalePerformance(
       },
       _count: { _all: true },
     }),
-    prisma.systemLog.groupBy({ by: ["actorEmail"], where: { action: SYSTEM_LOG_ACTION.TOUCH, loggedAt: createdWindow }, _count: { _all: true } }),
+    prisma.interactionFieldLog.groupBy({
+      by: ["changedByEmail"],
+      where: { fieldKey: INTERACTION_ACTIVITY.FOLLOWUP_RESOLVED, changedAt: createdWindow },
+      _count: { _all: true },
+    }),
     prisma.interaction.findMany({
       where: { ...scope, activeFlag: true, assignedSaleEmail: { not: null }, receivedAt: { not: null }, createdLeadAt: createdWindow },
       select: { assignedSaleEmail: true, createdLeadAt: true, receivedAt: true },
@@ -123,7 +132,7 @@ async function computeSalePerformance(
     if (g.statusName === STATUS.PHONE) qualifiedByEmail.set(g.updatedByEmail, g._count._all);
     else if (g.statusName === STATUS.SPAM) spamByEmail.set(g.updatedByEmail, g._count._all);
   }
-  const touchByEmail = new Map(touchGroups.map((g) => [g.actorEmail, g._count._all]));
+  const touchByEmail = new Map(touchGroups.map((g) => [g.changedByEmail, g._count._all]));
 
   const qualifyDurationsByEmail = new Map<string, number[]>();
   for (const r of qualifyRows) {
@@ -157,30 +166,37 @@ async function computeSalePerformance(
     .slice(0, 10);
 }
 
-type FunnelSummary = { assigned: number; enrolled: number };
-
-// Ghép tiếp nối phễu tư vấn ghi danh (StudentProfile, xem lib/students/*) vào
-// sau phễu lead (Interaction) ở trên — 2 hệ thống tách biệt hoàn toàn nên
-// không có sẵn 1 truy vấn nào nối chúng lại; đây là nơi Leader/Admin thấy
-// toàn mạch "lead vào -> đủ tiêu chuẩn -> phân bổ tư vấn -> chốt" mà không
-// phải mở 2 trang riêng để tự cộng trừ. Chỉ Leader/Admin gọi hàm này (luôn
-// thấy toàn bộ chi nhánh — mirror branchScopeWhere trả {} cho isLeaderLike).
-async function computeFunnelSummary(windowStart: Date): Promise<FunnelSummary> {
-  const where: Prisma.StudentProfileWhereInput = { assignedAt: { gte: windowStart } };
-
-  const [assigned, enrolled] = await Promise.all([
-    prisma.studentProfile.count({ where }),
-    prisma.studentProfile.count({ where: { ...where, stage: STUDENT_STAGE.ENROLLED } }),
-  ]);
-  return { assigned, enrolled };
-}
-
 function funnelRate(part: number, total: number): string {
   return total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : "—";
 }
 
+type StageFunnelItem = { label: string; count: number; href: string };
+
+// Khách hàng không có branchCode riêng nên không lọc theo cơ sở (mirror
+// computeFunnelSummary() ở lib/customers/stats.ts) — chỉ Leader/Admin gọi,
+// vốn đã thấy toàn công ty. Mỗi mốc bấm được, dẫn thẳng sang /customers đã
+// lọc sẵn theo đúng mốc đó (xem CustomersPage searchParams.stage).
+async function computeStageFunnel(): Promise<StageFunnelItem[]> {
+  const groups = await prisma.customer.groupBy({
+    by: ["stage"],
+    where: qualifiedCustomerWhere(),
+    _count: { _all: true },
+  });
+  const countByStage = new Map(groups.map((g) => [g.stage, g._count._all]));
+
+  return [
+    { label: "Chưa gọi", count: countByStage.get(null) ?? 0, href: "/customers?stage=none" },
+    ...CUSTOMER_STAGE_ORDER.map((stage) => ({
+      label: stage,
+      count: countByStage.get(stage) ?? 0,
+      href: `/customers?stage=${encodeURIComponent(stage)}`,
+    })),
+  ];
+}
+
 export default async function DashboardPage() {
-  const user = await requireRole(...REPORT_ROLES);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "dashboard");
 
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - (WINDOW_DAYS - 1));
@@ -211,11 +227,30 @@ export default async function DashboardPage() {
 
   const rangeLabel = `${WINDOW_DAYS} ngày`;
 
-  const [kpi, topAds, salePerf, funnel] = await Promise.all([
+  // Widget "Cần xử lý" chỉ hiện với vai trò thực sự vào được router tương ứng
+  // (xem PERMISSION_FEATURES ở admin/permissions) — Admin luôn thấy, vai trò
+  // khác chỉ thấy sau khi được cấp quyền ở /admin/permissions.
+  const [canSeeSpamReview, canSeeNewAdIds, canSeeMissingConversation] = await Promise.all([
+    canAccessFeature(user.role, "spamReview"),
+    canAccessFeature(user.role, "newAdIds"),
+    canAccessFeature(user.role, "missingConversation"),
+  ]);
+
+  const [kpi, topAds, salePerf, funnel, stageFunnel, spamCount, newAdIdCount, missingConversationCount] = await Promise.all([
     cached(cacheKey, 90, () => computeDashboardKpi(where)),
     canSeeMarketingOps ? cached(`${cacheKey}:top-ads`, 90, () => computeTopAds(where)) : Promise.resolve([]),
     canSeeSaleOps ? cached(`${cacheKey}:sale-perf`, 90, () => computeSalePerformance(scope, windowStart, branchNameByCode)) : Promise.resolve([]),
     canSeeSaleOps ? cached(`${cacheKey}:funnel`, 90, () => computeFunnelSummary(windowStart)) : Promise.resolve({ assigned: 0, enrolled: 0 }),
+    canSeeSaleOps ? cached(`${cacheKey}:stage-funnel`, 90, computeStageFunnel) : Promise.resolve([]),
+    canSeeSpamReview ? cached("dash:spam-count", 90, () => prisma.interaction.count({ where: { statusName: STATUS.SPAM } })) : Promise.resolve(0),
+    canSeeNewAdIds ? cached("dash:new-ad-ids-count", 90, () => getNewAdIdRows().then((rows) => rows.length)) : Promise.resolve(0),
+    canSeeMissingConversation
+      ? cached("dash:missing-conversation-count", 90, () =>
+          prisma.interaction.count({
+            where: { activeFlag: true, OR: [{ conversationLink: null }, { conversationLink: "" }], statusName: { not: STATUS.PHONE } },
+          })
+        )
+      : Promise.resolve(0),
   ]);
 
   return (
@@ -240,6 +275,65 @@ export default async function DashboardPage() {
           <KpiCard label="Spam" value={kpi.spam} accentClassName="bg-status-spam" />
         </Link>
       </div>
+
+      {(canSeeSpamReview || canSeeNewAdIds || canSeeMissingConversation) && (
+        <div className="mb-6">
+          <p className="mb-3 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">Cần xử lý</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {canSeeSpamReview && (
+              <Link
+                href="/admin/spam-review"
+                className="shadow-bubble flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card p-4 transition-colors hover:border-status-spam/40 hover:bg-status-spam-bg/30"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-status-spam-bg text-status-spam">
+                    <ShieldOff className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Xử lý Spam</p>
+                    <p className="text-xs text-muted-foreground">{spamCount} liên hệ đang ở trạng thái Spam</p>
+                  </div>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </Link>
+            )}
+            {canSeeNewAdIds && (
+              <Link
+                href="/admin/new-ad-ids"
+                className="shadow-bubble flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card p-4 transition-colors hover:border-status-waiting/40 hover:bg-status-waiting-bg/30"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-status-waiting-bg text-status-waiting">
+                    <ListPlus className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Ad ID mới</p>
+                    <p className="text-xs text-muted-foreground">{newAdIdCount} Ad ID chưa có chi phí</p>
+                  </div>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </Link>
+            )}
+            {canSeeMissingConversation && (
+              <Link
+                href="/admin/missing-conversation"
+                className="shadow-bubble flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card p-4 transition-colors hover:border-status-received/40 hover:bg-status-received-bg/30"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-status-received-bg text-status-received">
+                    <MessageCircleOff className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Thiếu link hội thoại</p>
+                    <p className="text-xs text-muted-foreground">{missingConversationCount} liên hệ chưa Đủ tiêu chuẩn thiếu link</p>
+                  </div>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {canSeeMarketingOps && (
         <div className="mb-8">
@@ -271,8 +365,8 @@ export default async function DashboardPage() {
                       #{i + 1}
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate max-w-56 font-mono text-xs text-foreground">{ad.adId}</p>
-                      <p className="truncate max-w-56 text-xs text-muted-foreground">
+                      <p className="truncate max-w-56 font-mono text-xs text-foreground" title={ad.adId}>{ad.adId}</p>
+                      <p className="truncate max-w-56 text-xs text-muted-foreground" title={`${ad.sourceName} · ${ad.fanpageName}`}>
                         {ad.sourceName} · {ad.fanpageName}
                       </p>
                     </div>
@@ -306,7 +400,7 @@ export default async function DashboardPage() {
               <TrendingUp className="size-3.5" />
               Toàn phễu: lead → đủ tiêu chuẩn → phân bổ tư vấn → chốt ({rangeLabel})
             </p>
-            <Link href="/student-assignment/stats" className="text-xs font-medium text-status-received hover:underline">
+            <Link href="/customers" className="text-xs font-medium text-status-received hover:underline">
               Xem chi tiết tư vấn
             </Link>
           </div>
@@ -327,6 +421,14 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
+
+          <p className="mt-4 mb-1 font-condensed text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            Chi tiết theo mốc tư vấn
+          </p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Chia nhỏ đúng nhóm &quot;Đã phân bổ tư vấn&quot; ở trên theo mốc xa nhất Sale đã đạt với từng khách — bấm vào 1 mốc để xem danh sách khách đang ở đó.
+          </p>
+          <StageCountStrip counts={stageFunnel} />
         </div>
       )}
 
@@ -359,7 +461,7 @@ export default async function DashboardPage() {
                     {salePerf.map((s) => (
                       <TableRow key={s.email} className="odd:bg-secondary/10">
                         <TableCell className="min-w-40 px-5 py-3.5">
-                          <Link href={salePerformanceHref(s.email)} className="block max-w-40 truncate font-medium text-foreground hover:text-status-received hover:underline">
+                          <Link href={salePerformanceHref(s.email)} className="block max-w-40 truncate font-medium text-foreground hover:text-status-received hover:underline" title={s.fullName}>
                             {s.fullName}
                           </Link>
                         </TableCell>

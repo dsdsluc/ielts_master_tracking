@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
-import { apiFetch, apiErrorMessage } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { AssignFollowupDialog } from "@/app/(app)/followup-assign/assign-followup-dialog";
 

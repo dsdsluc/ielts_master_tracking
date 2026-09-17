@@ -52,12 +52,12 @@ export async function SourcesPanel() {
                       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
                         <Share2 className="size-3.5" />
                       </span>
-                      <p className="truncate font-medium text-foreground">{s.name}</p>
+                      <p className="truncate font-medium text-foreground" title={s.name}>{s.name}</p>
                     </div>
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">
-                    <p className="truncate">{s.channelGroup}</p>
-                    <p className="mt-0.5 truncate text-xs">{s.sourceGroup}</p>
+                    <p className="truncate" title={s.channelGroup}>{s.channelGroup}</p>
+                    <p className="mt-0.5 truncate text-xs" title={s.sourceGroup}>{s.sourceGroup}</p>
                   </TableCell>
                   <TableCell className="min-w-56 px-4">
                     <SourceDomains sourceName={s.name} domains={s.domains} />

@@ -5,12 +5,9 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import {
-  CAN_CREATE_OR_EDIT_LEAD,
-  CAN_PUSH_FOLLOWUP,
-  CAN_REASSIGN,
+  INTERACTION_ACTIVITY,
   ROLES,
   STATUS,
-  SYSTEM_LOG_ACTION,
   canonicalStatusKey,
   isOpenStatus,
 } from "@/lib/interactions/constants";
@@ -56,17 +53,15 @@ export function computeSlaOverdue(
  * thay vì kiểm tra từng dòng.
  */
 export function branchScopeWhere(actor: CurrentUser): Prisma.InteractionWhereInput {
-  if (actor.role === ROLES.BOARD) return { assignedBranchCode: "__NONE__" }; // BGĐ không xem danh sách/queue lead
   if (isLeaderLike(actor)) return {};
   if (actor.role === ROLES.SALES) return { assignedBranchCode: actor.branchCode ?? "__NONE__" };
   if (actor.viewAllBranches) return {};
   return actor.branchCode ? { assignedBranchCode: actor.branchCode } : {};
 }
 
-/** Sale/Leader/Admin đang hoạt động — danh sách cho Leader/Admin chọn khi
- * điều chuyển người phụ trách (reassignInteraction). Chỉ Leader/Admin mới gọi
- * được (route tự kiểm tra CAN_REASSIGN), và cả 2 vai trò này đã thấy toàn bộ
- * chi nhánh (isLeaderLike ở scope.ts) nên không cần lọc theo cơ sở actor. */
+/** Sale/Leader/Admin đang hoạt động — danh sách chọn khi điều chuyển người
+ * phụ trách (reassignInteraction). Leader/Admin đã thấy toàn bộ chi nhánh
+ * (isLeaderLike ở scope.ts) nên không cần lọc theo cơ sở actor. */
 export async function getAssignableSalesForReassign() {
   return prisma.user.findMany({
     where: { role: { in: [ROLES.SALES, ROLES.LEADER, ROLES.ADMIN] }, active: true },
@@ -78,14 +73,13 @@ export async function getAssignableSalesForReassign() {
 function buildPermissions(actor: CurrentUser, lead: { statusName: string; assignedBranchCode: string; needsFollowup: boolean }): InteractionDetail["permissions"] {
   const accessible = canAccessBranch(actor, lead.assignedBranchCode);
   const open = isOpenStatus(lead.statusName);
-  const canEditOrCreate = (CAN_CREATE_OR_EDIT_LEAD as readonly string[]).includes(actor.role);
 
   return {
     canEditInfo: isLeaderLike(actor) || (actor.role === ROLES.SALES && accessible && open),
-    canUpdateStatus: canEditOrCreate && (isLeaderLike(actor) || (accessible && open)),
-    canReassign: (CAN_REASSIGN as readonly string[]).includes(actor.role) && canonicalStatusKey(lead.statusName) === "PHONE",
-    canRequestFollowup: (CAN_PUSH_FOLLOWUP as readonly string[]).includes(actor.role) && open && !lead.needsFollowup,
-    canResolveFollowup: canEditOrCreate && accessible && lead.needsFollowup,
+    canUpdateStatus: isLeaderLike(actor) || (accessible && open),
+    canReassign: canonicalStatusKey(lead.statusName) === "PHONE",
+    canRequestFollowup: open && !lead.needsFollowup,
+    canResolveFollowup: accessible && lead.needsFollowup,
   };
 }
 
@@ -94,16 +88,23 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
   if (!row) throw Errors.notFound();
   if (!canViewLead(actor, row.assignedBranchCode)) throw Errors.forbidden("Bạn không được xem hội thoại này.");
 
-  const [customerHistoryRows, touchLogs, emailMessageRows] = await Promise.all([
-    tx.interaction.findMany({
-      where: { customerKey: row.customerKey, interactionId: { not: interactionId } },
-      include: listItemInclude,
-      orderBy: { createdLeadAt: "desc" },
-    }),
-    tx.systemLog.findMany({
-      where: { interactionId, action: SYSTEM_LOG_ACTION.TOUCH },
-      orderBy: { loggedAt: "desc" },
-      select: { loggedAt: true, actorName: true, actorEmail: true, detailNew: true },
+  const [customerHistoryRows, touchLogs, emailMessageRows, fieldLogRows] = await Promise.all([
+    // customerKey chỉ có giá trị khi Đủ tiêu chuẩn — chưa có thì chưa có gì để
+    // tra lịch sử (where: { customerKey: null } sẽ khớp NHẦM mọi liên hệ khác
+    // cũng đang null, không phải lịch sử thật của khách này).
+    row.customerKey
+      ? tx.interaction.findMany({
+          where: { customerKey: row.customerKey, interactionId: { not: interactionId } },
+          include: listItemInclude,
+          orderBy: { createdLeadAt: "desc" },
+        })
+      : Promise.resolve([]),
+    // "Lịch sử chăm sóc" — đọc từ interaction_field_logs (fieldKey=TOUCH), KHÔNG
+    // còn từ SystemLog nữa (xem logInteractionActivity() trong audit.ts).
+    tx.interactionFieldLog.findMany({
+      where: { interactionId, fieldKey: INTERACTION_ACTIVITY.TOUCH },
+      orderBy: { changedAt: "desc" },
+      select: { changedAt: true, changedByName: true, changedByEmail: true, note: true },
     }),
     tx.emailMessageInteraction.findMany({
       where: { interactionId },
@@ -123,16 +124,24 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
         },
       },
     }),
+    // "Lịch sử chỉnh sửa thông tin" — chỉ đúng các dòng sửa field thật, loại
+    // trừ các mã hoạt động chung (TOUCH/STATUS_CHANGE/FOLLOWUP_*/REASSIGN)
+    // cũng đang ghi chung bảng này (xem comment InteractionFieldLog ở schema).
+    tx.interactionFieldLog.findMany({
+      where: { interactionId, fieldKey: { notIn: Object.values(INTERACTION_ACTIVITY) } },
+      orderBy: { changedAt: "desc" },
+      select: { fieldLabel: true, oldValue: true, newValue: true, changedByName: true, changedAt: true },
+    }),
   ]);
 
   return toDetail(row, {
     permissions: buildPermissions(actor, row),
     customerHistory: customerHistoryRows.map(toListItem),
     touchLog: touchLogs.map((l) => ({
-      loggedAt: l.loggedAt.toISOString(),
-      actorName: l.actorName,
-      actorEmail: l.actorEmail,
-      note: (l.detailNew as { note?: string | null } | null)?.note ?? null,
+      loggedAt: l.changedAt.toISOString(),
+      actorName: l.changedByName,
+      actorEmail: l.changedByEmail,
+      note: l.note,
     })),
     emailMessages: emailMessageRows.map((r) => ({
       id: r.emailMessage.id,
@@ -144,7 +153,46 @@ export async function getInteractionDetail(actor: CurrentUser, interactionId: st
       sentAt: r.emailMessage.sentAt.toISOString(),
       sentByName: r.emailMessage.sentBy?.fullName ?? null,
     })),
+    fieldChangeLog: fieldLogRows.map((r) => ({
+      fieldLabel: r.fieldLabel,
+      oldValue: r.oldValue,
+      newValue: r.newValue,
+      changedByName: r.changedByName,
+      changedAt: r.changedAt.toISOString(),
+    })),
   });
+}
+
+export type FollowupHistoryEntry = {
+  action: string;
+  loggedAt: string;
+  actorName: string;
+  note: string | null;
+  suggestion: string | null;
+};
+
+/** Lịch sử riêng của vòng đời "Cần chăm sóc lại" cho 1 liên hệ — dùng ở trang
+ * chi tiết yêu cầu chăm sóc lại (/followup-inbox/[id]), khác với touchLog
+ * (lịch sử chăm sóc chung) ở chỗ chỉ gồm đúng 3 mốc: Marketing gửi yêu cầu,
+ * Leader phân bổ Sale, Sale đánh dấu đã chăm sóc lại xong. Đọc từ
+ * interaction_field_logs (không còn từ SystemLog) — xem logInteractionActivity(). */
+export async function getFollowupHistory(interactionId: string): Promise<FollowupHistoryEntry[]> {
+  const rows = await prisma.interactionFieldLog.findMany({
+    where: {
+      interactionId,
+      fieldKey: { in: [INTERACTION_ACTIVITY.FOLLOWUP_PUSH, INTERACTION_ACTIVITY.FOLLOWUP_ASSIGN, INTERACTION_ACTIVITY.FOLLOWUP_RESOLVED] },
+    },
+    orderBy: { changedAt: "asc" },
+    select: { fieldKey: true, changedAt: true, changedByName: true, note: true, newValue: true },
+  });
+
+  return rows.map((r) => ({
+    action: r.fieldKey,
+    loggedAt: r.changedAt.toISOString(),
+    actorName: r.changedByName,
+    note: r.note,
+    suggestion: r.fieldKey === INTERACTION_ACTIVITY.FOLLOWUP_PUSH ? r.newValue : null,
+  }));
 }
 
 export type ListInteractionsParams = {
@@ -181,11 +229,8 @@ export function buildInteractionWhere(actor: CurrentUser, params: Omit<ListInter
     else if (statuses.length > 1) where.statusName = { in: statuses };
   }
   if (params.mine) {
-    // "Của tôi" = lead do actor tạo (Chờ/Tiếp nhận, chưa có assignedSaleEmail)
-    // HOẶC lead đã Đủ tiêu chuẩn mà actor là người phụ trách chính thức —
-    // chỉ lọc theo assignedSaleEmail sẽ luôn rỗng ở 2 tab đầu vì field đó chỉ
-    // được gán từ lúc Đủ tiêu chuẩn trở đi (xem mutations.ts updateStatus).
-    andConditions.push({ OR: [{ createdByEmail: actor.email }, { assignedSaleEmail: actor.email }] });
+    // Một nguồn sự thật duy nhất: "Của tôi" là liên hệ mà actor đang là Tư vấn viên.
+    where.assignedSaleEmail = actor.email;
   }
   if (params.branch && params.branch !== "all") {
     // Bộ lọc cơ sở trên UI chỉ được thu hẹp thêm, không được mở rộng ra ngoài
@@ -245,6 +290,41 @@ export async function listInteractions(actor: CurrentUser, params: ListInteracti
   };
 }
 
+// Tab "Đủ tiêu chuẩn" ở /leads chỉ cần soi lại các lead MỚI chuyển đủ điều
+// kiện gần đây — khác với Chờ/Tiếp nhận (tự nhiên luôn ít vì lead không nằm
+// lâu ở đó), Đủ tiêu chuẩn là trạng thái vĩnh viễn nên tập đầy đủ sẽ phình to
+// dần theo thời gian dùng hệ thống. Xem lịch sử toàn bộ ở /customers.
+const QUALIFIED_QUEUE_WINDOW_DAYS = 30;
+
+/**
+ * Snapshot đầy đủ cho trang /leads. Trang này thực hiện search/filter/sort/
+ * phân trang ở client cho 3 tab (Chờ/Tiếp nhận/Đủ tiêu chuẩn gần đây), nên một
+ * query duy nhất nhẹ hơn việc gọi lại DB sau mỗi thao tác giao diện. Phạm vi
+ * chi nhánh và điều kiện loại lead cần chăm sóc lại vẫn dùng chung
+ * buildInteractionWhere().
+ */
+export async function listOpenInteractions(actor: CurrentUser): Promise<InteractionListItem[]> {
+  const qualifiedSince = new Date(Date.now() - QUALIFIED_QUEUE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const where: Prisma.InteractionWhereInput = {
+    ...buildInteractionWhere(actor, {}),
+    OR: [
+      { statusName: { in: [STATUS.WAITING, STATUS.PROCESSING] } },
+      { statusName: STATUS.PHONE, phoneCapturedAt: { gte: qualifiedSince } },
+    ],
+  };
+  const [rows, { byCode: slaByBranch, fallback: slaFallback }] = await Promise.all([
+    prisma.interaction.findMany({
+      where,
+      include: listItemInclude,
+      orderBy: [{ createdLeadAt: "desc" }, { interactionId: "desc" }],
+    }),
+    getBranchSlaMap(),
+  ]);
+
+  const now = Date.now();
+  return rows.map(toListItem).map((item) => ({ ...item, slaOverdue: computeSlaOverdue(item, slaByBranch, slaFallback, now) }));
+}
+
 const QUEUE_GROUP_LABELS: Record<Exclude<LeadQueueGroup["key"], "recently_closed">, string> = {
   new_waiting: "Mới đang Chờ",
   sla_breaching: "Sắp/đã quá SLA",
@@ -257,10 +337,6 @@ const QUEUE_ORDER = ["new_waiting", "sla_breaching", "processing_no_phone"] as c
 const QUEUE_GROUP_CAP = 200;
 // "Sắp quá SLA" tính từ % thời gian mốc đã trôi qua, không chỉ khi đã breach hẳn.
 const SLA_APPROACH_RATIO = 0.8;
-
-function emptyPersonalKpi(): LeadQueue["personalKpi"] {
-  return { totalToday: 0, waiting: 0, processing: 0, qualified: 0, spam: 0, qualifiedRate: null };
-}
 
 async function computePersonalKpi(actor: CurrentUser): Promise<LeadQueue["personalKpi"]> {
   const startOfDay = new Date();
@@ -297,10 +373,6 @@ async function computePersonalKpi(actor: CurrentUser): Promise<LeadQueue["person
  * trạng thái — chấp nhận đây là ước lượng, không phải SLA xử lý tuyệt đối chính xác.
  */
 export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {
-  if (actor.role === ROLES.BOARD) {
-    return { groups: [], personalKpi: emptyPersonalKpi() };
-  }
-
   const [{ byCode: slaByBranch, fallback: slaFallback }, openRows, personalKpi] = await Promise.all([
     getBranchSlaMap(),
     prisma.interaction.findMany({

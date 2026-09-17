@@ -2,9 +2,10 @@ import Link from "next/link";
 import { ArrowRight, CalendarCheck, Megaphone, Sparkles, TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
-import { requireRole } from "@/lib/auth/dal";
+import { getCurrentUser } from "@/lib/auth/dal";
 import type { CurrentUser } from "@/lib/auth/dal";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { isLeaderLike } from "@/lib/interactions/scope";
 import { cached } from "@/lib/cache";
@@ -95,7 +96,8 @@ export default async function MarketingDashboardPage({
 }: {
   searchParams: Promise<{ days?: string }>;
 }) {
-  const user = await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "marketingDashboard");
   const { days: daysParam } = await searchParams;
   const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
 

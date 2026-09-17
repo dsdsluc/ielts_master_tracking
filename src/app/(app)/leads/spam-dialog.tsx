@@ -20,24 +20,33 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { FormMessage } from "@/components/form-message";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { updateStatus } from "@/app/(app)/leads/leads-api";
 import { SILENCE_REASON_CODE, SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
 import { useToast } from "@/hooks/use-toast";
+
+// "Khách im lặng" đã bị bỏ khỏi danh sách lý do Sale được tự chọn ở đây — nút
+// "Ghi nhận đã liên hệ" (bằng chứng số lần chăm sóc cho lý do này) đã bị gỡ
+// khỏi trang chi tiết liên hệ, server cũng không còn validate riêng lý do này
+// nữa. Vẫn giữ SILENCE_REASON_CODE/SPAM_REASON_OPTIONS đầy đủ ở types.ts vì
+// nơi khác (admin/monitoring) còn cần hiển thị nhãn cho các bản ghi cũ.
+const SELECTABLE_SPAM_REASONS = SPAM_REASON_OPTIONS.filter((r) => r.code !== SILENCE_REASON_CODE);
 
 export function SpamDialog({
   open,
   onOpenChange,
   interactionId,
   expectedVersion,
-  touchCount,
+  hasConversationLink,
   onDone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   interactionId: string;
   expectedVersion: number;
-  touchCount: number;
+  // Chỉ được đánh dấu Spam khi đã có link cuộc hội thoại để đối chiếu — không
+  // có link thì không ai xác minh được đây thực sự là Spam hay không (xem
+  // check tương ứng ở updateStatus() trong mutations.ts, đây chỉ là lớp UI).
+  hasConversationLink: boolean;
   onDone: () => void;
 }) {
   const { toast } = useToast();
@@ -45,13 +54,11 @@ export function SpamDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isSilence = reason === SILENCE_REASON_CODE;
-  const notEnoughTouches = isSilence && touchCount < 3;
   // base-ui Select chỉ resolve nhãn hiển thị từ DOM của <Select.Item> đang mount
   // (bên trong Popup) nếu không truyền `items` — sau khi đóng popup, Item unmount
   // và SelectValue rơi về hiển thị value thô. Truyền items tường minh để trigger
   // luôn hiện đúng nhãn tiếng Việt bất kể popup đang mở hay đã đóng.
-  const reasonItems = Object.fromEntries(SPAM_REASON_OPTIONS.map((r) => [r.code, r.label]));
+  const reasonItems = Object.fromEntries(SELECTABLE_SPAM_REASONS.map((r) => [r.code, r.label]));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,7 +69,6 @@ export function SpamDialog({
       await updateStatus(interactionId, {
         status: "Spam",
         spamReason: reason,
-        confirmedMinAttempts: isSilence ? true : undefined,
         expectedVersion,
       });
       setReason("");
@@ -93,14 +99,20 @@ export function SpamDialog({
             <DialogDescription>Chọn lý do — bắt buộc, sẽ được ghi vào nhật ký hệ thống.</DialogDescription>
           </DialogHeader>
 
+          {!hasConversationLink && (
+            <FormMessage kind="error">
+              Liên hệ này chưa có link cuộc hội thoại — không thể đánh dấu Spam. Hãy bổ sung link hội thoại trước.
+            </FormMessage>
+          )}
+
           <div className="flex flex-col gap-1.5 rounded-2xl border border-border/60 bg-secondary/30 p-4">
             <Label htmlFor="spam-reason">Lý do đóng</Label>
-            <Select value={reason} onValueChange={(v) => setReason(v ?? "")} items={reasonItems}>
+            <Select value={reason} onValueChange={(v) => setReason(v ?? "")} items={reasonItems} disabled={!hasConversationLink}>
               <SelectTrigger id="spam-reason" className="h-11 w-full rounded-xl bg-background">
                 <SelectValue placeholder="Chọn lý do…" />
               </SelectTrigger>
               <SelectContent>
-                {SPAM_REASON_OPTIONS.map((r) => (
+                {SELECTABLE_SPAM_REASONS.map((r) => (
                   <SelectItem key={r.code} value={r.code}>
                     {r.label}
                   </SelectItem>
@@ -109,24 +121,13 @@ export function SpamDialog({
             </Select>
           </div>
 
-          {isSilence && (
-            <Alert variant={notEnoughTouches ? "destructive" : "default"} className="mt-1">
-              <AlertTriangle className="size-4" />
-              <AlertDescription>
-                {notEnoughTouches
-                  ? `Liên hệ này mới ghi nhận ${touchCount} lần chăm sóc. Lý do "khách im lặng" cần ít nhất 3 lần ở 3 thời điểm khác nhau — hệ thống sẽ từ chối nếu chưa đủ.`
-                  : `Liên hệ đã có ${touchCount} lần chăm sóc được ghi nhận — hệ thống sẽ tự kiểm tra có đủ 3 thời điểm khác nhau không.`}
-              </AlertDescription>
-            </Alert>
-          )}
-
           {error && <FormMessage kind="error" className="mt-2">{error}</FormMessage>}
 
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" className="rounded-full border-border bg-secondary/60 px-4 text-muted-foreground hover:bg-secondary hover:text-foreground" onClick={() => onOpenChange(false)}>
               Huỷ
             </Button>
-            <Button type="submit" variant="destructive" className="glossy shadow-bubble rounded-full bg-destructive px-5 text-white hover:bg-destructive/90" disabled={pending || !reason}>
+            <Button type="submit" variant="destructive" className="glossy shadow-bubble rounded-full bg-destructive px-5 text-white hover:bg-destructive/90" disabled={pending || !reason || !hasConversationLink}>
               {pending && <LoaderCircle className="animate-spin" />}
               Xác nhận đóng Spam
             </Button>

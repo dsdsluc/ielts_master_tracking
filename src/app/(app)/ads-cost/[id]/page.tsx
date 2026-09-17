@@ -3,8 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatVnd } from "@/app/(app)/ads-cost/format";
 
@@ -18,7 +17,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default async function AdsCostDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireRole(ROLES.MARKETING, ROLES.ADMIN);
+  await getCurrentUser();
   const { id: rawId } = await params;
   const id = Number(rawId);
   if (!Number.isInteger(id)) notFound();

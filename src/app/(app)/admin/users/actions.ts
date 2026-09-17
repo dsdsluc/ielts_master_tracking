@@ -21,11 +21,11 @@ const userSchema = z.object({
 });
 
 function normalizeBranchScope(data: z.infer<typeof userSchema>) {
-  // Sale/Admin luôn bị khoá đúng 1 cơ sở — ép về đúng ràng buộc mà
+  // Saler luôn bị khoá đúng 1 cơ sở — ép về đúng ràng buộc mà
   // requireValidSaleBranchScope() (mutations.ts) kiểm tra, để không tạo ra
   // tài khoản Sale không dùng được các thao tác tạo/sửa lead.
   if (data.role === ROLES.SALES) {
-    if (!data.branchCode) throw new Error("Vai trò Sale/Admin bắt buộc chọn đúng 1 cơ sở phụ trách.");
+    if (!data.branchCode) throw new Error("Vai trò Saler bắt buộc chọn đúng 1 cơ sở phụ trách.");
     return { branchCode: data.branchCode, viewAllBranches: false };
   }
   return { branchCode: data.branchCode || null, viewAllBranches: data.viewAllBranches };
@@ -71,7 +71,7 @@ export async function updateUser(currentEmail: string, input: { email: string } 
   const scope = normalizeBranchScope(data);
 
   if (currentEmail === actor.email && data.role !== ROLES.ADMIN) {
-    throw new Error("Không thể tự đổi vai trò của chính mình khỏi Quản trị hệ thống.");
+    throw new Error("Không thể tự đổi vai trò của chính mình khỏi Admin.");
   }
 
   if (newEmail !== currentEmail) {

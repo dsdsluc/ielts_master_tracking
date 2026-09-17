@@ -49,15 +49,15 @@ export async function BranchesPanel() {
                         <Building2 className="size-3.5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{b.name}</p>
-                        <p className="truncate font-mono text-[11px] text-muted-foreground">{b.code}</p>
+                        <p className="truncate font-medium text-foreground" title={b.name}>{b.name}</p>
+                        <p className="truncate font-mono text-[11px] text-muted-foreground" title={b.code}>{b.code}</p>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="hidden px-4 text-center text-sm text-muted-foreground sm:table-cell">{b.slaReceiveMinutes} phút</TableCell>
                   <TableCell className="hidden px-4 text-center text-sm text-muted-foreground sm:table-cell">{b.slaProcessHours} giờ</TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">
-                    <p className="max-w-56 truncate">{b.note ?? "—"}</p>
+                    <p className="max-w-56 truncate" title={b.note ?? "—"}>{b.note ?? "—"}</p>
                   </TableCell>
                   <TableCell className="px-4">
                     <ActiveToggle active={b.active} entityKey={b.code} action={setBranchActive} />

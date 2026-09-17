@@ -9,7 +9,6 @@ import { prisma } from "../src/lib/prisma";
 const WORKBOOK_PATH = path.resolve(process.cwd(), "../docs/Tracking_Leads_IELTS_Master.xlsx");
 const EXECUTE = process.argv.includes("--execute");
 const DEFAULT_PASSWORD = "12345678";
-const IMPORT_MARKER = "WORKBOOK_FULL_IMPORT_V1";
 const LOCAL_OFFSET_MS = 7 * 60 * 60 * 1000;
 const BATCH_SIZE = 400;
 
@@ -187,7 +186,7 @@ async function main() {
     const createdLeadAt = date(row.Ngày_tạo_lead) ?? date(row.Thời_gian_tạo) ?? new Date(0);
     const createdAt = date(row.Thời_gian_tạo) ?? createdLeadAt;
     const validEmail = (value: unknown) => { const result = email(value); return result && validEmails.has(result) ? result : null; };
-    return { row, interactionId, legacyCustomerKey, customerKey, canonicalLink, rawLink, customerName, createdLeadAt, createdAt, sourceName, fanpageName, suggestedBranchCode, assignedBranchCode, statusName, customerObjectName, validEmail };
+    return { row, interactionId, customerKey, canonicalLink, rawLink, customerName, createdLeadAt, createdAt, sourceName, fanpageName, suggestedBranchCode, assignedBranchCode, statusName, customerObjectName, validEmail };
   });
 
   const customerMap = new Map<string, (typeof normalizedData)[number]>();
@@ -214,8 +213,7 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
   await prisma.$transaction(async (tx) => {
-    await tx.studentCareLog.deleteMany(); await tx.studentProfile.deleteMany(); await tx.workspaceClaim.deleteMany();
-    await tx.interactionMigrationMeta.deleteMany(); await tx.systemLog.deleteMany(); await tx.mktPageReport.deleteMany();
+    await tx.systemLog.deleteMany(); await tx.mktPageReport.deleteMany();
     await tx.adsCost.deleteMany(); await tx.interaction.deleteMany(); await tx.customer.deleteMany();
     await tx.statusAllowedRole.deleteMany(); await tx.sourceDomain.deleteMany(); await tx.fanpage.deleteMany();
     await tx.appSetting.deleteMany(); await tx.user.deleteMany(); await tx.customerObject.deleteMany();
@@ -235,8 +233,6 @@ async function main() {
     const customerData = [...customerMap.entries()].map(([customerKey, base]) => { const stats = customerStats.get(customerKey)!; return { customerKey, displayName: stats.current.customerName, canonicalLink: base.canonicalLink, phoneNormalized: text(stats.current.row.SĐT_chuẩn), firstTouchAt: stats.first, lastTouchAt: stats.last, currentStatusName: stats.current.statusName }; });
     for (const batch of batches(customerData)) await tx.customer.createMany({ data: batch });
     for (const batch of batches(normalizedData)) await tx.interaction.createMany({ data: batch.map((item) => ({ interactionId: item.interactionId, customerKey: item.customerKey, version: int(item.row.Version, 1), activeFlag: bool(item.row.Active_Flag), createdLeadAt: item.createdLeadAt, sourceName: item.sourceName, fanpageName: item.fanpageName, adId: text(item.row.Ad_ID), firstTouchAdId: text(item.row.First_touch_Ad_ID), lastTouchAdId: text(item.row.Last_touch_Ad_ID), rawLink: item.rawLink, canonicalLink: item.canonicalLink, customerName: item.customerName, customerObjectName: item.customerObjectName, suggestedBranchCode: item.suggestedBranchCode, assignedBranchCode: item.assignedBranchCode, statusName: item.statusName, interactionType: req(item.row, "Loại_tương_tác"), touchCount: int(item.row.Lần_tương_tác, 1), assignedSaleEmail: item.validEmail(item.row.Email_tư_vấn), receivedAt: date(item.row.Ngày_nhận), phoneRaw: text(item.row.SĐT_gốc), phoneNormalized: text(item.row.SĐT_chuẩn), phoneCapturedAt: date(item.row.Ngày_có_SĐT), closedAt: date(item.row.Ngày_đóng), transferredToPse: bool(item.row.Đã_chuyển_PSE), pseProfileCode: text(item.row.Mã_hồ_sơ_PSE), createdByEmail: item.validEmail(item.row.Email_người_tạo) ?? fallbackUser, createdAt: item.createdAt, updatedByEmail: item.validEmail(item.row.Email_người_cập_nhật), updatedAt: date(item.row.Thời_gian_cập_nhật), reassignedByEmail: item.validEmail(item.row.Email_người_điều_chuyển), reassignReason: text(item.row.Lý_do_điều_chuyển), needsFollowup: bool(item.row.Cần_chăm_sóc_lại), mktPushedAt: date(item.row.Thời_gian_push_MKT), mktPushedByEmail: item.validEmail(item.row.Email_push_MKT), conversationLink: text(item.row.Link_hội_thoại), mktSuggestion: text(item.row.Gợi_ý_chăm_sóc_MKT), followupHandledByEmail: item.validEmail(item.row.Email_xử_lý_chăm_sóc_lại), followupHandledAt: date(item.row.Thời_gian_xử_lý_chăm_sóc_lại) })) });
-    for (const batch of batches(normalizedData)) await tx.interactionMigrationMeta.createMany({ data: batch.map((item) => ({ interactionId: item.interactionId, legacyStt: int(item.row.Legacy_STT) || null, legacyRow: int(item.row.Legacy_Row) || item.row.__row, migrationNote: item.customerKey === item.legacyCustomerKey ? IMPORT_MARKER : `${IMPORT_MARKER}; MERGED_FROM=${item.legacyCustomerKey}` })) });
-
     for (const batch of batches(adsRows)) await tx.adsCost.createMany({ data: batch.map((row) => { const period = reportPeriod(row.Kỳ_báo_cáo); const adId = req(row, "Ad_ID"); return { periodStart: period.start, periodEnd: period.end, adId, adName: text(row.Tên_quảng_cáo) ?? `Quảng cáo ${adId}`, sourceName: sourceNames.has(text(row.Nguồn) ?? "") ? text(row.Nguồn) : null, fanpageName: fanpageNames.has(text(row.Fanpage) ?? "") ? text(row.Fanpage) : null, branchCode: branchCodes.has(text(row.Cơ_sở) ?? "") ? text(row.Cơ_sở) : null, costVnd: text(row.Chi_phí_VND) ?? "0", note: text(row.Ghi_chú), updatedByEmail: validEmails.has(email(row.Người_cập_nhật) ?? "") ? email(row.Người_cập_nhật) : null, updatedAt: date(row.Cập_nhật_lúc) ?? new Date(0) }; }) });
     for (const batch of batches(logRows)) await tx.systemLog.createMany({ data: batch.map((row) => { const actor = email(row.Email); const interactionId = text(row.Interaction_ID); return { logId: req(row, "Log_ID"), loggedAt: date(row.Thời_gian) ?? new Date(0), actorEmail: actor && validEmails.has(actor) ? actor : null, actorName: text(row.Họ_tên) ?? "Hệ thống", actorRole: text(row.Vai_trò) ?? "Hệ thống", action: req(row, "Hành_động"), interactionId: interactionId && interactionIds.has(interactionId) ? interactionId : null, detailOld: json(row.Chi_tiết_cũ), detailNew: json(row.Chi_tiết_mới), result: req(row, "Kết_quả"), technicalInfo: text(row.Thông_tin_kỹ_thuật) }; }) });
   }, { timeout: 180_000, maxWait: 20_000 });

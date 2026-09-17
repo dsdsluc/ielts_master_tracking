@@ -247,6 +247,7 @@ export function LeadsImportView({
 
   function toPayload(row: ImportRow, duplicateReason?: string) {
     return {
+      channel: "facebook" as const,
       rawLink: row.rawLink,
       customerName: row.customerName,
       fanpageName: row.fanpageName,

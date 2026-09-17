@@ -3,8 +3,8 @@ import { ClipboardCheck } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
-import { requireRole } from "@/lib/auth/dal";
-import { ROLES } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { prisma } from "@/lib/prisma";
 import { ClosedReportsFilterBar } from "@/app/(app)/page-report/closed/closed-reports-filter-bar";
 import { ClosedReportsTable, type ClosedReportRow } from "@/app/(app)/page-report/closed/closed-reports-table";
@@ -14,7 +14,8 @@ export default async function ClosedPageReportsPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string; fanpage?: string }>;
 }) {
-  await requireRole(ROLES.ADMIN);
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user.role, "pageReportClosed");
   const { from, to, fanpage } = await searchParams;
 
   const where: Prisma.MktPageReportWhereInput = { closedAt: { not: null } };

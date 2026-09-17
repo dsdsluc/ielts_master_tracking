@@ -369,11 +369,11 @@ export function AdsCostTable({
                   </TableCell>
                   <TableCell className="px-4 font-mono text-xs text-foreground">{row.adId}</TableCell>
                   <TableCell className="min-w-40 px-4 text-sm text-foreground">
-                    <p className="max-w-56 truncate">{row.adName}</p>
+                    <p className="max-w-56 truncate" title={row.adName}>{row.adName}</p>
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">{row.sourceName ?? "—"}</TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground lg:table-cell">
-                    <p className="max-w-40 truncate">{row.fanpageName ?? "—"}</p>
+                    <p className="max-w-40 truncate" title={row.fanpageName ?? "—"}>{row.fanpageName ?? "—"}</p>
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">
                     {row.branchCode ? (branchNames[row.branchCode] ?? row.branchCode) : "—"}

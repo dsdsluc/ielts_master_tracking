@@ -182,13 +182,13 @@ export function SlaReviewView({
                     </TableCell>
                   )}
                   <TableCell className={`py-3.5 ${selecting ? "px-4" : "px-5"}`}>
-                    <p className="max-w-48 truncate font-medium text-foreground">{item.customerName}</p>
+                    <p className="max-w-48 truncate font-medium text-foreground" title={item.customerName}>{item.customerName}</p>
                   </TableCell>
                   <TableCell className="px-4 text-sm text-muted-foreground">
                     {branchNames[item.assignedBranchCode] ?? item.assignedBranchCode}
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm text-muted-foreground md:table-cell">
-                    <p className="max-w-48 truncate">{item.fanpageName}</p>
+                    <p className="max-w-48 truncate" title={item.fanpageName}>{item.fanpageName}</p>
                     <p className="text-xs">{item.sourceName}</p>
                   </TableCell>
                   <TableCell className="px-4 text-xs text-muted-foreground">

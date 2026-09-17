@@ -1,6 +1,6 @@
-import { requireRole } from "@/lib/auth/dal";
+import { getCurrentUser } from "@/lib/auth/dal";
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
-  await requireRole("Quản trị hệ thống");
+  await getCurrentUser();
   return children;
 }

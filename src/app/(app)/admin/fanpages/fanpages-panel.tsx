@@ -57,7 +57,7 @@ export async function FanpagesPanel() {
                       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
                         <Flag className="size-3.5" />
                       </span>
-                      <p className="truncate font-medium text-foreground">{f.name}</p>
+                      <p className="truncate font-medium text-foreground" title={f.name}>{f.name}</p>
                     </div>
                   </TableCell>
                   <TableCell className="px-4 text-sm text-muted-foreground">{f.defaultSourceName}</TableCell>

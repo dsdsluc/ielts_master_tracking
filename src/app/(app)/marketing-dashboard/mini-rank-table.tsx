@@ -53,8 +53,8 @@ export function MiniRankTable({
               const content = (
                 <div className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{row.label}</p>
-                    {row.sub && <p className="truncate text-xs text-muted-foreground">{row.sub}</p>}
+                    <p className="truncate font-medium text-foreground" title={row.label}>{row.label}</p>
+                    {row.sub && <p className="truncate text-xs text-muted-foreground" title={row.sub}>{row.sub}</p>}
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="font-mono text-xs text-muted-foreground">{row.total} liên hệ</span>

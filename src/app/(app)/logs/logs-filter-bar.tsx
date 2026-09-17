@@ -8,7 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { LOG_CATEGORY_OPTIONS, LOG_RESULT_LABELS } from "@/app/(app)/logs/format";
 
-export function LogsFilterBar() {
+export function LogsFilterBar({
+  basePath = "/logs",
+  searchPlaceholder = "Tìm người thực hiện, mã liên hệ…",
+}: {
+  basePath?: string;
+  searchPlaceholder?: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentQ = searchParams.get("q") ?? "";
@@ -28,7 +34,7 @@ export function LogsFilterBar() {
       else params.set(key, value);
     }
     params.delete("page");
-    router.push(`/logs?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   }
 
   useEffect(() => {
@@ -47,7 +53,7 @@ export function LogsFilterBar() {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Tìm người thực hiện, mã liên hệ…"
+          placeholder={searchPlaceholder}
           className="h-10 rounded-xl bg-background pr-3 pl-9"
         />
       </div>
@@ -85,7 +91,7 @@ export function LogsFilterBar() {
         className="mx-auto shrink-0 rounded-xl text-status-received hover:bg-status-received-bg hover:text-status-received sm:mx-0"
         onClick={() => {
           setQ("");
-          router.push("/logs");
+          router.push(basePath);
         }}
       >
         <RotateCcw className="size-4" />

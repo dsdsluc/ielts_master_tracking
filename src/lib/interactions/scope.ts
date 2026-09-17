@@ -1,6 +1,6 @@
 // Port của AuthService.gs (canAccessBranch_, canViewLead_, canEditConversationInfo_,
-// canEditLeadResult_, requireValidSaleBranchScope_...) — quyết định Sale/Leader/
-// Marketing/BGĐ/Admin được xem và sửa gì, theo đúng vai trò + cơ sở.
+// canEditLeadResult_, requireValidSaleBranchScope_...) — phạm vi cơ sở (branch scope)
+// theo vai trò, tách biệt khỏi hệ phân quyền tính năng (đang xây lại từ đầu).
 import { ROLES } from "@/lib/interactions/constants";
 import { ApiError } from "@/lib/interactions/errors";
 import type { CurrentUser } from "@/lib/auth/dal";
@@ -10,7 +10,7 @@ export function isLeaderLike(user: CurrentUser): boolean {
 }
 
 export function canViewAllBranches(user: CurrentUser): boolean {
-  // Sale/Admin luôn bị khóa đúng một cơ sở — cờ viewAllBranches không mở rộng phạm vi cho vai trò này.
+  // Saler luôn bị khóa đúng một cơ sở — cờ viewAllBranches không mở rộng phạm vi cho vai trò này.
   if (user.role === ROLES.SALES) return false;
   return isLeaderLike(user) || user.viewAllBranches;
 }
@@ -23,9 +23,7 @@ export function canAccessBranch(user: CurrentUser, branchCode: string): boolean 
   return !user.branchCode || user.branchCode === branchCode;
 }
 
-/** BGĐ chỉ xem báo cáo tổng hợp, không xem từng lead riêng lẻ. */
 export function canViewLead(user: CurrentUser, assignedBranchCode: string): boolean {
-  if (user.role === ROLES.BOARD) return false;
   if (isLeaderLike(user)) return true;
   return canAccessBranch(user, assignedBranchCode);
 }
@@ -36,20 +34,15 @@ export function requireValidSaleBranchScope(user: CurrentUser): void {
     throw new ApiError(
       403,
       "INVALID_BRANCH_SCOPE",
-      "Tài khoản Sale/Admin chưa được gán đúng một cơ sở đang hoạt động. Vui lòng liên hệ Quản trị hệ thống."
+      "Tài khoản Saler chưa được gán đúng một cơ sở đang hoạt động. Vui lòng liên hệ Admin."
     );
   }
   if (user.viewAllBranches) {
     throw new ApiError(
       403,
       "INVALID_BRANCH_SCOPE",
-      "Tài khoản Sale/Admin đang có quyền xem tất cả cơ sở — Quản trị cần tắt trước khi tiếp tục."
+      "Tài khoản Saler đang có quyền xem tất cả cơ sở — Admin cần tắt trước khi tiếp tục."
     );
   }
 }
 
-export function requireRole(user: CurrentUser, roles: readonly string[]): void {
-  if (!roles.includes(user.role)) {
-    throw new ApiError(403, "FORBIDDEN", `Vai trò ${user.role} không được thực hiện chức năng này.`);
-  }
-}

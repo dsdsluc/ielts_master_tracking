@@ -125,24 +125,25 @@ model User {
   passwordHash       String  @map("password_hash")
   mustChangePassword Boolean @default(true) @map("must_change_password")
 
-  branch                     Branch?          @relation(fields: [branchCode], references: [code])
-  assignedInteractions       Interaction[]    @relation("AssignedSale")
-  workspaceClaims            WorkspaceClaim[]
-  slaFlaggedInteractions     Interaction[]    @relation("SlaFlaggedBy")
-  createdInteractions        Interaction[]    @relation("CreatedBy")
-  updatedInteractions        Interaction[]    @relation("UpdatedBy")
-  reassignedInteractions     Interaction[]    @relation("ReassignedBy")
-  followupInteractions       Interaction[]    @relation("FollowupHandledBy")
-  mktPushedInteractions      Interaction[]    @relation("MktPushedBy")
-  followupTargetInteractions Interaction[]    @relation("FollowupTargetSale")
+  branch                     Branch?         @relation(fields: [branchCode], references: [code])
+  assignedInteractions       Interaction[]   @relation("AssignedSale")
+  slaFlaggedInteractions     Interaction[]   @relation("SlaFlaggedBy")
+  createdInteractions        Interaction[]   @relation("CreatedBy")
+  updatedInteractions        Interaction[]   @relation("UpdatedBy")
+  reassignedInteractions     Interaction[]   @relation("ReassignedBy")
+  followupInteractions       Interaction[]   @relation("FollowupHandledBy")
+  mktPushedInteractions      Interaction[]   @relation("MktPushedBy")
+  followupTargetInteractions Interaction[]   @relation("FollowupTargetSale")
   systemLogs                 SystemLog[]
-  closedMktPageReports       MktPageReport[]  @relation("ClosedMktPageReport")
+  closedMktPageReports       MktPageReport[] @relation("ClosedMktPageReport")
   sentEmailMessages          EmailMessage[]
 
-  studentProfilesAssignedTo StudentProfile[] @relation("StudentAssignedTo")
-  studentProfilesAssignedBy StudentProfile[] @relation("StudentAssignedBy")
-  studentProfilesUpdatedBy  StudentProfile[] @relation("StudentUpdatedBy")
-  studentCareLogs           StudentCareLog[]
+  saleLeadStat SaleLeadStat?
+
+  customersAssignedTo Customer[]        @relation("CustomerAssignedTo")
+  customersAssignedBy Customer[]        @relation("CustomerAssignedBy")
+  customersUpdatedBy  Customer[]        @relation("CustomerUpdatedBy")
+  customerCareLogs    CustomerCareLog[]
 
   @@map("users")
 }
@@ -158,6 +159,37 @@ model AppSetting {
   @@map("app_settings")
 }
 
+// Đếm riêng số lần Sale tạo liên hệ + số lần tạo ra đã Đủ điều kiện ngay lúc
+// tạo (có SĐT) — tách khỏi User để không phình thêm cột đếm vào đó, và tách
+// khỏi việc query Interaction trực tiếp (đơn giản, nhanh, không phụ thuộc
+// logic lọc/scope khác). Cập nhật duy nhất tại createInteraction() (mutations.ts).
+model SaleLeadStat {
+  saleEmail      String @id @map("sale_email")
+  totalCreated   Int    @default(0) @map("total_created")
+  totalQualified Int    @default(0) @map("total_qualified")
+
+  sale User @relation(fields: [saleEmail], references: [email])
+
+  @@map("sale_lead_stats")
+}
+
+// Phân quyền theo tính năng + vai trò — Admin cấu hình ở /admin/permissions
+// (xem app/(app)/admin/permissions/permission-types.ts cho danh sách
+// feature/role/action hợp lệ). 1 dòng/(feature, role), 4 cột hành động
+// Thêm/Sửa/Xóa/Báo cáo — khớp 1:1 với bảng hiển thị trên UI. Admin luôn có
+// đủ quyền mặc định nên KHÔNG có dòng riêng ở đây (xem require-admin.ts).
+model FeaturePermission {
+  feature   String
+  role      String
+  canCreate Boolean @default(false) @map("can_create")
+  canEdit   Boolean @default(false) @map("can_edit")
+  canDelete Boolean @default(false) @map("can_delete")
+  canReport Boolean @default(false) @map("can_report")
+
+  @@id([feature, role])
+  @@map("feature_permissions")
+}
+
 // ---------------------------------------------------------------------------
 // 2. NGHIỆP VỤ LÕI
 // ---------------------------------------------------------------------------
@@ -171,15 +203,89 @@ model Customer {
   lastTouchAt       DateTime @map("last_touch_at")
   currentStatusName String   @map("current_status_name")
 
-  currentStatus Status        @relation(fields: [currentStatusName], references: [name])
-  interactions  Interaction[]
+  // -------------------------------------------------------------------------
+  // TƯ VẤN GHI DANH — mirror logic StudentProfile cũ (đã gỡ, xem lịch sử
+  // chat/commit) nhưng gắn thẳng vào Customer thay vì 1 bản profile tách rời
+  // liên kết mềm qua interactionId — Customer vốn đã là danh tính duy nhất
+  // của khách (gộp theo canonicalLink) nên không cần thêm 1 tầng định danh
+  // nữa. KHÔNG đụng gì tới Interaction — coi như xong việc khi khách đã Đủ
+  // tiêu chuẩn, phần tư vấn ghi danh từ đây là câu chuyện riêng của Customer.
+  // -------------------------------------------------------------------------
+  age           Int?
+  dateOfBirth   DateTime? @map("date_of_birth")
+  gender        String?
+  parentName    String?   @map("parent_name")
+  address       String?
+  level         String?
+  trainingTrack String?   @map("training_track")
+  school        String?
+  aspiration    String?
 
+  // Mốc xa nhất Sale đã đạt được trong phễu tư vấn (Đã gọi/Quan tâm/Không
+  // quan tâm/Đặt lịch test/Đã test/Đặt lịch học thử/Đã học thử/Đã chốt) — xem
+  // CUSTOMER_STAGE trong lib/interactions/constants.ts. null = chưa gán/chưa
+  // gọi lần nào. Không có "trạng thái rớt" riêng — dùng stageReason để giải
+  // thích vì sao đang dừng ở 1 mốc bất kỳ.
+  stage              String?
+  stageReason        String?   @map("stage_reason")
+  // Mốc thời gian THỰC SỰ chuyển sang "Đã chốt" — set đúng 1 lần lúc stage đổi
+  // sang ENROLLED, KHÔNG dùng chung updatedAt (bị bump bởi bất kỳ chỉnh sửa
+  // nào khác nên không đáng tin cho việc tính KPI theo ngày/tuần/tháng cụ thể).
+  enrolledAt         DateTime? @map("enrolled_at")
+  // Case đang kẹt (mirror sheet "Khách kẹt"): hạn xử lý tiếp theo Sale tự đặt,
+  // và cờ Sale bật khi cần Leader can thiệp.
+  caseDeadline       DateTime? @map("case_deadline")
+  needsLeaderSupport Boolean   @default(false) @map("needs_leader_support")
+  // Ngày hẹn cụ thể — chỉ có ý nghĩa khi stage = "Đặt lịch test"/"Đặt lịch học
+  // thử", cho phép tự phát hiện "quá hạn hẹn mà chưa cập nhật kết quả".
+  appointmentAt      DateTime? @map("appointment_at")
+
+  // null = Leader chưa phân bổ cho Sale nào — chỉ có giá trị SAU khi Leader
+  // phân bổ ở /customer-assignment (khác lúc mới trở thành Customer).
+  assignedToEmail String?   @map("assigned_to_email")
+  assignedByEmail String?   @map("assigned_by_email")
+  assignedAt      DateTime? @map("assigned_at")
+
+  note           String?
+  updatedByEmail String?   @map("updated_by_email")
+  updatedAt      DateTime? @map("updated_at")
+
+  currentStatus Status            @relation(fields: [currentStatusName], references: [name])
+  interactions  Interaction[]
+  assignedTo    User?             @relation("CustomerAssignedTo", fields: [assignedToEmail], references: [email])
+  assignedBy    User?             @relation("CustomerAssignedBy", fields: [assignedByEmail], references: [email])
+  updatedBy     User?             @relation("CustomerUpdatedBy", fields: [updatedByEmail], references: [email])
+  careLogs      CustomerCareLog[]
+
+  @@index([assignedToEmail])
   @@map("customers")
+}
+
+// Nhật ký chăm sóc — mỗi lần Sale gọi điện là 1 dòng, tách riêng khỏi Customer
+// vì là dữ liệu lặp theo thời gian (không dùng chung SystemLog của Interaction
+// — Customer đã tách khỏi Interaction ở tính năng này).
+model CustomerCareLog {
+  id             String   @id @default(cuid())
+  customerKey    String   @map("customer_key")
+  loggedAt       DateTime @default(now()) @map("logged_at")
+  loggedByEmail  String   @map("logged_by_email")
+  content        String
+  stageAtLogTime String?  @map("stage_at_log_time")
+
+  customer Customer @relation(fields: [customerKey], references: [customerKey])
+  loggedBy User     @relation(fields: [loggedByEmail], references: [email])
+
+  @@index([customerKey])
+  @@map("customer_care_logs")
 }
 
 model Interaction {
   interactionId String   @id @map("interaction_id")
-  customerKey   String   @map("customer_key")
+  // Chỉ có giá trị khi liên hệ đã Đủ tiêu chuẩn (có SĐT) — lúc đó mới có dòng
+  // Customer tương ứng (xem createInteraction()/updateStatus() trong
+  // mutations.ts). Liên hệ đang Chờ/Tiếp nhận/Spam-chưa-từng-đủ-điều-kiện thì
+  // customerKey = null, KHÔNG ghi vào bảng customers.
+  customerKey   String?  @map("customer_key")
   version       Int      @default(1)
   activeFlag    Boolean  @default(true) @map("active_flag")
   createdLeadAt DateTime @map("created_lead_at")
@@ -200,7 +306,6 @@ model Interaction {
   statusName          String @map("status_name")
 
   interactionType String @map("interaction_type")
-  touchCount      Int    @default(1) @map("touch_count")
 
   assignedSaleEmail String? @map("assigned_sale_email")
 
@@ -244,16 +349,19 @@ model Interaction {
 
   followupHandledByEmail String?   @map("followup_handled_by_email")
   followupHandledAt      DateTime? @map("followup_handled_at")
-  // "STATUS_CHANGED": Sale đổi trạng thái nghiệp vụ thực sau khi được nhắc (tự
-  // động tắt cờ) — tín hiệu chăm sóc thật. "MANUAL_DISMISS": Sale bấm "Đánh dấu
-  // đã xử lý" thủ công, không kèm thay đổi trạng thái nào.
+  // "STATUS_CHANGED": Sale xử lý xong yêu cầu chăm sóc lại — tắt cờ needsFollowup
+  // kèm tiến triển thật (đổi trạng thái nghiệp vụ, hoặc bị ép về "Tiếp nhận" qua
+  // resolveFollowup() trong mutations.ts). "MANUAL_DISMISS": giá trị lịch sử cũ
+  // (trước khi resolveFollowup() luôn buộc tiến triển thật) — không còn phát
+  // sinh mới, chỉ còn ở các bản ghi cũ.
   followupOutcome        String?   @map("followup_outcome")
-  // Đếm dồn số lần Sale bấm "Đánh dấu đã xử lý" (MANUAL_DISMISS) cho liên hệ
-  // này qua các đợt Marketing nhắc chăm sóc lại. Vượt ngưỡng cấu hình hệ thống
-  // (mặc định 3) thì tự động chuyển Spam — xem resolveFollowup() trong mutations.ts.
+  // Đếm dồn số lần MARKETING gửi yêu cầu "Chăm sóc lại" cho liên hệ này qua suốt
+  // vòng đời (xem pushFollowup() trong mutations.ts) — KHÔNG còn đếm số lần Sale
+  // xử lý như trước. Chỉ dùng để hiển thị/lọc "Sắp chuyển Spam" ở /followup-inbox,
+  // không tự động đổi trạng thái.
   followupResolvedCount  Int       @default(0) @map("followup_resolved_count")
 
-  customer           Customer       @relation(fields: [customerKey], references: [customerKey])
+  customer           Customer?      @relation(fields: [customerKey], references: [customerKey])
   source             Source         @relation(fields: [sourceName], references: [name])
   fanpage            Fanpage        @relation(fields: [fanpageName], references: [name])
   customerObject     CustomerObject @relation(fields: [customerObjectName], references: [name])
@@ -269,39 +377,16 @@ model Interaction {
   mktPushedBy        User?          @relation("MktPushedBy", fields: [mktPushedByEmail], references: [email])
   followupTargetSale User?          @relation("FollowupTargetSale", fields: [followupTargetSaleEmail], references: [email])
 
-  migrationMeta   InteractionMigrationMeta?
-  studentProfiles StudentProfile[]
   systemLogs      SystemLog[]
-  workspaceClaims WorkspaceClaim[]
   emailMessages   EmailMessageInteraction[]
+  fieldChangeLogs InteractionFieldLog[]
 
   @@index([customerKey])
   @@index([statusName])
+  @@index([assignedSaleEmail])
   @@index([assignedBranchCode])
   @@index([createdLeadAt])
   @@map("interactions")
-}
-
-// Nhiều Sale có thể cùng thêm 1 liên hệ đang mở vào "Workspace của tôi" —
-// không còn khoá độc quyền như trước (workspace_claimed_by_email cũ). "Tư vấn
-// viên" hiển thị ở UI vẫn là 1 người: người có lastActivityAt gần nhất (xem
-// consultantEmail/consultantName trong serialize.ts).
-model WorkspaceClaim {
-  id             String   @id @default(cuid())
-  interactionId  String   @map("interaction_id")
-  saleEmail      String   @map("sale_email")
-  claimedAt      DateTime @default(now()) @map("claimed_at")
-  // Bump mỗi lần Sale này thao tác lên liên hệ (autoClaimWorkspace trong
-  // mutations.ts) — dùng để xác định "tư vấn viên gần nhất thao tác".
-  lastActivityAt DateTime @default(now()) @map("last_activity_at")
-
-  interaction Interaction @relation(fields: [interactionId], references: [interactionId], onDelete: Cascade)
-  sale        User        @relation(fields: [saleEmail], references: [email], onDelete: Cascade)
-
-  @@unique([interactionId, saleEmail])
-  @@index([interactionId])
-  @@index([saleEmail])
-  @@map("workspace_claims")
 }
 
 // Mỗi dòng = 1 email THẬT SỰ đã gửi đi (1 Message-ID) — kể cả khi 1 email gộp
@@ -333,8 +418,7 @@ model EmailMessage {
 
 // Bảng nối nhiều-nhiều EmailMessage <-> Interaction (1 email có thể gộp
 // nhiều liên hệ; 1 liên hệ có thể xuất hiện trong nhiều email theo thời gian)
-// — mirror đúng pattern WorkspaceClaim ở trên thay vì dùng cột mảng, để giữ
-// được FK/index chuẩn như phần còn lại của schema.
+// — dùng bảng nối để giữ được FK/index chuẩn như phần còn lại của schema.
 model EmailMessageInteraction {
   id             String @id @default(cuid())
   emailMessageId String @map("email_message_id")
@@ -348,16 +432,41 @@ model EmailMessageInteraction {
   @@map("email_message_interactions")
 }
 
-// Dữ liệu đối chiếu migration — tách khỏi bảng chính, chỉ phục vụ audit 1 lần
-model InteractionMigrationMeta {
-  interactionId String  @id @map("interaction_id")
-  legacyStt     Int?    @map("legacy_stt")
-  legacyRow     Int?    @map("legacy_row")
-  migrationNote String? @map("migration_note")
+// Nhật ký thay đổi từng field của Interaction khi Sửa thông tin (chỉ ghi khi
+// GHI ĐÈ 1 giá trị đã có sẵn — điền lần đầu vào field đang trống KHÔNG tính
+// là "thay đổi" nên không ghi — xem updateInteractionInfo() trong
+// mutations.ts). Dùng để hiển thị lịch sử sửa ở trang chi tiết liên hệ, và
+// sau này thống kê theo field/theo người sửa. fieldLabel/changedByName
+// denormalized tại thời điểm ghi để hiển thị không phụ thuộc map nhãn hay tên
+// User có thể đổi khác đi sau này.
+// Nguồn sự thật DUY NHẤT cho "lịch sử của 1 liên hệ" — không chỉ sửa field
+// nữa. `fieldKey` mang 1 trong 2 vai trò tuỳ loại dòng: tên field thật khi
+// loại là sửa thông tin ("rawLink" | "customerName" | "fanpageName" |
+// "conversationLink" | "adId" | "customerObjectName" | "assignedBranchCode"),
+// hoặc mã hành động chung khi là hoạt động khác trên liên hệ ("TOUCH" |
+// "STATUS_CHANGE" | "FOLLOWUP_PUSH" | "FOLLOWUP_ASSIGN" | "FOLLOWUP_RESOLVED"
+// | "REASSIGN") — `fieldLabel` luôn là nhãn tiếng Việt hiển thị tương ứng.
+// `note` chỉ dùng cho loại hoạt động (ghi chú tự do của actor), field-edit
+// không dùng tới. SystemLog vẫn giữ vai trò nhật ký audit TOÀN HỆ THỐNG
+// (/logs) — bảng này riêng cho đúng 1 liên hệ, hiển thị trên trang chi tiết
+// của nó (Lịch sử chăm sóc / Lịch sử chăm sóc lại / Lịch sử chỉnh sửa).
+model InteractionFieldLog {
+  id             String   @id @default(cuid())
+  interactionId  String   @map("interaction_id")
+  fieldKey       String   @map("field_key")
+  fieldLabel     String   @map("field_label")
+  oldValue       String?  @map("old_value")
+  newValue       String?  @map("new_value")
+  note           String?  @map("note")
+  changedByEmail String   @map("changed_by_email")
+  changedByName  String   @map("changed_by_name") // denormalized tại thời điểm ghi — tên hiển thị không đổi ngược theo User nếu sau này actor đổi tên
+  changedAt      DateTime @default(now()) @map("changed_at")
 
   interaction Interaction @relation(fields: [interactionId], references: [interactionId], onDelete: Cascade)
 
-  @@map("interaction_migration_meta")
+  @@index([interactionId])
+  @@index([fieldKey])
+  @@map("interaction_field_logs")
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +482,7 @@ model AdsCost {
   sourceName     String?  @map("source_name")
   fanpageName    String?  @map("fanpage_name")
   branchCode     String?  @map("branch_code")
-  costVnd        Decimal  @map("cost_vnd") @db.Decimal(14, 2)
+  costVnd        Decimal  @default(0) @map("cost_vnd") @db.Decimal(14, 2)
   note           String?
   updatedByEmail String?  @map("updated_by_email")
   updatedAt      DateTime @map("updated_at")
@@ -449,86 +558,4 @@ model SystemLog {
   @@index([loggedAt])
   @@index([interactionId])
   @@map("system_log")
-}
-
-// ---------------------------------------------------------------------------
-// 5. TƯ VẤN HỌC VIÊN — Hướng A: tách hoàn toàn khỏi Interaction, KHÔNG đụng
-// field/logic sẵn có (statusName, assignedSaleEmail, WorkspaceClaim...).
-// Leader phân bổ 1 liên hệ Đủ tiêu chuẩn cho 1 Sale để gọi điện tư vấn ghi
-// danh; interactionId chỉ là liên kết MỀM để tra lại lead gốc khi cần.
-// ---------------------------------------------------------------------------
-
-model StudentProfile {
-  id            String  @id @default(cuid())
-  interactionId String? @map("interaction_id")
-
-  studentName   String    @map("student_name")
-  age           Int?
-  dateOfBirth   DateTime? @map("date_of_birth")
-  gender        String?
-  parentName    String?   @map("parent_name")
-  phone         String
-  address       String?
-  level         String?
-  trainingTrack String?   @map("training_track")
-  school        String?
-  aspiration    String?
-
-  // Mốc xa nhất Sale đã đạt được trong phễu tư vấn (Đã gọi/Quan tâm/Không
-  // quan tâm/Đặt lịch test/Đã test/Đặt lịch học thử/Đã học thử/Đã chốt) —
-  // xem STUDENT_STAGE trong lib/interactions/constants.ts. null = chưa gọi
-  // lần nào. stageReason tuỳ chọn, mở cho nhập ở bất kỳ mốc nào để giải
-  // thích vì sao hồ sơ đang dừng ở đó (không đến test, do giá, do giáo viên...).
-  stage              String?
-  stageReason        String?   @map("stage_reason")
-  // Mốc thời gian THỰC SỰ chuyển sang "Đã chốt" — set đúng 1 lần lúc stage đổi
-  // sang ENROLLED (updateStudentProfile()), KHÔNG dùng chung updatedAt (bị bump
-  // bởi bất kỳ chỉnh sửa nào khác nên không đáng tin cho việc tính KPI theo
-  // ngày/tuần/tháng cụ thể).
-  enrolledAt         DateTime? @map("enrolled_at")
-  // Case đang kẹt (mở rộng từ stageReason, mirror sheet "Khách kẹt"): hạn xử
-  // lý tiếp theo Sale tự đặt, và cờ Sale bật khi cần Leader can thiệp — Leader
-  // lọc được ngay ở trang Thống kê thay vì phải đọc từng dòng lý do.
-  caseDeadline       DateTime? @map("case_deadline")
-  needsLeaderSupport Boolean   @default(false) @map("needs_leader_support")
-  // Ngày hẹn cụ thể — chỉ có ý nghĩa khi stage = "Đặt lịch test"/"Đặt lịch học
-  // thử", cho phép tự phát hiện "quá hạn hẹn mà chưa cập nhật kết quả".
-  appointmentAt      DateTime? @map("appointment_at")
-
-  assignedToEmail String   @map("assigned_to_email")
-  assignedByEmail String   @map("assigned_by_email")
-  assignedAt      DateTime @map("assigned_at")
-
-  note           String?
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedByEmail String?   @map("updated_by_email")
-  updatedAt      DateTime? @map("updated_at")
-
-  interaction Interaction?     @relation(fields: [interactionId], references: [interactionId])
-  assignedTo  User             @relation("StudentAssignedTo", fields: [assignedToEmail], references: [email])
-  assignedBy  User             @relation("StudentAssignedBy", fields: [assignedByEmail], references: [email])
-  updatedBy   User?            @relation("StudentUpdatedBy", fields: [updatedByEmail], references: [email])
-  careLogs    StudentCareLog[]
-
-  @@index([assignedToEmail])
-  @@index([interactionId])
-  @@map("student_profiles")
-}
-
-// Nhật ký chăm sóc — mỗi lần Sale gọi điện là 1 dòng, tách riêng khỏi
-// StudentProfile vì là dữ liệu lặp theo thời gian (không dùng chung SystemLog
-// của Interaction — giữ đúng tinh thần tách biệt khỏi hạ tầng cũ).
-model StudentCareLog {
-  id               String   @id @default(cuid())
-  studentProfileId String   @map("student_profile_id")
-  loggedAt         DateTime @default(now()) @map("logged_at")
-  loggedByEmail    String   @map("logged_by_email")
-  content          String
-  stageAtLogTime   String?  @map("stage_at_log_time")
-
-  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id])
-  loggedBy       User           @relation(fields: [loggedByEmail], references: [email])
-
-  @@index([studentProfileId])
-  @@map("student_care_logs")
 }

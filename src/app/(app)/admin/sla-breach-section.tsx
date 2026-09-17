@@ -52,7 +52,7 @@ export function SlaBreachSection({ items, branchNames }: { items: InteractionLis
                   <p className="max-w-56 truncate font-medium text-foreground" title={item.customerName}>
                     {item.customerName}
                   </p>
-                  <p className="max-w-56 truncate text-xs text-muted-foreground">{item.fanpageName}</p>
+                  <p className="max-w-56 truncate text-xs text-muted-foreground" title={item.fanpageName}>{item.fanpageName}</p>
                 </TableCell>
                 <TableCell className="px-4 text-sm text-muted-foreground">{branchNames[item.assignedBranchCode] ?? item.assignedBranchCode}</TableCell>
                 <TableCell className="hidden px-4 text-sm text-muted-foreground sm:table-cell">{item.consultantName ?? "Chưa gán"}</TableCell>

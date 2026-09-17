@@ -2,8 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, GitMerge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
-import { requireRole } from "@/lib/auth/dal";
-import { CAN_CREATE_OR_EDIT_LEAD } from "@/lib/interactions/constants";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/prisma";
 import { customerScopeWhere } from "@/app/(app)/customers/customer-scope";
 import { DuplicateMergeView, type DuplicateCandidate } from "@/app/(app)/sale-overview/[phone]/duplicate-merge-view";
@@ -13,7 +12,7 @@ export default async function DuplicateCustomerDetailPage({
 }: {
   params: Promise<{ phone: string }>;
 }) {
-  const user = await requireRole(...CAN_CREATE_OR_EDIT_LEAD);
+  const user = await getCurrentUser();
   const { phone: rawPhone } = await params;
   const phone = decodeURIComponent(rawPhone);
 

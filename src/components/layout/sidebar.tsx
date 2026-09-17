@@ -8,11 +8,10 @@ import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { SidebarUser } from "@/components/layout/sidebar-user";
 import { ComposeMailButton } from "@/components/layout/compose-mail-button";
 import { useSidebar } from "@/components/layout/sidebar-context";
-import { ROLES } from "@/lib/interactions/constants";
 import { cn } from "@/lib/utils";
 import type { CurrentUser } from "@/lib/auth/dal";
 
-export function Sidebar({ user }: { user: CurrentUser }) {
+export function Sidebar({ user, accessibleHrefs }: { user: CurrentUser; accessibleHrefs: readonly string[] }) {
   const { collapsed, toggle } = useSidebar();
 
   return (
@@ -26,7 +25,7 @@ export function Sidebar({ user }: { user: CurrentUser }) {
         <BrandMark collapsed={collapsed} />
         {!collapsed && (
           <div className="flex shrink-0 items-center gap-1">
-            {user.role === ROLES.ADMIN && <ComposeMailButton />}
+            <ComposeMailButton />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -42,7 +41,7 @@ export function Sidebar({ user }: { user: CurrentUser }) {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="py-4">
-          <SidebarNav role={user.role} collapsed={collapsed} />
+          <SidebarNav accessibleHrefs={accessibleHrefs} collapsed={collapsed} />
         </div>
       </ScrollArea>
 
