@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ROLES, STATUS, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { getBranchSlaMap } from "@/lib/interactions/queries";
 import { logSystemAction } from "@/lib/interactions/audit";
-import { sendEmail, appLink } from "@/lib/email";
+import { sendEmail, appLink, emailEnvelope } from "@/lib/email";
 import { escapeHtml } from "@/lib/html-escape";
 
 // Cùng ngưỡng "sắp/đã quá SLA" với getQueue() (lib/interactions/queries.ts) —
@@ -50,7 +50,10 @@ export async function GET(request: NextRequest) {
     return Response.json({ sent: false, breachingCount: 0 });
   }
 
-  const recipients = await prisma.user.findMany({ where: { role: { in: [ROLES.LEADER, ROLES.ADMIN] }, active: true }, select: { email: true } });
+  const recipients = await prisma.user.findMany({
+    where: { role: { in: [ROLES.LEADER, ROLES.ADMIN] }, active: true },
+    select: { email: true, fullName: true },
+  });
   if (recipients.length === 0) {
     await logSystemAction(prisma, SYSTEM_LOG_ACTION.SLA_BREACH_DIGEST, { breachingCount: breaching.length, recipients: 0 }, "FAIL", "Không có Leader/Admin nào đang hoạt động để gửi.");
     return Response.json({ sent: false, breachingCount: breaching.length, recipients: 0 });
@@ -68,15 +71,22 @@ export async function GET(request: NextRequest) {
     .join("");
   const moreNote = breaching.length > MAX_ITEMS_IN_EMAIL ? `<p>... và ${breaching.length - MAX_ITEMS_IN_EMAIL} liên hệ khác.</p>` : "";
 
-  const [to, ...rest] = recipients.map((r) => r.email);
+  const [first, ...rest] = recipients;
   await sendEmail({
-    to,
-    bcc: rest,
+    to: first.email,
+    toName: first.fullName,
+    bcc: rest.map((r) => r.email),
     subject: `Tổng hợp quá/sắp quá SLA: ${breaching.length} liên hệ`,
-    html: `<p><strong>${breaching.length}</strong> liên hệ đang quá hoặc sắp quá SLA xử lý:</p><ul>${itemsHtml}</ul>${moreNote}`,
+    html: emailEnvelope({
+      audienceNote: `Gửi tới toàn bộ Leader/Admin đang hoạt động (${recipients.length} người).`,
+      purpose: `Có ${breaching.length} liên hệ đang quá hoặc sắp quá SLA xử lý — hệ thống tự động tổng hợp hằng ngày.`,
+      bodyHtml: `<p><strong>Việc cần làm:</strong> phân bổ/nhắc Sale xử lý các liên hệ dưới đây:</p><ul>${itemsHtml}</ul>${moreNote}`,
+      senderLabel: "Hệ thống tự động",
+    }),
     action: SYSTEM_LOG_ACTION.SLA_BREACH_DIGEST,
     sentByEmail: null,
     interactionIds: shown.map((r) => r.interactionId),
+    threadKey: "sla-breach-digest",
   });
 
   await logSystemAction(prisma, SYSTEM_LOG_ACTION.SLA_BREACH_DIGEST, { breachingCount: breaching.length, recipients: recipients.length });

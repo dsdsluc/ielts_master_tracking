@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { detectSourceName, type LeadFormOptions } from "@/app/(app)/leads/lead-form-options";
 import { createInteraction } from "@/app/(app)/leads/leads-api";
 import type { DuplicateConflict } from "@/app/(app)/leads/types";
+import { CUSTOMER_STAGE, CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 import { cn } from "@/lib/utils";
 
 type ImportRow = {
@@ -33,11 +34,28 @@ type ImportRow = {
   conversationLink: string;
   // Có giá trị thì liên hệ được tạo thẳng ở trạng thái "Đủ tiêu chuẩn" thay
   // vì "Chờ" — dùng để nhập lại các liên hệ cũ đã có SĐT (tổng hợp từ nhiều
-  // nguồn) để đưa thẳng vào hàng chờ phân bổ ở "Phân bổ học viên".
+  // nguồn) để đưa thẳng vào hàng chờ phân bổ ở "Phân bổ học viên". Có Link hội
+  // thoại nhưng chưa có SĐT KHÔNG tự chuyển "Có nhu cầu" — đó luôn là hành
+  // động chủ động của Sale sau khi đã liên hệ, không tự suy ra từ dữ liệu.
   phone: string;
+  // Mốc tư vấn kèm theo (nếu file đã có sẵn dữ liệu tư vấn cũ) — chỉ áp dụng
+  // khi dòng có SĐT (mới sinh hồ sơ Customer để gắn mốc vào). "Không quan
+  // tâm" cần kèm lý do, thiếu thì hệ thống bỏ qua mốc này khi lưu.
+  stage: string;
+  stageReason: string;
 };
 
-const TEMPLATE_HEADERS = ["Link khách hàng", "Tên khách", "Fanpage", "Ad ID", "Đối tượng", "Link hội thoại", "SĐT"] as const;
+const TEMPLATE_HEADERS = [
+  "Link khách hàng",
+  "Tên khách",
+  "Fanpage",
+  "Ad ID",
+  "Đối tượng",
+  "Link hội thoại",
+  "SĐT",
+  "Trạng thái tư vấn",
+  "Lý do (nếu Không quan tâm)",
+] as const;
 
 // Khớp tên cột linh hoạt (thường/hoa, khoảng trắng thừa) — nếu file không khớp
 // tên cột nào cả thì rơi về đúng thứ tự cột như file mẫu.
@@ -59,6 +77,15 @@ const HEADER_FIELD_MAP: Record<string, keyof Omit<ImportRow, "id">> = {
   "số điện thoại": "phone",
   "so dien thoai": "phone",
   phone: "phone",
+  "trạng thái tư vấn": "stage",
+  "trang thai tu van": "stage",
+  "mốc tư vấn": "stage",
+  "moc tu van": "stage",
+  stage: "stage",
+  "lý do (nếu không quan tâm)": "stageReason",
+  "ly do (neu khong quan tam)": "stageReason",
+  "lý do": "stageReason",
+  "ly do": "stageReason",
 };
 const POSITIONAL_FIELDS: (keyof Omit<ImportRow, "id">)[] = [
   "rawLink",
@@ -68,7 +95,18 @@ const POSITIONAL_FIELDS: (keyof Omit<ImportRow, "id">)[] = [
   "customerObjectName",
   "conversationLink",
   "phone",
+  "stage",
+  "stageReason",
 ];
+
+// Khớp tên mốc tư vấn linh hoạt (không phân biệt hoa/thường, khoảng trắng
+// thừa) — file Excel tổng hợp từ nhiều nguồn khó gõ đúng y hệt hằng số hệ
+// thống, nên chuẩn hóa trước khi so khớp CUSTOMER_STAGE_VALUES.
+function matchStage(text: string): string {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return "";
+  return CUSTOMER_STAGE_VALUES.find((s) => s.toLowerCase() === normalized) ?? "";
+}
 
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -90,7 +128,7 @@ async function downloadTemplate() {
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("Liên hệ");
   sheet.addRow([...TEMPLATE_HEADERS]);
-  sheet.addRow(["https://facebook.com/vidu.khach", "Nguyễn Văn A", "", "", "", "", ""]);
+  sheet.addRow(["https://facebook.com/vidu.khach", "Nguyễn Văn A", "", "", "", "", "", "", ""]);
   sheet.getRow(1).font = { bold: true };
   sheet.columns.forEach((c) => (c.width = 26));
   const buffer = await wb.xlsx.writeBuffer();
@@ -141,6 +179,8 @@ async function parseWorkbook(file: File): Promise<ImportRow[]> {
       customerObjectName: draft.customerObjectName ?? "",
       conversationLink: draft.conversationLink ?? "",
       phone: draft.phone ?? "",
+      stage: matchStage(draft.stage ?? ""),
+      stageReason: draft.stageReason ?? "",
     });
   });
   return rows;
@@ -256,6 +296,8 @@ export function LeadsImportView({
       assignedBranchCode: targetBranchCode,
       conversationLink: row.conversationLink || undefined,
       phoneRaw: row.phone || undefined,
+      stage: row.stage || undefined,
+      stageReason: row.stageReason || undefined,
       duplicateConfirmed: duplicateReason ? true : undefined,
       duplicateReason,
     };
@@ -377,7 +419,15 @@ export function LeadsImportView({
         </div>
         <p className="text-xs text-muted-foreground">
           File cần có các cột: {TEMPLATE_HEADERS.join(", ")}. Nếu tên cột không khớp, hệ thống sẽ đọc theo đúng thứ tự cột như file mẫu.
-          Dòng nào có điền cột SĐT sẽ được tạo thẳng ở trạng thái &quot;Đủ tiêu chuẩn&quot; (dùng cho liên hệ cũ đã có SĐT, tổng hợp từ nhiều nguồn) — dòng không có SĐT vẫn tạo bình thường ở trạng thái &quot;Chờ&quot;.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Dòng có SĐT → tạo thẳng &quot;Đủ tiêu chuẩn&quot;. Dòng chưa có SĐT → tạo &quot;Chờ&quot; như bình thường, kể cả khi đã điền Link hội thoại
+          (mốc &quot;Có nhu cầu&quot; chỉ do Sale chủ động gán sau khi đã liên hệ, không tự suy ra ở bước nhập này).
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Trùng SĐT với khách đã có trong hệ thống (hoặc trùng ngay trong file) sẽ tự động gộp vào đúng 1 hồ sơ khách hàng, không tạo bản ghi
+          trùng. Có thể điền kèm &quot;Trạng thái tư vấn&quot; (vd. Đã gọi, Quan tâm, Đã chốt...) cho các dòng đã có SĐT để làm giàu sẵn hồ sơ — đỡ
+          phải chỉnh tay lại từ đầu; riêng &quot;Không quan tâm&quot; cần kèm lý do ở cột cuối, thiếu lý do thì mốc này sẽ bị bỏ qua khi lưu.
         </p>
       </div>
     );
@@ -429,7 +479,7 @@ export function LeadsImportView({
 
       <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
         <div className="overflow-x-auto">
-          <Table className="min-w-[1100px]">
+          <Table className="min-w-[1400px]">
             <TableHeader className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-md">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-8 px-3" />
@@ -440,6 +490,8 @@ export function LeadsImportView({
                 <TableHead className="min-w-36 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Đối tượng</TableHead>
                 <TableHead className="min-w-48 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Link hội thoại</TableHead>
                 <TableHead className="min-w-36 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">SĐT (nếu có)</TableHead>
+                <TableHead className="min-w-40 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Trạng thái tư vấn</TableHead>
+                <TableHead className="min-w-48 px-3 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Lý do (nếu Không quan tâm)</TableHead>
                 <TableHead className="w-10 pr-3" />
               </TableRow>
             </TableHeader>
@@ -514,6 +566,38 @@ export function LeadsImportView({
                         className="h-9 rounded-lg font-mono"
                       />
                     </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Select
+                        value={row.stage}
+                        onValueChange={(v) => updateRow(row.id, "stage", v ?? "")}
+                        disabled={!row.phone.trim()}
+                        items={{ "": "Chưa gọi", ...Object.fromEntries(CUSTOMER_STAGE_VALUES.map((s) => [s, s])) }}
+                      >
+                        <SelectTrigger className="h-9 w-full rounded-lg">
+                          <SelectValue placeholder={row.phone.trim() ? "Chưa gọi" : "Cần có SĐT"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Chưa gọi</SelectItem>
+                          {CUSTOMER_STAGE_VALUES.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {s}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Input
+                        value={row.stageReason}
+                        onChange={(e) => updateRow(row.id, "stageReason", e.target.value)}
+                        placeholder={row.stage === CUSTOMER_STAGE.NOT_INTERESTED ? "Bắt buộc — vì sao không quan tâm" : "Không bắt buộc"}
+                        disabled={!row.phone.trim()}
+                        className={cn(
+                          "h-9 rounded-lg",
+                          row.stage === CUSTOMER_STAGE.NOT_INTERESTED && !row.stageReason.trim() && "border-destructive/50"
+                        )}
+                      />
+                    </TableCell>
                     <TableCell className="pr-3 pl-1 py-2.5">
                       <Button
                         type="button"
@@ -530,7 +614,7 @@ export function LeadsImportView({
                   {(duplicate || rowError) && (
                     <TableRow className="bg-secondary/20 hover:bg-secondary/20">
                       <TableCell />
-                      <TableCell colSpan={8} className="px-3 py-3">
+                      <TableCell colSpan={10} className="px-3 py-3">
                         {duplicate ? (
                           <Alert variant="destructive" className="py-2">
                             <AlertDescription className="flex flex-wrap items-center justify-between gap-3">

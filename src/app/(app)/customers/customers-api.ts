@@ -18,6 +18,14 @@ export async function transferCustomer(key: string, targetEmail: string): Promis
   return apiFetch<CustomerDetail>(`/api/customers/${key}/transfer`, { method: "POST", body: JSON.stringify({ targetEmail }) });
 }
 
+export async function reclaimCustomers(customerKeys: string[]): Promise<{ reclaimed: number; skipped: number }> {
+  return apiFetch("/api/customers/reclaim", { method: "POST", body: JSON.stringify({ customerKeys }) });
+}
+
+export async function transferCustomersBulk(customerKeys: string[], targetEmail: string): Promise<{ moved: number; skipped: number }> {
+  return apiFetch("/api/customers/transfer-bulk", { method: "POST", body: JSON.stringify({ customerKeys, targetEmail }) });
+}
+
 export async function updateCustomerProfile(key: string, input: CustomerProfileInput): Promise<CustomerDetail> {
   return apiFetch<CustomerDetail>(`/api/customers/${key}`, { method: "PATCH", body: JSON.stringify(input) });
 }

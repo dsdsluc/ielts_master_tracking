@@ -18,7 +18,7 @@ export default async function SpamReviewPage({
   searchParams: Promise<{ branch?: string; source?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "spamReview");
+  await requireFeatureAccess(user, "spamReview");
   const { branch, source } = await searchParams;
 
   const [branches, sourceRows] = await Promise.all([
@@ -68,7 +68,7 @@ export default async function SpamReviewPage({
       <PageHeader
         eyebrow="Quản trị"
         title="Xử lý Spam"
-        description='Xoá hẳn liên hệ rác, hoặc khôi phục về "Tiếp nhận" và gửi ngay vào hàng đợi "Cần chăm sóc lại" cho Leader phân bổ.'
+        description='Xoá hẳn liên hệ rác, hoặc khôi phục về "Có nhu cầu" và gửi ngay vào hàng đợi "Cần chăm sóc lại" cho Leader phân bổ.'
       />
 
       <SpamReviewFilterBar branches={branches} sources={sourceRows.map((s) => s.name)} />

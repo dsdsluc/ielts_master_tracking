@@ -9,6 +9,15 @@ export const transferCustomerSchema = z.object({
   targetEmail: z.string().email(),
 });
 
+export const reclaimCustomersSchema = z.object({
+  customerKeys: z.array(z.string().min(1)).min(1).max(50),
+});
+
+export const transferCustomersSchema = z.object({
+  customerKeys: z.array(z.string().min(1)).min(1).max(50),
+  targetEmail: z.string().email(),
+});
+
 export const customerProfileSchema = z.object({
   displayName: z.string().trim().min(1, "Vui lòng nhập tên khách hàng."),
   phoneNormalized: z.string().trim().optional().nullable(),

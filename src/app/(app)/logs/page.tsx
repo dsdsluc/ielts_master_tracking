@@ -41,7 +41,7 @@ export default async function LogsPage({
   searchParams: Promise<{ q?: string; role?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "logs");
+  await requireFeatureAccess(user, "logs");
   const { q, role } = await searchParams;
 
   // Cùng loại trừ CLEANUP_* như bản feed cũ — đây là việc dọn dẹp hệ thống của

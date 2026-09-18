@@ -38,6 +38,7 @@ import { QualifyDialog } from "@/app/(app)/leads/qualify-dialog";
 import { SpamDialog } from "@/app/(app)/leads/spam-dialog";
 import { ReassignDialog } from "@/app/(app)/leads/reassign-dialog";
 import { ResolveFollowupDialog } from "@/app/(app)/leads/resolve-followup-dialog";
+import { STATUS } from "@/lib/interactions/constants";
 
 function MetaTag({ children }: { children: React.ReactNode }) {
   return (
@@ -94,7 +95,7 @@ export function LeadDetailSheet({
   const [resolveFollowupOpen, setResolveFollowupOpen] = useState(false);
 
   const open = interactionId !== null;
-  const isOpenStatus = detail?.status === "Chờ" || detail?.status === "Tiếp nhận";
+  const isOpenStatus = detail?.status === STATUS.WAITING || detail?.status === STATUS.PROCESSING;
   const canReassign = detail?.permissions.canReassign ?? false;
 
   return (
@@ -286,7 +287,7 @@ export function LeadDetailSheet({
                   <div className="flex flex-nowrap items-center gap-2">
                     {isOpenStatus && detail.status === "Chờ" && (
                       <Button variant="secondary" size="sm" className="rounded-full bg-status-received-bg px-4 text-status-received hover:bg-status-received-bg/70" onClick={handleMoveToInProgress} disabled={touchPending}>
-                        Chuyển Tiếp nhận
+                        Có nhu cầu
                       </Button>
                     )}
                   </div>

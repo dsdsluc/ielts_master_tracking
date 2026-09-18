@@ -1,6 +1,8 @@
-import { ListPlus } from "lucide-react";
+import Link from "next/link";
+import { FileSpreadsheet, ListPlus } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { prisma } from "@/lib/prisma";
@@ -9,7 +11,7 @@ import { AdminNewAdIdsView } from "@/app/(app)/admin/new-ad-ids/admin-new-ad-ids
 
 export default async function AdminNewAdIdsPage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "newAdIds");
+  await requireFeatureAccess(user, "newAdIds");
 
   const [rows, sources, fanpages, branches] = await Promise.all([
     getNewAdIdRows(),
@@ -24,6 +26,11 @@ export default async function AdminNewAdIdsPage() {
         eyebrow="Quản trị"
         title="Ad ID mới"
         description='Ad ID xuất hiện trong liên hệ nhưng chưa có bản ghi "Chi phí quảng cáo" tương ứng — bấm vào từng dòng để điền nốt thông tin.'
+        action={
+          <Button variant="outline" size="sm" className="h-10 rounded-full" nativeButton={false} render={<Link href="/ads-cost/import" />}>
+            <FileSpreadsheet className="size-3.5" /> Nhập hàng loạt từ Excel
+          </Button>
+        }
       />
 
       {rows.length === 0 ? (

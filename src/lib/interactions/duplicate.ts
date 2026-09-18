@@ -104,6 +104,27 @@ export async function findDuplicateInfo(
 }
 
 /**
+ * Khách hàng cùng SĐT đã tồn tại (Customer.phoneNormalized) — dùng để GHÉP
+ * vào đúng 1 Customer thay vì sinh customerKey mới theo canonicalLink khi
+ * liên hệ mới đủ điều kiện. findDuplicateInfo() ở trên chỉ soi trùng theo
+ * canonicalLink (cùng 1 link Facebook) nên không bắt được trường hợp cùng 1
+ * khách nhắn từ 2 link/fanpage khác nhau nhưng cho cùng 1 SĐT — nếu không có
+ * bước này, mỗi lần nhập lại sẽ tạo thêm 1 Customer trùng cho cùng người thật,
+ * đặc biệt dễ xảy ra khi nhập hàng loạt từ Excel (nhiều nguồn gộp lại).
+ * firstTouchAt asc để luôn giữ ĐÚNG 1 hồ sơ gốc lâu đời nhất, không bị đổi
+ * qua lại giữa các lần nhập.
+ */
+export async function findCustomerKeyByPhone(phoneNormalized: string): Promise<string | null> {
+  if (!phoneNormalized) return null;
+  const row = await prisma.customer.findFirst({
+    where: { phoneNormalized },
+    select: { customerKey: true },
+    orderBy: { firstTouchAt: "asc" },
+  });
+  return row?.customerKey ?? null;
+}
+
+/**
  * First/Last_touch_Ad_ID — port getCustomerTouch_(). Nhóm theo canonicalLink
  * (KHÔNG phải customerKey) — customerKey chỉ có giá trị từ lúc liên hệ Đủ
  * tiêu chuẩn, nhưng phải xác định được ad đầu/cuối ngay từ liên hệ đầu tiên

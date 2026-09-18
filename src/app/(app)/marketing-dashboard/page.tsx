@@ -97,7 +97,7 @@ export default async function MarketingDashboardPage({
   searchParams: Promise<{ days?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "marketingDashboard");
+  await requireFeatureAccess(user, "marketingDashboard");
   const { days: daysParam } = await searchParams;
   const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
 

@@ -1,8 +1,18 @@
 import "server-only";
 import nodemailer from "nodemailer";
-import { getThreadRoots, recordEmailMessage } from "@/lib/email-log";
+import { getThreadRoots, getThreadRootByKey, recordEmailMessage } from "@/lib/email-log";
+import { escapeHtml } from "@/lib/html-escape";
 
 const FROM_NAME = "Theo dõi Liên hệ · IELTS Master";
+
+// Header "To"/"From" có TÊN kèm địa chỉ — để mail client của người nhận hiện
+// đúng tên họ (không chỉ 1 email trần trụi), giúp nhận ra ngay "email này có
+// nói về mình không" trước cả khi mở ra đọc nội dung. Dấu " bên trong tên
+// phải bỏ vì sẽ phá cú pháp address kiểu `"Tên" <email>`.
+function formatAddress(name: string | null | undefined, email: string): string {
+  if (!name) return email;
+  return `"${name.replace(/"/g, "'")}" <${email}>`;
+}
 
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
 
@@ -49,11 +59,15 @@ function toReplySubject(originalSubject: string): string {
  * Marketing gửi "Chăm sóc lại") chỉ vì email lỗi. */
 export async function sendEmail(input: {
   to: string;
+  // Tên hiển thị của người nhận chính ("to") — gắn vào header To: "Tên"
+  // <email> để mail client của họ hiện tên thật, không chỉ 1 địa chỉ trần.
+  // Bỏ trống nếu không có sẵn tên (vd gửi tới 1 nhóm chung chung).
+  toName?: string | null;
   bcc?: string[];
   // Subject dùng khi email này MỞ 1 cuộc hội thoại mới (chưa có thread trước
-  // đó cho các interactionIds truyền vào). Nếu đã có thread, subject thật sự
-  // gửi đi sẽ là "Re: <subject gốc của thread>", GHI ĐÈ giá trị này — xem
-  // toReplySubject() ở trên.
+  // đó cho threadKey/interactionIds truyền vào). Nếu đã có thread, subject
+  // thật sự gửi đi sẽ là "Re: <subject gốc của thread>", GHI ĐÈ giá trị này
+  // — xem toReplySubject() ở trên.
   subject: string;
   html: string;
   // Tag nghiệp vụ đã tạo ra email này (mirror SYSTEM_LOG_ACTION, vd
@@ -66,6 +80,12 @@ export async function sendEmail(input: {
   // email trên trang chi tiết liên hệ. Bỏ trống nếu email không gắn với liên
   // hệ cụ thể nào (vd thông báo chung toàn hệ thống).
   interactionIds?: string[];
+  // Khoá hội thoại chung cho email KHÔNG gắn với liên hệ cụ thể nào (nhắc KPI
+  // theo Sale/tháng, digest SLA, digest gợi ý phân bổ, thông báo phân bổ
+  // khách hàng...) — cùng threadKey thì mọi lần gửi sau LUÔN reply vào email
+  // đầu tiên thay vì tách thành hội thoại mới mỗi lần. Có giá trị thì ưu
+  // tiên hơn threading qua interactionIds (xem comment model EmailMessage).
+  threadKey?: string;
 }): Promise<SendEmailResult> {
   const t = getTransporter();
   if (!t) {
@@ -74,7 +94,8 @@ export async function sendEmail(input: {
   }
 
   const interactionIds = input.interactionIds ?? [];
-  const roots = interactionIds.length > 0 ? await getThreadRoots(interactionIds) : [];
+  const keyRoot = input.threadKey ? await getThreadRootByKey(input.threadKey) : null;
+  const roots = keyRoot ? [keyRoot] : interactionIds.length > 0 ? await getThreadRoots(interactionIds) : [];
   const references = roots.map((r) => r.messageId);
   // Chỉ đổi subject khi tất cả liên hệ trong batch cùng chung đúng 1 thread
   // gốc — nếu đang gộp nhiều thread khác nhau thì không có 1 subject nào
@@ -84,7 +105,7 @@ export async function sendEmail(input: {
   try {
     const info = await t.sendMail({
       from: `"${FROM_NAME}" <${process.env.GMAIL_USER}>`,
-      to: input.to,
+      to: formatAddress(input.toName, input.to),
       // BCC (không CC) khi gửi đồng loạt cho nhiều thành viên — người nhận
       // không thấy email của nhau.
       bcc: input.bcc?.length ? input.bcc : undefined,
@@ -104,6 +125,7 @@ export async function sendEmail(input: {
         html: input.html,
         action: input.action,
         sentByEmail: input.sentByEmail,
+        threadKey: input.threadKey ?? null,
       });
     } catch (err) {
       // Mail đã gửi thành công rồi — lỗi ghi log không được coi là gửi thất
@@ -116,6 +138,39 @@ export async function sendEmail(input: {
     console.error(`[email] Gửi thất bại tới ${input.to}:`, err);
     return { ok: false };
   }
+}
+
+/** Khung nội dung DÙNG CHUNG cho mọi email nghiệp vụ — đảm bảo bất kỳ ai mở
+ * email ra cũng thấy ngay đủ 3 điều: (1) email này gửi cho ai — lời chào nêu
+ * đích danh, (2) VÌ SAO họ nhận được nó, (3) sau nội dung chi tiết, người gửi
+ * là ai (người bấm hay hệ thống tự động) để phân biệt có cần phản hồi ai hay
+ * không. Không bắt buộc dùng (vài email rất ngắn/nội bộ có thể tự viết
+ * html tay), nhưng nên dùng cho mọi email báo/nhắc việc — dùng cho cả 1 người
+ * lẫn 1 nhóm (audienceNote thay lời chào khi gửi cho nhiều người qua BCC).
+ */
+export function emailEnvelope(input: {
+  // Lời chào đích danh (vd "Chào Nguyễn Văn A,") — bỏ trống và dùng
+  // audienceNote khi gửi đồng loạt cho 1 nhóm qua BCC (không có 1 cái tên
+  // duy nhất để chào).
+  greetingName?: string | null;
+  // Dùng khi gửi cho 1 NHÓM (BCC) — liệt kê rõ nhóm nhận để mỗi người tự biết
+  // "email này có dành cho mình không" dù không thấy được ai khác trong Bcc.
+  audienceNote?: string;
+  // 1 câu duy nhất, rõ ràng: vì sao người nhận thấy email này trong hộp thư.
+  purpose: string;
+  // Nội dung chi tiết + việc cần làm (HTML đã escape sẵn ở nơi gọi) — đặt
+  // ngay dưới "purpose" để không phải đọc lan man mới biết cần làm gì.
+  bodyHtml: string;
+  // "Leader Nguyễn Văn A" | "Hệ thống tự động" — người/quy trình đã tạo ra
+  // email này, đặt cuối để người đọc phân biệt cần phản hồi ai (nếu có).
+  senderLabel: string;
+}): string {
+  const greeting = input.greetingName
+    ? `<p>Chào ${escapeHtml(input.greetingName)},</p>`
+    : input.audienceNote
+      ? `<p>${escapeHtml(input.audienceNote)}</p>`
+      : "";
+  return `${greeting}<p style="color:#6b6b6b;font-size:13px;margin:0 0 14px;">${escapeHtml(input.purpose)}</p>${input.bodyHtml}<p style="margin-top:22px;color:#9a9a9a;font-size:12px;">Gửi bởi: ${escapeHtml(input.senderLabel)}</p>`;
 }
 
 /** Đường dẫn tuyệt đối vào app để gắn trong email (link tương đối không mở

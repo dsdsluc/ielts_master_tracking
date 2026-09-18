@@ -1,9 +1,14 @@
 import { PageHeader } from "@/components/page-header";
+import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { getAssignableCustomers } from "@/lib/customers/queries";
 import { getAssignableSalesForReassign } from "@/lib/interactions/queries";
 import { AssignableCustomersView } from "@/app/(app)/customer-assignment/assignable-customers-view";
 
 export default async function CustomerAssignmentPage() {
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user, "customerAssignment");
+
   const [customers, sales] = await Promise.all([getAssignableCustomers(), getAssignableSalesForReassign()]);
 
   return (

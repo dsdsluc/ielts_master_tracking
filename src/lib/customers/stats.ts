@@ -15,7 +15,9 @@ export type SalePersonalKpi = {
   monthly: KpiPeriod;
 };
 
-function monthRange(month: string): { start: Date; end: Date } {
+// Export để dùng chung với lib/admin/monthly-report.ts — cùng 1 định nghĩa
+// "khoảng ngày của 1 tháng" cho mọi nơi tính KPI/báo cáo theo tháng.
+export function monthRange(month: string): { start: Date; end: Date } {
   const [y, m] = month.split("-").map(Number);
   return { start: new Date(y, m - 1, 1), end: new Date(y, m, 1) };
 }

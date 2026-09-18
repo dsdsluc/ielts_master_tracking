@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { createAdsCost } from "@/app/(app)/ads-cost/actions";
+import type { NewAdIdRow } from "@/app/(app)/new-ad-ids/new-ad-ids-view";
 import { cn } from "@/lib/utils";
 
 type ImportRow = {
@@ -210,7 +211,12 @@ async function downloadTemplate() {
 
 async function parseWorkbook(
   file: File,
-  refs: { sourceOptions: string[]; fanpageOptions: { name: string; defaultSourceName: string }[]; branchOptions: { code: string; name: string }[] }
+  refs: {
+    sourceOptions: string[];
+    fanpageOptions: { name: string; defaultSourceName: string }[];
+    branchOptions: { code: string; name: string }[];
+    pendingAdIds: NewAdIdRow[];
+  }
 ): Promise<ImportRow[]> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
@@ -232,6 +238,7 @@ async function parseWorkbook(
   }
 
   const fanpageNames = refs.fanpageOptions.map((f) => f.name);
+  const pendingByAdId = new Map(refs.pendingAdIds.map((p) => [p.adId, p]));
   const rows: ImportRow[] = [];
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
@@ -248,13 +255,22 @@ async function parseWorkbook(
     });
     const isBlank = Object.values(draft).every((v) => !v);
     if (isBlank) return;
+
+    // Làm giàu dữ liệu: file report quảng cáo (vd. Facebook Ads Manager)
+    // thường không có cột Nguồn/Fanpage/Cơ sở — nếu Ad ID này đang nằm trong
+    // danh sách "Ad ID mới" (đã xuất hiện ở liên hệ nhưng chưa có chi phí),
+    // tự điền theo gợi ý suy ra từ chính các liên hệ đó thay vì để trống/bắt
+    // chọn tay, giảm hẳn số Ad ID mới còn tồn đọng sau khi nhập.
+    const pending = draft.adId ? pendingByAdId.get(draft.adId) : undefined;
     rows.push({
       id: makeId(),
       adId: draft.adId ?? "",
       adName: draft.adName ?? "",
-      sourceName: matchByName(draft.sourceName ?? "", refs.sourceOptions),
-      fanpageName: matchByName(draft.fanpageName ?? "", fanpageNames),
-      branchCode: matchBranchCode(draft.branchCode ?? "", refs.branchOptions),
+      sourceName: matchByName(draft.sourceName ?? "", refs.sourceOptions) || (pending ? matchByName(pending.suggestedSourceName, refs.sourceOptions) : ""),
+      fanpageName: matchByName(draft.fanpageName ?? "", fanpageNames) || (pending ? matchByName(pending.suggestedFanpageName, fanpageNames) : ""),
+      branchCode:
+        matchBranchCode(draft.branchCode ?? "", refs.branchOptions) ||
+        (pending ? matchBranchCode(pending.suggestedBranchCode, refs.branchOptions) : ""),
       periodStart: draft.periodStart ?? "",
       periodEnd: draft.periodEnd ?? "",
       costVnd: draft.costVnd ?? "",
@@ -290,10 +306,12 @@ export function AdsCostImportView({
   sourceOptions,
   fanpageOptions,
   branchOptions,
+  pendingAdIds,
 }: {
   sourceOptions: string[];
   fanpageOptions: { name: string; defaultSourceName: string }[];
   branchOptions: { code: string; name: string }[];
+  pendingAdIds: NewAdIdRow[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -305,14 +323,19 @@ export function AdsCostImportView({
   const [accepting, setAccepting] = useState(false);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
+  const pendingAdIdSet = new Set(pendingAdIds.map((p) => p.adId));
+
   async function handleFile(file: File) {
     setParsing(true);
     try {
-      const parsed = await parseWorkbook(file, { sourceOptions, fanpageOptions, branchOptions });
+      const parsed = await parseWorkbook(file, { sourceOptions, fanpageOptions, branchOptions, pendingAdIds });
       setRows(parsed);
       setFileName(file.name);
+      const resolvedCount = parsed.filter((r) => pendingAdIdSet.has(r.adId)).length;
       if (parsed.length === 0) {
         toast.error("Không đọc được dòng dữ liệu nào từ file này.");
+      } else if (resolvedCount > 0) {
+        toast.success(`Đã tải ${parsed.length} dòng — trong đó ${resolvedCount} Ad ID đang chờ xử lý sẽ được giải quyết sau khi lưu.`);
       } else {
         toast.success(`Đã tải ${parsed.length} dòng từ "${file.name}".`);
       }
@@ -447,8 +470,15 @@ export function AdsCostImportView({
           Cũng có thể kéo thả thẳng file xuất từ <strong>Facebook Ads Manager</strong> (Campaign name, Ad set name,
           Media type, Result type, Results, Impressions, Post engagements, Link clicks, Messaging conversations,
           ThruPlays, Reporting starts/ends...) — hệ thống tự nhận cột, các số liệu hiệu suất sẽ được lưu kèm để xem
-          ở trang &quot;Hiệu quả quảng cáo&quot;. Riêng Nguồn/Fanpage/Cơ sở vẫn cần chọn tay vì Facebook không xuất các cột này.
+          ở trang &quot;Hiệu quả quảng cáo&quot;. Nếu Ad ID trong file trùng với 1 &quot;Ad ID mới&quot; đang chờ xử lý, hệ thống tự điền
+          Nguồn/Fanpage/Cơ sở theo gợi ý suy ra từ liên hệ — chỉ cần chọn tay khi không khớp được.
         </p>
+        {pendingAdIds.length > 0 && (
+          <p className="text-xs text-status-waiting">
+            Hiện có <strong className="font-mono">{pendingAdIds.length}</strong> Ad ID mới chưa có chi phí — nhập file có chứa các Ad ID này sẽ tự
+            động giải quyết chúng.
+          </p>
+        )}
       </div>
     );
   }

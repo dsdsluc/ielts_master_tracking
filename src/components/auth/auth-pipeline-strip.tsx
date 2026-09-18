@@ -1,6 +1,6 @@
 const STEPS = [
   { label: "Chờ", color: "bg-status-waiting" },
-  { label: "Tiếp nhận", color: "bg-status-received" },
+  { label: "Có nhu cầu", color: "bg-status-received" },
   { label: "Đủ tiêu chuẩn", color: "bg-status-qualified" },
 ] as const;
 

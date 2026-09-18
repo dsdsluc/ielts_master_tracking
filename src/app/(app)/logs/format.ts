@@ -21,10 +21,12 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   DELETE_SPAM_INTERACTION: "Xoá liên hệ Spam",
   ASSIGN_CUSTOMER: "Phân bổ khách hàng tư vấn",
   TRANSFER_CUSTOMER: "Điều chuyển khách hàng tư vấn",
+  RECLAIM_CUSTOMER: "Thu hồi khách hàng",
   NOTIFY_NEW_QUALIFIED_LEAD: "Email: báo liên hệ mới Đủ tiêu chuẩn",
   NOTIFY_LEAD_SPAMMED: "Email: báo liên hệ đã chuyển Spam",
   KPI_REMINDER: "Email: nhắc chỉ tiêu KPI",
   SLA_BREACH_DIGEST: "Email: tổng hợp quá hạn SLA",
+  ALLOCATION_SUGGESTION_DIGEST: "Email: gợi ý phân bổ khách hàng",
 };
 
 export function actionLabel(action: string) {
@@ -61,7 +63,9 @@ export const ACTION_CATEGORY: Record<string, LogCategoryKey> = {
   TRANSFER_STUDENT: "student",
   ASSIGN_CUSTOMER: "student",
   TRANSFER_CUSTOMER: "student",
+  RECLAIM_CUSTOMER: "student",
   NOTIFY_NEW_QUALIFIED_LEAD: "student",
+  ALLOCATION_SUGGESTION_DIGEST: "student",
   FLAG_SLA_BREACH: "sla",
   SLA_BREACH_DIGEST: "sla",
   DELETE_SPAM_INTERACTION: "lead",

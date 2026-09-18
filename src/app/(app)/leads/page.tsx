@@ -5,7 +5,7 @@ import { requireFeatureAccess } from "@/lib/auth/feature-access";
 
 export default async function LeadsPage() {
   const [user, options] = await Promise.all([getCurrentUser(), getLeadFormOptions()]);
-  await requireFeatureAccess(user.role, "interactions");
+  await requireFeatureAccess(user, "interactions");
 
   return <LeadsQueueView options={options} currentUserEmail={user.email} />;
 }

@@ -25,7 +25,7 @@ function todayStr() {
 
 export default async function MarketingWorkspacePage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "marketingWorkspace");
+  await requireFeatureAccess(user, "marketingWorkspace");
   const today = todayStr();
   const canClose = user.role === ROLES.ADMIN || user.canCloseMktReport;
 

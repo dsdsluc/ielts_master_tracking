@@ -1,11 +1,13 @@
 import { PageHeader } from "@/components/page-header";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { prisma } from "@/lib/prisma";
 import { FollowupAssignView, type FollowupAssignItem } from "@/app/(app)/followup-assign/followup-assign-view";
 
 export default async function FollowupAssignPage() {
   const user = await getCurrentUser();
+  await requireFeatureAccess(user, "followupAssign");
 
   const [branches, rows] = await Promise.all([
     prisma.branch.findMany({ select: { code: true, name: true } }),

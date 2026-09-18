@@ -24,6 +24,7 @@ export const PERMISSION_ROLES = [ROLES.MARKETING, ROLES.SALES, ROLES.LEADER] as 
 // `group` chỉ dùng để chia section hiển thị cho khớp nhóm nav ở lib/nav.ts.
 export const PERMISSION_FEATURES = [
   { key: "dashboard", label: "Dashboard", href: "/", group: "Tổng quan" },
+  { key: "interactionsOverview", label: "Chi tiết theo trạng thái (Dashboard)", href: "/interactions-overview", group: "Tổng quan" },
   { key: "dashboardSale", label: "Dashboard Sale", href: "/dashboard-sale", group: "Saler" },
   { key: "interactions", label: "Liên hệ", href: "/leads", group: "Saler" },
   { key: "workspace", label: "Workspace của tôi", href: "/workspace", group: "Saler" },
@@ -32,11 +33,21 @@ export const PERMISSION_FEATURES = [
   { key: "leaderDashboard", label: "Dashboard Leader", href: "/leader-dashboard", group: "Leader" },
   { key: "customers", label: "Khách hàng", href: "/customers", group: "Leader" },
   { key: "leadsImport", label: "Nhập từ Excel", href: "/leads/import", group: "Leader" },
+  { key: "customerAssignment", label: "Phân bổ khách hàng", href: "/customer-assignment", group: "Leader" },
+  { key: "customerAssignmentWorkload", label: "Cân bằng tải Sale", href: "/customer-assignment/workload", group: "Leader" },
+  { key: "followupAssign", label: "Phân bổ chăm sóc lại", href: "/followup-assign", group: "Leader" },
   { key: "marketingDashboard", label: "Dashboard Marketing", href: "/marketing-dashboard", group: "Marketing" },
   { key: "marketingWorkspace", label: "Workspace Marketing", href: "/marketing-workspace", group: "Marketing" },
   { key: "adIds", label: "Ad ID", href: "/ad-ids", group: "Marketing" },
+  { key: "newAdIdsList", label: "Ad ID mới (Marketing)", href: "/new-ad-ids", group: "Marketing" },
   { key: "followup", label: "Chăm sóc lại", href: "/followup", group: "Marketing" },
+  { key: "followupTracking", label: "Theo dõi hiệu quả chăm sóc lại", href: "/followup-tracking", group: "Marketing" },
+  { key: "adsCost", label: "Chi phí quảng cáo", href: "/ads-cost", group: "Marketing" },
+  { key: "adsCostImport", label: "Nhập chi phí từ Excel", href: "/ads-cost/import", group: "Marketing" },
+  { key: "adsPerformance", label: "Hiệu quả quảng cáo", href: "/ads-performance", group: "Marketing" },
+  { key: "pageReport", label: "Báo cáo Page hằng ngày", href: "/page-report", group: "Marketing" },
   { key: "adminMonitoring", label: "Trung tâm quản trị", href: "/admin/monitoring", group: "Quản trị" },
+  { key: "monthlyReport", label: "Báo cáo tháng", href: "/admin/monthly-report", group: "Quản trị" },
   { key: "spamReview", label: "Xử lý Spam", href: "/admin/spam-review", group: "Quản trị" },
   { key: "newAdIds", label: "Ad ID mới", href: "/admin/new-ad-ids", group: "Quản trị" },
   { key: "missingConversation", label: "Thiếu link hội thoại", href: "/admin/missing-conversation", group: "Quản trị" },
@@ -48,10 +59,36 @@ export const PERMISSION_FEATURES = [
 
 export type PermissionFeatureKey = (typeof PERMISSION_FEATURES)[number]["key"];
 
+// Nhóm feature theo `group` (khớp tên nhóm nav ở lib/nav.ts) — dùng chung cho
+// cả 2 tab (Theo vai trò/Theo người dùng) ở /admin/permissions, chỉ để hiển
+// thị dễ theo dõi hơn, không ảnh hưởng dữ liệu lưu.
+export const PERMISSION_FEATURE_GROUPS = Array.from(new Set(PERMISSION_FEATURES.map((f) => f.group))).map((group) => ({
+  group,
+  features: PERMISSION_FEATURES.filter((f) => f.group === group),
+}));
+
 export type PermissionRow = {
   role: string;
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canReport: boolean;
+};
+
+// Quyền cấp riêng cho 1 người dùng cụ thể (tab "Theo người dùng") — CỘNG DỒN
+// (OR) với PermissionRow theo vai trò ở trên, xem canAccessFeature() ở
+// lib/auth/feature-access.ts. 1 người có thể có nhiều dòng, mỗi dòng khớp 1
+// feature trong PERMISSION_FEATURES.
+export type UserPermissionCell = {
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canReport: boolean;
+};
+
+export const EMPTY_PERMISSION_CELL: UserPermissionCell = {
+  canCreate: false,
+  canEdit: false,
+  canDelete: false,
+  canReport: false,
 };

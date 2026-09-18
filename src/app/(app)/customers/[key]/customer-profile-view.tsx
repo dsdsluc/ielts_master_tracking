@@ -11,18 +11,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FormMessage } from "@/components/form-message";
 import { StatusPill } from "@/components/status-pill";
 import { CopyButton } from "@/components/copy-button";
 import { InfoRow } from "@/app/(app)/leads/info-row";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
-import { CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
+import { CUSTOMER_STAGE, CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 import { updateCustomerProfile, updateCustomerStage, logCustomerCare, transferCustomer, type CustomerDetail } from "@/app/(app)/customers/customers-api";
 import { AssignCustomerDialog } from "@/app/(app)/customer-assignment/assign-customer-dialog";
 import { useToast } from "@/hooks/use-toast";
 
 function toDateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : "";
+}
+
+/** Đánh dấu 1 field bắt buộc — dấu * đỏ + tooltip giải thích lý do bắt buộc
+ * khi hover, thay vì chỉ có dấu * trơ không rõ ý nghĩa nghiệp vụ. */
+function RequiredMark({ hint }: { hint: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="cursor-help font-bold text-destructive" aria-label="Bắt buộc" />}>*</TooltipTrigger>
+      <TooltipContent>{hint}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function CustomerProfileView({ detail, canManageAssignment }: { detail: CustomerDetail; canManageAssignment: boolean }) {
@@ -62,6 +74,9 @@ export function CustomerProfileView({ detail, canManageAssignment }: { detail: C
 
   const [transferOpen, setTransferOpen] = useState(false);
 
+  const isNotInterested = stageForm.stage === CUSTOMER_STAGE.NOT_INTERESTED;
+  const stageReasonMissing = isNotInterested && !stageForm.stageReason.trim();
+
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     setProfileError(null);
@@ -92,7 +107,7 @@ export function CustomerProfileView({ detail, canManageAssignment }: { detail: C
 
   async function handleSaveStage(e: React.FormEvent) {
     e.preventDefault();
-    if (!stageForm.stage) return;
+    if (!stageForm.stage || stageReasonMissing) return;
     setStageError(null);
     setStagePending(true);
     try {
@@ -282,7 +297,10 @@ export function CustomerProfileView({ detail, canManageAssignment }: { detail: C
           <form onSubmit={handleSaveStage} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5">
             <h2 className="font-condensed text-xs font-semibold tracking-wide text-foreground uppercase">Tư vấn ghi danh</h2>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="stage">Mốc hiện tại</Label>
+              <Label htmlFor="stage" className="flex items-center gap-1">
+                Mốc hiện tại
+                <RequiredMark hint="Bắt buộc chọn — đây là mốc xa nhất Sale đã đạt được với khách trong phễu tư vấn ghi danh, dùng để tính chỉ tiêu KPI và hiển thị trên Dashboard/Workspace. Chưa chọn thì không lưu được." />
+              </Label>
               <Select value={stageForm.stage} onValueChange={(v) => setStageForm({ ...stageForm, stage: v ?? "" })}>
                 <SelectTrigger id="stage" className="h-10 w-full rounded-lg bg-background">
                   <SelectValue placeholder="Chưa gọi" />
@@ -297,8 +315,20 @@ export function CustomerProfileView({ detail, canManageAssignment }: { detail: C
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="stageReason">Lý do (nếu kẹt)</Label>
-              <Input id="stageReason" value={stageForm.stageReason} onChange={(e) => setStageForm({ ...stageForm, stageReason: e.target.value })} />
+              <Label htmlFor="stageReason" className="flex items-center gap-1">
+                Lý do {isNotInterested ? "không quan tâm" : "(nếu kẹt)"}
+                {isNotInterested && (
+                  <RequiredMark hint='Bắt buộc nhập khi chọn mốc "Không quan tâm" — giải thích vì sao khách từ chối/không có nhu cầu, để Leader/Admin xem lại sau này không phải đoán.' />
+                )}
+              </Label>
+              <Input
+                id="stageReason"
+                value={stageForm.stageReason}
+                onChange={(e) => setStageForm({ ...stageForm, stageReason: e.target.value })}
+                required={isNotInterested}
+                aria-invalid={stageReasonMissing}
+                className={stageReasonMissing ? "border-destructive/60" : undefined}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="appointmentAt">Ngày hẹn</Label>
@@ -314,7 +344,7 @@ export function CustomerProfileView({ detail, canManageAssignment }: { detail: C
             </label>
             {detail.enrolledAt && <p className="text-xs text-status-qualified">Đã chốt lúc {formatDateTime(detail.enrolledAt)}</p>}
             {stageError && <FormMessage kind="error">{stageError}</FormMessage>}
-            <Button type="submit" size="sm" className="w-fit rounded-full" disabled={stagePending || !stageForm.stage}>
+            <Button type="submit" size="sm" className="w-fit rounded-full" disabled={stagePending || !stageForm.stage || stageReasonMissing}>
               {stagePending && <LoaderCircle className="animate-spin" />}
               Lưu tư vấn ghi danh
             </Button>

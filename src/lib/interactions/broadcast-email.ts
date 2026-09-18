@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { logAction } from "@/lib/interactions/audit";
 import { ApiError } from "@/lib/interactions/errors";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, emailEnvelope } from "@/lib/email";
 import type { CurrentUser } from "@/lib/auth/dal";
 
 const MAX_RECIPIENTS = 200;
@@ -27,20 +27,32 @@ export async function sendBroadcastEmail(
   // phòng trường hợp danh sách phía client đã cũ (người vừa bị khoá tài khoản).
   const recipients = await prisma.user.findMany({
     where: { email: { in: recipientEmails }, active: true },
-    select: { email: true },
+    select: { email: true, fullName: true },
   });
   const validEmails = recipients.map((r) => r.email);
   if (validEmails.length === 0) {
     throw new ApiError(422, "VALIDATION_ERROR", "Không có người nhận hợp lệ (có thể đã bị khoá tài khoản).");
   }
 
-  const html = body
+  const bodyHtml = body
     .split(/\n{2,}/)
     .map((para) => `<p>${para.replace(/\n/g, "<br/>")}</p>`)
     .join("");
 
+  // "To" là chính Admin gửi (không lộ danh sách người nhận cho nhau qua Bcc)
+  // — bù lại, liệt kê thẳng TÊN từng người nhận trong nội dung để mỗi người
+  // tự biết chắc "email này có dành cho mình không" dù không thấy được ai
+  // khác trong Bcc.
+  const html = emailEnvelope({
+    audienceNote: `Gửi tới: ${recipients.map((r) => r.fullName).join(", ")}.`,
+    purpose: `${actor.fullName} gửi thông báo tới bạn.`,
+    bodyHtml,
+    senderLabel: actor.fullName,
+  });
+
   const result = await sendEmail({
     to: actor.email,
+    toName: actor.fullName,
     bcc: validEmails,
     subject,
     html,

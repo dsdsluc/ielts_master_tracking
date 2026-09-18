@@ -3,8 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ROLES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { computeSalePersonalKpi } from "@/lib/customers/stats";
 import { logSystemAction } from "@/lib/interactions/audit";
-import { sendEmail, appLink } from "@/lib/email";
-import { escapeHtml } from "@/lib/html-escape";
+import { sendEmail, appLink, emailEnvelope } from "@/lib/email";
 
 // Vercel Cron tự gắn header "Authorization: Bearer $CRON_SECRET" cho request
 // nó gọi, MIỄN LÀ biến môi trường CRON_SECRET đã cấu hình trên project — nếu
@@ -35,10 +34,17 @@ export async function GET(request: NextRequest) {
     const link = appLink("/workspace");
     await sendEmail({
       to: sale.email,
+      toName: sale.fullName,
       subject: `Nhắc chỉ tiêu tháng ${kpi.month}: còn thiếu ${remaining}`,
-      html: `<p>Chào ${escapeHtml(sale.fullName)},</p><p>Chỉ tiêu tháng ${kpi.month} của bạn là <strong>${kpi.monthly.target}</strong> khách chốt — hiện đã chốt <strong>${kpi.monthly.achieved}</strong>, còn thiếu <strong>${remaining}</strong>.</p><p>Hôm nay cần chốt thêm <strong>${kpi.daily.target}</strong>, tuần này cần chốt thêm <strong>${kpi.weekly.target}</strong>.</p>${link ? `<p><a href="${link}">Xem Workspace của tôi</a></p>` : ""}`,
+      html: emailEnvelope({
+        greetingName: sale.fullName,
+        purpose: `Bạn chưa đạt chỉ tiêu chốt học viên tháng ${kpi.month} — hệ thống tự động nhắc hằng ngày tới khi đạt đủ.`,
+        bodyHtml: `<p>Chỉ tiêu tháng ${kpi.month} của bạn là <strong>${kpi.monthly.target}</strong> khách chốt — hiện đã chốt <strong>${kpi.monthly.achieved}</strong>, còn thiếu <strong>${remaining}</strong>.</p><p><strong>Việc cần làm:</strong> hôm nay cần chốt thêm <strong>${kpi.daily.target}</strong>, tuần này cần chốt thêm <strong>${kpi.weekly.target}</strong>.</p>${link ? `<p><a href="${link}">Xem Workspace của tôi</a></p>` : ""}`,
+        senderLabel: "Hệ thống tự động",
+      }),
       action: SYSTEM_LOG_ACTION.KPI_REMINDER,
       sentByEmail: null,
+      threadKey: `kpi-reminder:${sale.email}:${kpi.month}`,
     });
     sent++;
   }

@@ -139,7 +139,13 @@ export type LeadInfoPayload = {
 
 // Tạo mới có 2 luồng (xem new-lead-dialog.tsx) — sửa lead vẫn dùng nguyên
 // LeadInfoPayload (chỉ luồng Facebook/theo Link, không đổi).
-export type CreateFacebookLeadInput = LeadInfoPayload & { channel: "facebook" };
+export type CreateFacebookLeadInput = LeadInfoPayload & {
+  channel: "facebook";
+  // Nhập kèm mốc tư vấn (nhập Excel dữ liệu tư vấn cũ) — chỉ có tác dụng khi
+  // tạo mới VÀ đủ điều kiện (có SĐT), xem createInteraction() (mutations.ts).
+  stage?: string;
+  stageReason?: string;
+};
 export type CreateExternalLeadInput = {
   channel: "external";
   customerName: string;

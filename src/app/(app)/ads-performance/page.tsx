@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
@@ -80,6 +81,7 @@ export default async function AdsPerformancePage({
   searchParams: Promise<{ days?: string; branch?: string; source?: string }>;
 }) {
   const user = await getCurrentUser();
+  await requireFeatureAccess(user, "adsPerformance");
   const { days: daysParam, branch: branchParam, source: sourceParam } = await searchParams;
   const days = DAYS_OPTIONS.includes(Number(daysParam)) ? Number(daysParam) : 30;
 

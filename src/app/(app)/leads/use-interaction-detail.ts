@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchInteractionDetail, resolveFollowup, updateStatus } from "@/app/(app)/leads/leads-api";
 import type { InteractionDetail } from "@/app/(app)/leads/types";
+import { STATUS } from "@/lib/interactions/constants";
 import { useToast } from "@/hooks/use-toast";
 
 // Cache theo interactionId, sống suốt phiên làm việc (module-level, dùng
@@ -70,7 +71,7 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
     setFollowupPending(true);
     try {
       await resolveFollowup(interactionId, note);
-      toast.success("Đã đánh dấu chăm sóc lại — liên hệ chuyển sang Tiếp nhận.");
+      toast.success("Đã đánh dấu chăm sóc lại — liên hệ chuyển sang Có nhu cầu.");
       refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Không cập nhật được.";
@@ -86,8 +87,8 @@ export function useInteractionDetail(interactionId: string | null, onChanged?: (
     if (!interactionId || !detail) return;
     setTouchPending(true);
     try {
-      await updateStatus(interactionId, { status: "Tiếp nhận", expectedVersion: detail.version });
-      toast.success("Đã chuyển sang Tiếp nhận.");
+      await updateStatus(interactionId, { status: STATUS.PROCESSING, expectedVersion: detail.version });
+      toast.success("Đã chuyển sang Có nhu cầu.");
       refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Không cập nhật được.";

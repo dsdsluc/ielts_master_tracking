@@ -88,7 +88,7 @@ export function SpamReviewView({
     toast.success(
       skipped > 0
         ? `Đã khôi phục ${restored} liên hệ — bỏ qua ${skipped} (không còn ở trạng thái Spam).`
-        : `Đã khôi phục ${restored} liên hệ về Tiếp nhận — Leader sẽ phân bổ Sale phụ trách.`
+        : `Đã khôi phục ${restored} liên hệ về Có nhu cầu — Leader sẽ phân bổ Sale phụ trách.`
     );
     setSelected(new Set());
     router.refresh();

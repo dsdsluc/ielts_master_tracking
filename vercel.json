@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/kpi-reminders", "schedule": "0 1 * * *" },
-    { "path": "/api/cron/sla-breach-digest", "schedule": "15 1 * * *" }
+    { "path": "/api/cron/sla-breach-digest", "schedule": "15 1 * * *" },
+    { "path": "/api/cron/allocation-suggestions", "schedule": "30 1 * * *" }
   ]
 }

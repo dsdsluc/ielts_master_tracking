@@ -4,13 +4,13 @@ import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { ToastProvider, Toaster } from "@/components/ui/toast";
 import { ScrollToTopButton } from "@/components/scroll-to-top-button";
 import { getCurrentUser } from "@/lib/auth/dal";
-import { getAccessibleHrefsForRole } from "@/lib/auth/feature-access";
+import { getAccessibleHrefsForUser } from "@/lib/auth/feature-access";
 
 const MAIN_SCROLL_ID = "app-main-scroll";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await getCurrentUser();
-  const accessibleHrefs = await getAccessibleHrefsForRole(user.role);
+  const accessibleHrefs = await getAccessibleHrefsForUser(user);
 
   return (
     <ToastProvider>

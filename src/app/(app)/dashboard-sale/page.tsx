@@ -23,7 +23,7 @@ function formatDate(iso: string) {
 
 export default async function DashboardSalePage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "dashboardSale");
+  await requireFeatureAccess(user, "dashboardSale");
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

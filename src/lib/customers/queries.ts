@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { ROLES, STATUS, CUSTOMER_STAGE } from "@/lib/interactions/constants";
 import { isLeaderLike } from "@/lib/interactions/scope";
 import { Errors } from "@/lib/interactions/errors";
 import { customerDetailInclude, toCustomerDetail, type CustomerDetail } from "@/lib/customers/serialize";
@@ -56,6 +56,88 @@ export async function getCustomersForSale(email: string): Promise<CustomerListIt
     appointmentAt: r.appointmentAt?.toISOString() ?? null,
     caseDeadline: r.caseDeadline?.toISOString() ?? null,
   }));
+}
+
+export type WorkloadLevel = "overloaded" | "balanced" | "light";
+
+export type SaleWorkload = {
+  email: string;
+  fullName: string;
+  active: boolean;
+  totalAssigned: number;
+  openAssigned: number;
+  needsSupport: number;
+  overdue: number;
+  level: WorkloadLevel | null;
+};
+
+// 2 mốc coi là ĐÃ XONG việc (không còn tính vào khối lượng "đang xử lý") —
+// mọi mốc còn lại, kể cả stage=null (chưa gọi lần nào), vẫn là việc Sale còn
+// nợ nên phải tính vào tải hiện tại.
+const CLOSED_STAGES: readonly string[] = [CUSTOMER_STAGE.ENROLLED, CUSTOMER_STAGE.NOT_INTERESTED];
+
+/** Khối lượng công việc hiện tại của từng Sale — phục vụ 2 việc cùng lúc: (1)
+ * phát hiện Sale đang quá tải/quá rảnh để Leader cân đối lại, (2) liệt kê cả
+ * Sale đã khoá tài khoản (nghỉ việc) nhưng còn sót khách để thu hồi. Gộp 1
+ * lần thành 1 bảng duy nhất thay vì tách riêng "ai đang có khách" và "ai đang
+ * rảnh" — 2 câu hỏi này luôn được Leader hỏi cùng lúc khi cần điều chuyển.
+ * Đọc thẳng toàn bộ Customer đang có người phụ trách rồi gộp bằng JS, KHÔNG
+ * dùng groupBy cho phần "đang xử lý" — lọc theo stage null-hay-không-null qua
+ * groupBy where rất dễ sai vì SQL NOT IN loại bỏ luôn NULL, trong khi ở đây
+ * NULL (chưa gọi) lại phải được TÍNH vào tải. */
+export async function getSaleWorkloads(): Promise<SaleWorkload[]> {
+  const [sales, assigned] = await Promise.all([
+    prisma.user.findMany({ where: { role: ROLES.SALES }, select: { email: true, fullName: true, active: true } }),
+    prisma.customer.findMany({
+      where: { assignedToEmail: { not: null } },
+      select: { assignedToEmail: true, stage: true, needsLeaderSupport: true, appointmentAt: true, caseDeadline: true },
+    }),
+  ]);
+
+  const now = Date.now();
+  type Agg = { total: number; open: number; support: number; overdue: number };
+  const byEmail = new Map<string, Agg>();
+  for (const c of assigned) {
+    const email = c.assignedToEmail as string;
+    const row = byEmail.get(email) ?? { total: 0, open: 0, support: 0, overdue: 0 };
+    row.total++;
+    const isOpen = !c.stage || !CLOSED_STAGES.includes(c.stage);
+    if (isOpen) row.open++;
+    if (c.needsLeaderSupport) row.support++;
+    if (isOpen && ((c.appointmentAt !== null && c.appointmentAt.getTime() < now) || (c.caseDeadline !== null && c.caseDeadline.getTime() < now))) {
+      row.overdue++;
+    }
+    byEmail.set(email, row);
+  }
+
+  // Sale đã bị XOÁ khỏi bảng User nhưng Customer.assignedToEmail vẫn còn trỏ
+  // tới email đó (hiếm, dữ liệu mồ côi) — vẫn phải liệt kê ra để thu hồi được,
+  // không thì khách hàng coi như biến mất khỏi mọi màn hình quản lý.
+  const knownEmails = new Set(sales.map((s) => s.email));
+  const orphanEmails = [...byEmail.keys()].filter((email) => !knownEmails.has(email));
+
+  const candidates = [
+    ...sales.map((s) => ({ email: s.email, fullName: s.fullName, active: s.active })),
+    ...orphanEmails.map((email) => ({ email, fullName: email, active: false })),
+  ];
+
+  const activeOpenCounts = candidates.filter((c) => c.active).map((c) => byEmail.get(c.email)?.open ?? 0);
+  const avgOpen = activeOpenCounts.length > 0 ? activeOpenCounts.reduce((a, b) => a + b, 0) / activeOpenCounts.length : 0;
+
+  return candidates
+    .map((c) => {
+      const agg = byEmail.get(c.email) ?? { total: 0, open: 0, support: 0, overdue: 0 };
+      let level: WorkloadLevel | null = null;
+      if (c.active) {
+        if (avgOpen <= 0) level = "balanced";
+        else if (agg.open >= avgOpen * 1.3 && agg.open - avgOpen >= 2) level = "overloaded";
+        else if (agg.open <= avgOpen * 0.6) level = "light";
+        else level = "balanced";
+      }
+      return { email: c.email, fullName: c.fullName, active: c.active, totalAssigned: agg.total, openAssigned: agg.open, needsSupport: agg.support, overdue: agg.overdue, level };
+    })
+    .filter((r) => r.active || r.totalAssigned > 0)
+    .sort((a, b) => b.openAssigned - a.openAssigned);
 }
 
 export async function getCustomerDetail(actor: CurrentUser, customerKey: string): Promise<CustomerDetail> {

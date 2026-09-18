@@ -25,7 +25,7 @@ export default async function MissingConversationPage({
   searchParams: Promise<{ branch?: string; source?: string; status?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "missingConversation");
+  await requireFeatureAccess(user, "missingConversation");
   const { branch, source, status } = await searchParams;
 
   const [branches, sourceRows] = await Promise.all([

@@ -9,9 +9,14 @@ export const ROLES = {
   ADMIN: "Admin",
 } as const;
 
+// PROCESSING = "Có nhu cầu" — Sale ĐÃ nhắn tin qua lại thật với khách (không
+// chỉ vì có sẵn link cuộc hội thoại) nhưng CHƯA xin được SĐT. Tên cũ "Tiếp
+// nhận" gây hiểu lầm là 1 bước tự động ngay khi có link hội thoại — SAI, đây
+// luôn là hành động CHỦ ĐỘNG của Sale (xem resolveFollowup()/"Ghi nhận đã
+// liên hệ" trong mutations.ts), không tự suy ra từ dữ liệu có sẵn.
 export const STATUS = {
   WAITING: "Chờ",
-  PROCESSING: "Tiếp nhận",
+  PROCESSING: "Có nhu cầu",
   PHONE: "Đủ tiêu chuẩn",
   SPAM: "Spam",
 } as const;
@@ -50,6 +55,16 @@ export const SPAM_REASON = {
 } as const;
 
 export type SpamReason = (typeof SPAM_REASON)[keyof typeof SPAM_REASON];
+
+// Lý do Spam giờ cho nhập tay tự do thay vì ép chọn đúng 1 trong 3 mã cố định
+// — SPAM_REASON/SPAM_REASON_OPTIONS (leads/types.ts) chỉ còn vai trò GỢI Ý
+// NHANH (điền sẵn vào ô nhập) và hiển thị đúng nhãn cho dữ liệu cũ đã lưu
+// bằng mã. Chỉ ràng buộc độ dài tối thiểu để tránh gõ bừa cho có (vd. "ok").
+export const SPAM_REASON_MIN_LENGTH = 5;
+
+export function isValidSpamReason(value: string | null | undefined): boolean {
+  return !!value && value.trim().length > SPAM_REASON_MIN_LENGTH;
+}
 
 export const INTERACTION_TYPE = {
   NEW: "Khách hàng mới",
@@ -126,6 +141,7 @@ export const SYSTEM_LOG_ACTION = {
   UPDATE_CUSTOMER_STAGE: "UPDATE_CUSTOMER_STAGE",
   LOG_CUSTOMER_CARE: "LOG_CUSTOMER_CARE",
   TRANSFER_CUSTOMER: "TRANSFER_CUSTOMER",
+  RECLAIM_CUSTOMER: "RECLAIM_CUSTOMER",
   RESTORE_SPAM_TO_FOLLOWUP: "RESTORE_SPAM_TO_FOLLOWUP",
   DELETE_SPAM_INTERACTION: "DELETE_SPAM_INTERACTION",
   // Email chủ động (không do ai bấm gửi) — xem notifyLeadersNewQualifiedLead()/
@@ -136,6 +152,7 @@ export const SYSTEM_LOG_ACTION = {
   NOTIFY_LEAD_SPAMMED: "NOTIFY_LEAD_SPAMMED",
   KPI_REMINDER: "KPI_REMINDER",
   SLA_BREACH_DIGEST: "SLA_BREACH_DIGEST",
+  ALLOCATION_SUGGESTION_DIGEST: "ALLOCATION_SUGGESTION_DIGEST",
 } as const;
 
 // Phễu tư vấn ghi danh (mốc xa nhất Sale đã đạt được với 1 Customer). null

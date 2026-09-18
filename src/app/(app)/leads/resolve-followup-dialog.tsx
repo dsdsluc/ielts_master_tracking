@@ -61,7 +61,7 @@ export function ResolveFollowupDialog({
             <p className="font-condensed text-[10px] tracking-[0.2em] text-gold uppercase">Chăm sóc lại</p>
             <DialogTitle className="text-lg">Đánh dấu đã chăm sóc lại</DialogTitle>
             <DialogDescription>
-              Ghi lại đã chăm sóc như thế nào — liên hệ sẽ chuyển sang trạng thái Tiếp nhận và nội dung này lưu vào Lịch sử chăm sóc.
+              Ghi lại đã chăm sóc như thế nào — liên hệ sẽ chuyển sang trạng thái Có nhu cầu và nội dung này lưu vào Lịch sử chăm sóc.
             </DialogDescription>
           </DialogHeader>
 

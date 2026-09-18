@@ -61,7 +61,7 @@ export default async function SaleOverviewPage({
   searchParams: Promise<{ date?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "saleOverview");
+  await requireFeatureAccess(user, "saleOverview");
   const { date: dateParam } = await searchParams;
   const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr();
   const [y, m, d] = date.split("-").map(Number);

@@ -13,7 +13,7 @@ import { computeSalePersonalKpi } from "@/lib/customers/stats";
 
 export default async function WorkspacePage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "workspace");
+  await requireFeatureAccess(user, "workspace");
 
   // Chỉ những liên hệ "chưa đóng" (chưa Đủ tiêu chuẩn/Spam) mới còn nằm trong
   // Workspace — liên hệ đã đóng không có ý nghĩa để giữ ở đây nữa.

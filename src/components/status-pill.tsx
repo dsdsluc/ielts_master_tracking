@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<string, string> = {
   "Chờ": "bg-status-waiting-bg text-status-waiting",
-  "Tiếp nhận": "bg-status-received-bg text-status-received",
+  "Có nhu cầu": "bg-status-received-bg text-status-received",
   "Đủ tiêu chuẩn": "bg-status-qualified-bg text-status-qualified",
   "Spam": "bg-status-spam-bg text-status-spam",
 };

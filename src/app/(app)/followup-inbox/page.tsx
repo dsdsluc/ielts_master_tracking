@@ -9,7 +9,7 @@ import { FollowupInboxView, type FollowupInboxItem } from "@/app/(app)/followup-
 
 export default async function FollowupInboxPage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "followupInbox");
+  await requireFeatureAccess(user, "followupInbox");
 
   // Sale chỉ thấy đúng yêu cầu Marketing/Leader nhắm tới email của họ — không
   // còn là hàng đợi chung toàn cơ sở. Leader/Admin vẫn xem toàn bộ (theo phạm

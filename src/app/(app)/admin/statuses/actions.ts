@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/app/(app)/admin/require-admin";
 import { friendlyPrismaError, parseOrThrow } from "@/app/(app)/admin/prisma-error";
 
-// Chỉ cho sửa sortOrder/note — 4 tên trạng thái (Chờ/Tiếp nhận/Đủ tiêu chuẩn/
+// Chỉ cho sửa sortOrder/note — 4 tên trạng thái (Chờ/Có nhu cầu/Đủ tiêu chuẩn/
 // Spam) được hardcode trong lib/interactions/constants.ts và toàn bộ luồng
 // nghiệp vụ (mutations.ts, queries.ts), KHÔNG đọc từ bảng này. Thêm/xoá/đổi
 // tên trạng thái ở đây sẽ không có tác dụng gì với hệ thống — tránh làm UI

@@ -128,7 +128,7 @@ function SettingsSubheading({
 
 export default async function AdminMonitoringPage() {
   const admin = await getCurrentUser();
-  await requireFeatureAccess(admin.role, "adminMonitoring");
+  await requireFeatureAccess(admin, "adminMonitoring");
 
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - WINDOW_DAYS);

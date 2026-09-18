@@ -7,7 +7,7 @@ import { LeadsImportView } from "@/app/(app)/leads/import/leads-import-view";
 
 export default async function LeadsImportPage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "leadsImport");
+  await requireFeatureAccess(user, "leadsImport");
   const options = await getLeadFormOptions();
 
   // Sale luôn bị khoá đúng 1 cơ sở (theo quy tắc requireValidSaleBranchScope) —

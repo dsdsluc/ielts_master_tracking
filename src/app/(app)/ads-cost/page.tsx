@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { prisma } from "@/lib/prisma";
 import { isAdsCostCleanupEnabled } from "@/lib/interactions/settings";
 import { AdsCostDialog } from "@/app/(app)/ads-cost/ads-cost-dialog";
@@ -16,7 +17,8 @@ export default async function AdsCostPage({
 }: {
   searchParams: Promise<{ q?: string; source?: string; branch?: string; period?: string; costMin?: string; costMax?: string }>;
 }) {
-  await getCurrentUser();
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user, "adsCost");
   const { q, source, branch, period, costMin, costMax } = await searchParams;
 
   const where: Prisma.AdsCostWhereInput = {};

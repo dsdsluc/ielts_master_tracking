@@ -80,7 +80,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
   const isWaiting = detail?.status === "Chờ";
   const isClosed = detail?.status === "Đủ tiêu chuẩn" || detail?.status === "Spam";
   const moveToProcessingLocked = !isWaiting;
-  const moveToProcessingReason = isClosed ? "Liên hệ đã đóng, không thể chuyển Tiếp nhận." : "Đã chuyển sang Tiếp nhận.";
+  const moveToProcessingReason = isClosed ? "Liên hệ đã đóng, không thể chuyển Có nhu cầu." : "Đã chuyển sang Có nhu cầu.";
   const missingConversationLink = !detail?.conversationLink;
   const spamLocked = isClosed || missingConversationLink;
   const spamReason = isClosed
@@ -250,7 +250,7 @@ export function LeadWorkspace({ interactionId, options }: { interactionId: strin
                   onClick={handleMoveToInProgress}
                   disabled={touchPending}
                 >
-                  Đã tiếp nhận
+                  Có nhu cầu
                 </Button>
               </LockableAction>
               <div className="flex gap-2 pt-1">

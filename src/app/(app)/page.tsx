@@ -196,7 +196,7 @@ async function computeStageFunnel(): Promise<StageFunnelItem[]> {
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "dashboard");
+  await requireFeatureAccess(user, "dashboard");
 
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - (WINDOW_DAYS - 1));
@@ -231,9 +231,9 @@ export default async function DashboardPage() {
   // (xem PERMISSION_FEATURES ở admin/permissions) — Admin luôn thấy, vai trò
   // khác chỉ thấy sau khi được cấp quyền ở /admin/permissions.
   const [canSeeSpamReview, canSeeNewAdIds, canSeeMissingConversation] = await Promise.all([
-    canAccessFeature(user.role, "spamReview"),
-    canAccessFeature(user.role, "newAdIds"),
-    canAccessFeature(user.role, "missingConversation"),
+    canAccessFeature(user, "spamReview"),
+    canAccessFeature(user, "newAdIds"),
+    canAccessFeature(user, "missingConversation"),
   ]);
 
   const [kpi, topAds, salePerf, funnel, stageFunnel, spamCount, newAdIdCount, missingConversationCount] = await Promise.all([
@@ -269,7 +269,7 @@ export default async function DashboardPage() {
           <KpiCard label="Đủ tiêu chuẩn" value={kpi.qualified} accentClassName="bg-status-qualified" />
         </Link>
         <Link href={pipelineHref(STATUS.PROCESSING)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
-          <KpiCard label="Tiếp nhận" value={kpi.processing} accentClassName="bg-status-received" />
+          <KpiCard label="Có nhu cầu" value={kpi.processing} accentClassName="bg-status-received" />
         </Link>
         <Link href={pipelineHref(STATUS.SPAM)} className="block rounded-lg transition-shadow hover:shadow-bubble hover:ring-1 hover:ring-status-received/40">
           <KpiCard label="Spam" value={kpi.spam} accentClassName="bg-status-spam" />

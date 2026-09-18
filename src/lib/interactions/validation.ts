@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EXTERNAL_LEAD_SOURCES, SETTABLE_STATUSES, SPAM_REASON } from "@/lib/interactions/constants";
+import { EXTERNAL_LEAD_SOURCES, SETTABLE_STATUSES, SPAM_REASON_MIN_LENGTH, isValidSpamReason } from "@/lib/interactions/constants";
 
 const noteSchema = z.string().trim().max(2000, "Ghi chú quá dài. Vui lòng rút gọn dưới 2.000 ký tự.");
 
@@ -31,6 +31,10 @@ export type UpdateLeadInfoInput = z.infer<typeof updateLeadInfoSchema>;
 // Chỉ áp dụng cho TẠO MỚI — sửa liên hệ (updateLeadInfoSchema) không đổi.
 const facebookCreateLeadSchema = leadInfoSchema.extend({
   channel: z.literal("facebook"),
+  // Nhập kèm mốc tư vấn (từ Excel đã có sẵn dữ liệu tư vấn cũ) — chỉ áp dụng
+  // lúc TẠO MỚI và Đủ tiêu chuẩn (có SĐT), xem createInteraction().
+  stage: z.string().trim().optional(),
+  stageReason: z.string().trim().max(500).optional(),
 });
 
 const externalCreateLeadSchema = z.object({
@@ -64,19 +68,21 @@ export const statusUpdateSchema = z
   .object({
     status: z.enum(SETTABLE_STATUSES),
     phoneRaw: z.string().trim().optional(),
-    spamReason: z.enum([SPAM_REASON.NO_REPLY, SPAM_REASON.NO_NEED, SPAM_REASON.JUNK]).optional(),
+    // Nhập tay tự do (không còn ép đúng 1 trong 3 mã cố định) — UI chỉ gợi ý
+    // nhanh bằng cách điền sẵn vào ô này, xem isValidSpamReason().
+    spamReason: z.string().trim().max(500, "Lý do Spam quá dài.").optional(),
     confirmedMinAttempts: z.boolean().optional(),
     note: noteSchema.optional(),
     expectedVersion: z.number().int().min(1),
   })
-  .refine((v) => v.status !== "Spam" || !!v.spamReason, {
-    message: "Vui lòng chọn lý do Spam.",
+  .refine((v) => v.status !== "Spam" || isValidSpamReason(v.spamReason), {
+    message: `Vui lòng nhập lý do Spam (trên ${SPAM_REASON_MIN_LENGTH} ký tự).`,
     path: ["spamReason"],
   });
 export type StatusUpdateInput = z.infer<typeof statusUpdateSchema>;
 
 export const followupPushSchema = z.object({
-  interactionIds: z.array(z.string().trim().min(1)).min(1, "Vui lòng chọn ít nhất một hội thoại Chờ hoặc Tiếp nhận.").max(50, "Mỗi lần chỉ được yêu cầu chăm sóc lại tối đa 50 hội thoại."),
+  interactionIds: z.array(z.string().trim().min(1)).min(1, "Vui lòng chọn ít nhất một hội thoại Chờ hoặc Có nhu cầu.").max(50, "Mỗi lần chỉ được yêu cầu chăm sóc lại tối đa 50 hội thoại."),
   targetSaleEmail: z.string().trim().email("Vui lòng chọn Sale nhận yêu cầu chăm sóc lại."),
   suggestion: z.string().trim().max(500, "Gợi ý chăm sóc tối đa 500 ký tự.").optional(),
 });

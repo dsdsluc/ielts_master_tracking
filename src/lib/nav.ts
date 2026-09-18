@@ -17,6 +17,7 @@ import {
   ShieldOff,
   ListPlus,
   MessageCircleOff,
+  CalendarRange,
 } from "lucide-react";
 import { ROLES } from "@/lib/interactions/constants";
 import { PERMISSION_FEATURES } from "@/app/(app)/admin/permissions/permission-types";
@@ -56,11 +57,11 @@ export function getNavTitle(pathname: string): string {
 // Nhật ký...) luôn hiện với mọi vai trò đã đăng nhập.
 const GATED_HREFS = new Set<string>(PERMISSION_FEATURES.map((f) => f.href));
 
-// `accessibleHrefs` lấy từ getAccessibleHrefsForRole() (lib/auth/feature-access.ts)
-// — tính sẵn theo role ở Server Component (layout.tsx) rồi truyền xuống vì
-// SidebarNav là Client Component, không tự query DB được. Admin đã được trả về
-// đủ accessibleHrefs (toàn bộ PERMISSION_FEATURES) nên không cần check role
-// riêng ở đây.
+// `accessibleHrefs` lấy từ getAccessibleHrefsForUser() (lib/auth/feature-access.ts)
+// — tính sẵn theo actor (role + email, hợp nhất quyền cấp vai trò lẫn cấp
+// người dùng) ở Server Component (layout.tsx) rồi truyền xuống vì SidebarNav
+// là Client Component, không tự query DB được. Admin đã được trả về đủ
+// accessibleHrefs (toàn bộ PERMISSION_FEATURES) nên không cần check riêng ở đây.
 export function getNavGroupsForRole(accessibleHrefs: readonly string[]): NavGroup[] {
   const allowed = new Set(accessibleHrefs);
   return navGroups
@@ -113,6 +114,7 @@ export const navGroups: NavGroup[] = [
     label: "Quản trị",
     items: [
       { title: "Trung tâm quản trị", href: "/admin/monitoring", icon: ShieldAlert },
+      { title: "Báo cáo tháng", href: "/admin/monthly-report", icon: CalendarRange },
       { title: "Xử lý Spam", href: "/admin/spam-review", icon: ShieldOff },
       { title: "Ad ID mới", href: "/admin/new-ad-ids", icon: ListPlus },
       { title: "Thiếu link hội thoại", href: "/admin/missing-conversation", icon: MessageCircleOff },

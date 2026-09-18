@@ -4,6 +4,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { ROLES } from "@/lib/interactions/constants";
 import { getPageReportRows } from "@/lib/marketing/page-report";
 import { PageReportDatePicker } from "@/app/(app)/page-report/page-report-date-picker";
@@ -21,6 +22,7 @@ export default async function PageReportPage({
   searchParams: Promise<{ date?: string }>;
 }) {
   const user = await getCurrentUser();
+  await requireFeatureAccess(user, "pageReport");
   const { date: dateParam } = await searchParams;
   const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr();
 
@@ -37,7 +39,7 @@ export default async function PageReportPage({
       <PageHeader
         eyebrow="Marketing"
         title="Báo cáo Page hằng ngày"
-        description="Tin nhắn nhận được và tỷ lệ xin SĐT theo từng Page, tính theo ngày TẠO lead. Chốt để giữ nguyên số liệu."
+        description='Tin nhắn nhận được và tỷ lệ xin SĐT theo từng Page, tính theo ngày TẠO lead. Bấm vào tên Page để xem danh sách liên hệ cụ thể trước khi chốt. Chốt để giữ nguyên số liệu.'
         action={
           <div className="flex flex-wrap items-center gap-2">
             {user.role === ROLES.ADMIN && (

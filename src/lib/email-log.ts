@@ -40,6 +40,19 @@ export async function getThreadRoots(interactionIds: string[]): Promise<ThreadRo
   return roots;
 }
 
+/** Email GỐC của 1 "khoá hội thoại" chung chung (threadKey) — dùng cho email
+ * KHÔNG gắn với liên hệ cụ thể nào (nhắc KPI theo Sale/tháng, digest SLA,
+ * digest gợi ý phân bổ...). Cùng vai trò với getThreadRoots() ở trên nhưng
+ * tra theo EmailMessage.threadKey thay vì qua bảng nối Interaction. */
+export async function getThreadRootByKey(threadKey: string): Promise<ThreadRoot | null> {
+  const row = await prisma.emailMessage.findFirst({
+    where: { threadKey },
+    orderBy: { sentAt: "asc" },
+    select: { messageId: true, subject: true },
+  });
+  return row ?? null;
+}
+
 /** Ghi lại 1 email ĐÃ GỬI THÀNH CÔNG — gọi từ sendEmail() sau khi SMTP xác
  * nhận, không gọi trực tiếp từ nơi khác để tránh ghi trùng/thiếu. Gửi thất
  * bại thì không có messageId hợp lệ nên không có gì để ghi (console.error ở
@@ -53,6 +66,7 @@ export async function recordEmailMessage(input: {
   html: string;
   action: string;
   sentByEmail?: string | null;
+  threadKey?: string | null;
 }) {
   await prisma.emailMessage.create({
     data: {
@@ -63,6 +77,7 @@ export async function recordEmailMessage(input: {
       html: input.html,
       action: input.action,
       sentByEmail: input.sentByEmail ?? null,
+      threadKey: input.threadKey ?? null,
       interactions: {
         create: input.interactionIds.map((interactionId) => ({ interactionId })),
       },

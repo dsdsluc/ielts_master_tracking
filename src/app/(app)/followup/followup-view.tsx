@@ -6,8 +6,6 @@ import { CircleOff, ExternalLink, LoaderCircle, Sparkles } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -22,9 +20,10 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { FormMessage } from "@/components/form-message";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
 import { updateStatus } from "@/app/(app)/leads/leads-api";
+import { SpamReasonField } from "@/app/(app)/leads/spam-reason-field";
 import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { SPAM_REASON_OPTIONS } from "@/app/(app)/leads/types";
-import { STATUS, SPAM_REASON } from "@/lib/interactions/constants";
+import { STATUS, SPAM_REASON, isValidSpamReason } from "@/lib/interactions/constants";
 import { useToast } from "@/hooks/use-toast";
 import { PushFollowupDialog } from "@/app/(app)/followup/push-followup-dialog";
 
@@ -134,7 +133,7 @@ export function FollowupView({
   }
 
   async function handleMarkSpam() {
-    if (!spamTarget || !spamReason) return;
+    if (!spamTarget || !isValidSpamReason(spamReason)) return;
     setSpamPending(true);
     setSpamError(null);
     try {
@@ -283,21 +282,7 @@ export function FollowupView({
               Liên hệ này chưa có link cuộc hội thoại — không thể đánh dấu Spam. Hãy bổ sung link hội thoại trước.
             </FormMessage>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs text-muted-foreground">Lý do</Label>
-              <Select value={spamReason} onValueChange={(v) => setSpamReason(v ?? "")}>
-                <SelectTrigger className="h-10 w-full rounded-xl bg-background">
-                  <SelectValue placeholder="Chọn lý do" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MARKETING_SPAM_REASONS.map((r) => (
-                    <SelectItem key={r.code} value={r.code}>
-                      {r.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <SpamReasonField value={spamReason} onChange={setSpamReason} quickOptions={MARKETING_SPAM_REASONS} />
           )}
 
           {spamError && <FormMessage kind="error">{spamError}</FormMessage>}
@@ -309,7 +294,7 @@ export function FollowupView({
             <Button
               type="button"
               className="rounded-full bg-destructive text-white hover:bg-destructive/90"
-              disabled={!spamReason || spamPending || !spamTarget?.conversationLink}
+              disabled={!isValidSpamReason(spamReason) || spamPending || !spamTarget?.conversationLink}
               onClick={handleMarkSpam}
             >
               {spamPending && <LoaderCircle className="animate-spin" />}

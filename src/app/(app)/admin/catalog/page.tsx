@@ -15,7 +15,7 @@ import { AdminCatalogTabs } from "@/app/(app)/admin/catalog/admin-catalog-tabs";
 // bảng để nhúng vào tab thay vì lặp code.
 export default async function AdminCatalogPage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "adminCatalog");
+  await requireFeatureAccess(user, "adminCatalog");
 
   return (
     <>

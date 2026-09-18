@@ -1,15 +1,19 @@
 import { PageHeader } from "@/components/page-header";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { prisma } from "@/lib/prisma";
+import { getNewAdIdRows } from "@/lib/marketing/new-ad-ids";
 import { AdsCostImportView } from "@/app/(app)/ads-cost/import/ads-cost-import-view";
 
 export default async function AdsCostImportPage() {
-  await getCurrentUser();
+  const user = await getCurrentUser();
+  await requireFeatureAccess(user, "adsCostImport");
 
-  const [sources, fanpages, branches] = await Promise.all([
+  const [sources, fanpages, branches, pendingAdIds] = await Promise.all([
     prisma.source.findMany({ where: { active: true }, select: { name: true }, orderBy: { name: "asc" } }),
     prisma.fanpage.findMany({ where: { active: true }, select: { name: true, defaultSourceName: true }, orderBy: { name: "asc" } }),
     prisma.branch.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { name: "asc" } }),
+    getNewAdIdRows(),
   ]);
 
   return (
@@ -23,6 +27,7 @@ export default async function AdsCostImportPage() {
         sourceOptions={sources.map((s) => s.name)}
         fanpageOptions={fanpages}
         branchOptions={branches}
+        pendingAdIds={pendingAdIds}
       />
     </>
   );

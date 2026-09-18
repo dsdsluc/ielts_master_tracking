@@ -15,7 +15,7 @@ export default async function ClosedPageReportsPage({
   searchParams: Promise<{ from?: string; to?: string; fanpage?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "pageReportClosed");
+  await requireFeatureAccess(user, "pageReportClosed");
   const { from, to, fanpage } = await searchParams;
 
   const where: Prisma.MktPageReportWhereInput = { closedAt: { not: null } };

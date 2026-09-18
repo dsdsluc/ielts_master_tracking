@@ -24,7 +24,7 @@ const TAB_STATUS: Record<TabKey, string> = {
 };
 const TABS: { key: TabKey; label: string }[] = [
   { key: "waiting", label: "Chờ" },
-  { key: "in_progress", label: "Tiếp nhận" },
+  { key: "in_progress", label: "Có nhu cầu" },
   // Chỉ gồm lead Đủ tiêu chuẩn GẦN ĐÂY (xem QUALIFIED_QUEUE_WINDOW_DAYS ở
   // queries.ts) — lịch sử đầy đủ xem ở /customers.
   { key: "qualified", label: "Đủ tiêu chuẩn" },
@@ -49,7 +49,7 @@ function sampleItems(branchCode: string): InteractionListItem[] {
   };
   return [
     { ...base, interactionId: "SAMPLE-001", customerKey: "SAMPLE-CUS-001", customerName: "Trần Gia Hân", status: "Chờ", createdLeadAt: "2026-09-07T08:15:00+07:00", needsFollowup: false },
-    { ...base, interactionId: "SAMPLE-002", customerKey: "SAMPLE-CUS-002", customerName: "Lê Hoàng Nam", status: "Tiếp nhận", createdLeadAt: "2026-09-07T09:40:00+07:00", needsFollowup: true },
+    { ...base, interactionId: "SAMPLE-002", customerKey: "SAMPLE-CUS-002", customerName: "Lê Hoàng Nam", status: "Có nhu cầu", createdLeadAt: "2026-09-07T09:40:00+07:00", needsFollowup: true },
     { ...base, interactionId: "SAMPLE-003", customerKey: "SAMPLE-CUS-003", customerName: "Phạm Thu Trang", status: "Đủ tiêu chuẩn", createdLeadAt: "2026-09-06T14:20:00+07:00", needsFollowup: false, phoneNormalized: "0900000000" },
   ];
 }

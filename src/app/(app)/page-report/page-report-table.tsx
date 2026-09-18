@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, Lock, LockOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, LoaderCircle, Lock, LockOpen, Users } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
+import { StatusPill } from "@/components/status-pill";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiErrorMessage } from "@/lib/api-client";
 import { formatDateTime } from "@/app/(app)/leads/lead-format";
+import type { PageReportLeadDetail, SourceBreakdownRow } from "@/lib/marketing/page-report";
 
 export type PageReportRow = {
   fanpageName: string;
@@ -17,6 +21,7 @@ export type PageReportRow = {
   closed: boolean;
   closedAt: string | null;
   closedByName: string | null;
+  sourceBreakdown?: SourceBreakdownRow[];
 };
 
 function ConversionPill({ rate }: { rate: number }) {
@@ -39,6 +44,75 @@ function StatusBadge({ closed }: { closed: boolean }) {
   );
 }
 
+/** Danh sách liên hệ cụ thể đã gộp thành số của 1 Page trong ngày — cho phép
+ * Marketing đối chiếu với số thấy trực tiếp trên Page trước khi chốt/yêu cầu
+ * sửa lại, thay vì chỉ nhìn 1 con số tổng không giải thích được. */
+function PageReportDetailPanel({
+  fanpageName,
+  totalLeads,
+  detail,
+}: {
+  fanpageName: string;
+  totalLeads: number;
+  detail: PageReportLeadDetail[] | "loading" | "error" | undefined;
+}) {
+  if (detail === "loading" || detail === undefined) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+        <LoaderCircle className="size-4 animate-spin" /> Đang tải danh sách liên hệ của &quot;{fanpageName}&quot;…
+      </div>
+    );
+  }
+  if (detail === "error") {
+    return <p className="py-3 text-sm text-destructive">Không tải được danh sách liên hệ — vui lòng thử lại.</p>;
+  }
+  if (detail.length === 0) {
+    return <EmptyState icon={Users} title="Chưa có liên hệ nào" description="Không có liên hệ nào tạo trong ngày này cho Page trên." />;
+  }
+
+  return (
+    <div className="flex flex-col gap-2 py-2">
+      <p className="text-xs text-muted-foreground">
+        <strong className="font-mono text-foreground">{detail.length}</strong> liên hệ tính vào {totalLeads} &quot;tin nhắn nhận được&quot; — đối chiếu
+        với số thấy trực tiếp trên Page. Thiếu/sai thì mở từng liên hệ để kiểm tra hoặc yêu cầu Sale bổ sung.
+      </p>
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+        <Table>
+          <TableHeader className="bg-secondary/40">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
+              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Nguồn</TableHead>
+              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Trạng thái</TableHead>
+              <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tạo lúc</TableHead>
+              <TableHead className="w-10 pr-4" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {detail.map((item) => (
+              <TableRow key={item.interactionId} className="odd:bg-secondary/10">
+                <TableCell className="min-w-40 px-4 py-2.5">
+                  <p className="max-w-52 truncate font-medium text-foreground" title={item.customerName}>{item.customerName}</p>
+                  {item.phoneNormalized && <p className="font-mono text-xs text-muted-foreground">{item.phoneNormalized}</p>}
+                </TableCell>
+                <TableCell className="px-4 text-sm text-muted-foreground">{item.sourceName}</TableCell>
+                <TableCell className="px-4">
+                  <StatusPill status={item.statusName} />
+                </TableCell>
+                <TableCell className="px-4 text-xs text-muted-foreground">{formatDateTime(item.createdLeadAt)}</TableCell>
+                <TableCell className="pr-4 text-right">
+                  <Link href={`/leads/${item.interactionId}`} className="inline-flex text-muted-foreground hover:text-primary" aria-label="Mở liên hệ">
+                    <ExternalLink className="size-3.5" />
+                  </Link>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 export function PageReportTable({
   rows,
   date,
@@ -54,6 +128,27 @@ export function PageReportTable({
   const { toast } = useToast();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [closingAll, setClosingAll] = useState(false);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [detailsByKey, setDetailsByKey] = useState<Record<string, PageReportLeadDetail[] | "loading" | "error">>({});
+
+  async function toggleExpand(fanpageName: string) {
+    if (expandedKey === fanpageName) {
+      setExpandedKey(null);
+      return;
+    }
+    setExpandedKey(fanpageName);
+    if (detailsByKey[fanpageName]) return;
+    setDetailsByKey((prev) => ({ ...prev, [fanpageName]: "loading" }));
+    try {
+      const data = await apiFetch<{ rows: PageReportLeadDetail[] }>(
+        `/api/marketing/page-report/detail?date=${encodeURIComponent(date)}&fanpageName=${encodeURIComponent(fanpageName)}`,
+        { cache: "no-store" }
+      );
+      setDetailsByKey((prev) => ({ ...prev, [fanpageName]: data.rows }));
+    } catch {
+      setDetailsByKey((prev) => ({ ...prev, [fanpageName]: "error" }));
+    }
+  }
 
   const openCount = rows.filter((r) => !r.closed).length;
   // Đã chốt lên trước để thấy ngay những gì đã xong, phần còn cần xử lý
@@ -145,9 +240,30 @@ export function PageReportTable({
           <TableBody>
             {sortedRows.map((row) => {
               const pending = pendingKey === row.fanpageName;
+              const expanded = expandedKey === row.fanpageName;
+              const detail = detailsByKey[row.fanpageName];
               return (
-                <TableRow key={row.fanpageName} className="odd:bg-secondary/10">
-                  <TableCell className="px-5 py-3.5 font-medium text-foreground">{row.fanpageName}</TableCell>
+                <Fragment key={row.fanpageName}>
+                <TableRow className="odd:bg-secondary/10">
+                  <TableCell className="px-5 py-3.5 font-medium text-foreground">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-left hover:text-primary"
+                      onClick={() => toggleExpand(row.fanpageName)}
+                    >
+                      {expanded ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
+                      {row.fanpageName}
+                    </button>
+                    {row.sourceBreakdown && row.sourceBreakdown.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1 pl-5">
+                        {row.sourceBreakdown.map((b) => (
+                          <span key={b.sourceName} className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                            {b.sourceName} {b.count}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="px-4 text-center font-mono text-sm text-foreground">{row.totalLeads}</TableCell>
                   <TableCell className="px-4 text-center font-mono text-sm text-status-qualified">{row.qualifiedLeads}</TableCell>
                   <TableCell className="px-4 text-center">
@@ -198,6 +314,14 @@ export function PageReportTable({
                     )}
                   </TableCell>
                 </TableRow>
+                {expanded && (
+                  <TableRow className="bg-secondary/20 hover:bg-secondary/20">
+                    <TableCell colSpan={7} className="px-5 py-3">
+                      <PageReportDetailPanel fanpageName={row.fanpageName} totalLeads={row.totalLeads} detail={detail} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               );
             })}
           </TableBody>

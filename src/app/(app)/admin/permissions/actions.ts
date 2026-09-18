@@ -47,3 +47,41 @@ export async function updateFeaturePermissions(rows: z.infer<typeof rowSchema>[]
 
   revalidatePath("/admin/permissions");
 }
+
+const userRowSchema = z.object({
+  feature: z.enum(FEATURE_KEYS),
+  canCreate: z.boolean(),
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
+  canReport: z.boolean(),
+});
+
+// Lưu quyền riêng cho ĐÚNG 1 người dùng mỗi lần (khác updateFeaturePermissions
+// gửi cả lô N tính năng x 3 vai trò) — tab "Theo người dùng" chỉ sửa 1 người
+// tại một thời điểm nên gửi nguyên toàn bộ lưới feature của người đó là đủ,
+// không cần tính diff.
+export async function updateUserFeaturePermissions(userEmail: string, rows: z.infer<typeof userRowSchema>[]) {
+  await requireAdmin();
+  const email = z.string().trim().email().parse(userEmail);
+  const data = parseOrThrow(z.array(userRowSchema), rows);
+
+  await prisma
+    .$transaction(
+      data.map((row) =>
+        prisma.userFeaturePermission.upsert({
+          where: { userEmail_feature: { userEmail: email, feature: row.feature } },
+          create: { userEmail: email, ...row },
+          update: {
+            canCreate: row.canCreate,
+            canEdit: row.canEdit,
+            canDelete: row.canDelete,
+            canReport: row.canReport,
+          },
+        })
+      ),
+      { timeout: 30_000 }
+    )
+    .catch((err) => friendlyPrismaError(err, "Không cập nhật được phân quyền người dùng."));
+
+  revalidatePath("/admin/permissions");
+}

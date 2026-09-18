@@ -1,6 +1,19 @@
 import Link from "next/link";
 import type { Prisma } from "@/generated/prisma/client";
-import { CheckCircle2, ChevronRight, GraduationCap, PhoneCall, Sparkles, UserRoundPlus, Users2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUpCircle,
+  CheckCircle2,
+  ChevronRight,
+  GraduationCap,
+  HeartHandshake,
+  PhoneCall,
+  Scale,
+  Sparkles,
+  UserRoundPlus,
+  UserX,
+  Users2,
+} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { EmptyState } from "@/components/empty-state";
@@ -11,6 +24,7 @@ import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { computeSalePerformance } from "@/lib/interactions/sale-performance";
+import { getSaleAllocationSuggestions, ALLOCATION_TARGET_MIN, ALLOCATION_TARGET_MAX } from "@/lib/interactions/allocation-suggestions";
 import { prisma } from "@/lib/prisma";
 import { computeFollowupStats, type FollowupStatRow, type FollowupStats } from "@/app/(app)/followup-tracking/stats";
 import { computeMonthlyKpiProgress, computeTeamPersonalKpi } from "@/lib/customers/stats";
@@ -76,7 +90,7 @@ function SectionHeader({
 
 export default async function LeaderDashboardPage() {
   const actor = await getCurrentUser();
-  await requireFeatureAccess(actor.role, "leaderDashboard");
+  await requireFeatureAccess(actor, "leaderDashboard");
 
   // Cache 90s — mirror Dashboard tổng ("/"): dữ liệu công ty/chi nhánh, không
   // phải của riêng actor, chịu được vài chục giây trễ để đổi lấy tốc độ tải.
@@ -85,12 +99,14 @@ export default async function LeaderDashboardPage() {
   // key phải khoá theo đúng phạm vi đó.
   const scopeKey = JSON.stringify(branchScopeWhere(actor));
 
-  const [followupStats, unassignedCustomerCount, teamKpi, companyKpi, perf] = await Promise.all([
+  const [followupStats, unassignedCustomerCount, teamKpi, companyKpi, perf, allocationSuggestions, needsSupportCount] = await Promise.all([
     cached(`leader-dash:v1:followup:${scopeKey}`, 90, () => computeFollowupStatsForLeader(actor)),
     prisma.customer.count({ where: { currentStatusName: STATUS.PHONE, assignedToEmail: null } }),
     cached("leader-dash:v1:team-kpi", 90, computeTeamPersonalKpi),
     cached("leader-dash:v1:company-kpi", 90, computeMonthlyKpiProgress),
     cached(`leader-dash:v1:sale-perf:${scopeKey}`, 90, () => computeSalePerformance(actor, ACTIVITY_WINDOW_DAYS)),
+    cached("leader-dash:v1:allocation-suggestions", 90, getSaleAllocationSuggestions),
+    prisma.customer.count({ where: { needsLeaderSupport: true } }),
   ]);
 
   const kpiRows = [...teamKpi.rows].sort((a, b) => (a.met === b.met ? b.remaining - a.remaining : a.met ? 1 : -1));
@@ -99,6 +115,18 @@ export default async function LeaderDashboardPage() {
   const activityRows = [...perf].sort((a, b) => b.created - a.created);
   const idleSales = perf.filter((r) => r.created === 0).length;
 
+  const increaseSuggestions = allocationSuggestions.filter((s) => s.kind === "increase");
+  const supportSuggestions = allocationSuggestions.filter((s) => s.kind === "support");
+
+  const attentionItems = [
+    { count: unassignedCustomerCount, label: "Khách chưa phân bổ", href: "/customer-assignment" },
+    { count: salesShortOfKpi, label: "Sale thiếu KPI tháng", href: "#kpi-theo-sale" },
+    { count: increaseSuggestions.length, label: "Sale nên giao thêm khách", href: "#goi-y-phan-bo" },
+    { count: supportSuggestions.length, label: "Sale cần hỗ trợ phân bổ", href: "#goi-y-phan-bo" },
+    { count: idleSales, label: "Sale chưa tạo lead nào", href: "#hoat-dong-sale" },
+    { count: needsSupportCount, label: "Khách cần Leader hỗ trợ", href: "/customers" },
+  ].filter((item) => item.count > 0);
+
   return (
     <>
       <PageHeader
@@ -106,6 +134,23 @@ export default async function LeaderDashboardPage() {
         title="Dashboard Leader"
         description="Tổng quan để quản trị đội Sale — chăm sóc lại, phân bổ khách hàng, chỉ tiêu KPI và mức độ chăm chỉ làm lead."
       />
+
+      {attentionItems.length > 0 && (
+        <div className="shadow-bubble mb-8 flex flex-wrap items-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3.5">
+          <span className="flex items-center gap-1.5 pr-1 text-xs font-semibold text-destructive uppercase">
+            <AlertTriangle className="size-3.5" /> Cần chú ý ngay
+          </span>
+          {attentionItems.map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-destructive/10"
+            >
+              <span className="font-mono font-semibold text-destructive">{item.count}</span> {item.label}
+            </a>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col gap-10">
         <section>
@@ -156,6 +201,9 @@ export default async function LeaderDashboardPage() {
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customer-assignment" />}>
                   <UserRoundPlus className="size-3.5" /> Phân bổ ngay
+                </Button>
+                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customer-assignment/workload" />}>
+                  <UserX className="size-3.5" /> Cân bằng tải Sale
                 </Button>
                 <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customers" />}>
                   Xem chi tiết <ChevronRight className="size-3.5" />
@@ -236,7 +284,94 @@ export default async function LeaderDashboardPage() {
           </div>
         </section>
 
-        <section>
+        <section id="goi-y-phan-bo">
+          <SectionHeader
+            icon={Scale}
+            title="Gợi ý phân bổ khách hàng"
+            description={`Tỷ lệ chốt mục tiêu ${ALLOCATION_TARGET_MIN}–${ALLOCATION_TARGET_MAX}% (Đã chốt ÷ Đang có). Vượt trên → Sale đang dư sức, nên giao thêm. Dưới ngưỡng → cần hỗ trợ trước khi giao thêm.`}
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customer-assignment" />}>
+                  <UserRoundPlus className="size-3.5" /> Phân bổ ngay
+                </Button>
+                <Button variant="outline" size="sm" className="rounded-full" nativeButton={false} render={<Link href="/customer-assignment/workload" />}>
+                  <UserX className="size-3.5" /> Cân bằng tải Sale
+                </Button>
+              </div>
+            }
+          />
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <KpiCard
+              label="Nên giao thêm khách"
+              value={increaseSuggestions.length}
+              accentClassName={increaseSuggestions.length > 0 ? "bg-status-qualified" : "bg-muted-foreground"}
+            />
+            <KpiCard
+              label="Cần hỗ trợ trước"
+              value={supportSuggestions.length}
+              accentClassName={supportSuggestions.length > 0 ? "bg-destructive" : "bg-status-qualified"}
+            />
+            <KpiCard
+              label="Đang trong khoảng tốt"
+              value={allocationSuggestions.filter((s) => s.kind === "balanced").length}
+              accentClassName="bg-status-qualified"
+            />
+          </div>
+          <div className="shadow-bubble overflow-hidden rounded-2xl border border-border/70 bg-card">
+            {allocationSuggestions.length === 0 ? (
+              <EmptyState
+                icon={Scale}
+                title="Chưa có Sale nào đủ dữ liệu"
+                description="Cần vài khách hàng được phân bổ cho 1 Sale mới đủ để tính tỷ lệ chốt đáng tin cậy."
+              />
+            ) : (
+              <Table>
+                <TableHeader className="bg-secondary/60">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Sale</TableHead>
+                    <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Đang có</TableHead>
+                    <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Đã chốt</TableHead>
+                    <TableHead className="px-4 text-center font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Tỷ lệ chốt</TableHead>
+                    <TableHead className="px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Gợi ý</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allocationSuggestions.map((s) => (
+                    <TableRow key={s.email} className="odd:bg-secondary/10">
+                      <TableCell className="min-w-40 px-5 py-3">
+                        <p className="truncate font-medium text-foreground" title={s.fullName}>{s.fullName}</p>
+                        <p className="truncate font-mono text-[11px] text-muted-foreground" title={s.email}>{s.email}</p>
+                      </TableCell>
+                      <TableCell className="px-4 text-center font-mono text-sm text-muted-foreground">{s.totalAssigned}</TableCell>
+                      <TableCell className="px-4 text-center font-mono text-sm text-foreground">{s.enrolled}</TableCell>
+                      <TableCell className="px-4 text-center font-mono text-sm font-medium text-foreground">{s.closeRate.toFixed(1)}%</TableCell>
+                      <TableCell className="px-4">
+                        {s.kind === "increase" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-status-qualified-bg px-2.5 py-0.5 text-xs font-medium text-status-qualified">
+                            <ArrowUpCircle className="size-3.5" /> Nên giao thêm ~{s.suggestedAdditional} khách
+                          </span>
+                        )}
+                        {s.kind === "support" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                            <HeartHandshake className="size-3.5" /> Cần hỗ trợ
+                          </span>
+                        )}
+                        {s.kind === "balanced" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <CheckCircle2 className="size-3.5" /> Ổn định
+                          </span>
+                        )}
+                        {s.kind === "insufficient_data" && <span className="text-xs text-muted-foreground">Chưa đủ dữ liệu</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </section>
+
+        <section id="hoat-dong-sale">
           <SectionHeader
             icon={PhoneCall}
             title="Sale có chăm chỉ làm lead không?"

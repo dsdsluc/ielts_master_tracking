@@ -24,7 +24,7 @@ export default async function LogsByActorPage({
   searchParams: Promise<{ page?: string; q?: string; category?: string; result?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "logs");
+  await requireFeatureAccess(user, "logs");
   const { email: rawKey } = await params;
   const isSystem = rawKey === SYSTEM_ACTOR_KEY;
   const actorEmail = isSystem ? null : decodeURIComponent(rawKey);

@@ -5,22 +5,25 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { ApiError, Errors } from "@/lib/interactions/errors";
 import {
+  CUSTOMER_STAGE,
   FOLLOWUP_OUTCOME,
   INTERACTION_ACTIVITY,
   ROLES,
   STATUS,
   SYSTEM_LOG_ACTION,
+  SPAM_REASON_MIN_LENGTH,
   canonicalStatusKey,
   isOpenStatus,
+  isValidSpamReason,
 } from "@/lib/interactions/constants";
 import { requireValidSaleBranchScope, canAccessBranch, isLeaderLike } from "@/lib/interactions/scope";
-import { findDuplicateInfo, getCustomerTouch } from "@/lib/interactions/duplicate";
+import { findDuplicateInfo, findCustomerKeyByPhone, getCustomerTouch } from "@/lib/interactions/duplicate";
 import { resolveLeadInfo, resolveExternalLeadInfo, type ResolvedLeadInfo } from "@/lib/interactions/lead-info";
 import { normalizePhone } from "@/lib/interactions/link";
 import { newInteractionId, makeCustomerKey } from "@/lib/interactions/ids";
 import { logAction, logInteractionActivity } from "@/lib/interactions/audit";
 import { detailInclude, toDetail } from "@/lib/interactions/serialize";
-import { appLink, sendEmail } from "@/lib/email";
+import { appLink, sendEmail, emailEnvelope } from "@/lib/email";
 import { escapeHtml } from "@/lib/html-escape";
 import { spamReasonLabel } from "@/app/(app)/admin/spam-reason";
 import type { CurrentUser } from "@/lib/auth/dal";
@@ -39,20 +42,26 @@ import { getInteractionDetail } from "@/lib/interactions/queries";
 async function notifyLeadersNewQualifiedLead(interactionId: string, customerName: string, customerKey: string) {
   const recipients = await prisma.user.findMany({
     where: { role: { in: [ROLES.LEADER, ROLES.ADMIN] }, active: true },
-    select: { email: true },
+    select: { email: true, fullName: true },
   });
   if (recipients.length === 0) return;
 
-  const [to, ...rest] = recipients.map((r) => r.email);
+  const [first, ...rest] = recipients;
   const link = appLink(`/customers/${customerKey}`);
   const safeName = escapeHtml(customerName);
   await sendEmail({
-    to,
-    bcc: rest,
+    to: first.email,
+    toName: first.fullName,
+    bcc: rest.map((r) => r.email),
     subject: `Liên hệ mới Đủ tiêu chuẩn: ${customerName}`,
-    html: `<p>Liên hệ <strong>${safeName}</strong> vừa Đủ tiêu chuẩn và đang chờ phân bổ tư vấn.</p><p>${
-      link ? `<a href="${link}">Xem khách hàng</a> rồi vào mục Phân bổ khách hàng để xử lý.` : "Vào mục Phân bổ khách hàng để xử lý."
-    }</p>`,
+    html: emailEnvelope({
+      audienceNote: `Gửi tới toàn bộ Leader/Admin đang hoạt động (${recipients.length} người).`,
+      purpose: "Có 1 liên hệ vừa Đủ tiêu chuẩn (đã xin được SĐT) và đang chờ được phân bổ cho Sale tư vấn.",
+      bodyHtml: `<p>Liên hệ <strong>${safeName}</strong> vừa Đủ tiêu chuẩn.</p><p><strong>Việc cần làm:</strong> ${
+        link ? `<a href="${link}">Xem khách hàng</a> rồi` : ""
+      } vào mục Phân bổ khách hàng để giao cho 1 Sale phụ trách.</p>`,
+      senderLabel: "Hệ thống tự động",
+    }),
     action: SYSTEM_LOG_ACTION.NOTIFY_NEW_QUALIFIED_LEAD,
     sentByEmail: null,
     interactionIds: [interactionId],
@@ -69,15 +78,22 @@ async function notifyMarketingLeadSpammed(
   mktPushedByEmail: string,
   spamReasonCode: string | null
 ) {
+  const recipient = await prisma.user.findUnique({ where: { email: mktPushedByEmail }, select: { fullName: true } });
   const link = appLink(`/leads/${interactionId}`);
   const safeName = escapeHtml(customerName);
   const reasonLabel = escapeHtml(spamReasonLabel(spamReasonCode));
   await sendEmail({
     to: mktPushedByEmail,
+    toName: recipient?.fullName,
     subject: `Liên hệ đã chuyển Spam: ${customerName}`,
-    html: `<p>Liên hệ bạn từng gửi yêu cầu "Cần chăm sóc lại" — <strong>${safeName}</strong> — vừa bị đánh dấu Spam${
-      reasonLabel ? ` (lý do: ${reasonLabel})` : ""
-    }.</p><p>${link ? `<a href="${link}">Xem chi tiết</a>` : ""}</p>`,
+    html: emailEnvelope({
+      greetingName: recipient?.fullName,
+      purpose: `Liên hệ bạn từng gửi yêu cầu "Cần chăm sóc lại" vừa bị đánh dấu Spam — không cần theo dõi tiếp nữa.`,
+      bodyHtml: `<p>Liên hệ <strong>${safeName}</strong> đã chuyển Spam${reasonLabel ? ` (lý do: ${reasonLabel})` : ""}.</p><p>${
+        link ? `<a href="${link}">Xem chi tiết</a>` : ""
+      }</p>`,
+      senderLabel: `${actor.fullName} (đánh dấu Spam)`,
+    }),
     action: SYSTEM_LOG_ACTION.NOTIFY_LEAD_SPAMMED,
     sentByEmail: actor.email,
     interactionIds: [interactionId],
@@ -173,11 +189,33 @@ export async function createInteraction(actor: CurrentUser, input: CreateLeadInp
     throw new ApiError(422, "VALIDATION_ERROR", "SĐT không hợp lệ — cần đúng định dạng số Việt Nam 10 chữ số.");
   }
   const qualified = !!phoneNorm;
+  // "Có nhu cầu" (STATUS.PROCESSING) KHÔNG được tự suy ra từ việc có sẵn link
+  // cuộc hội thoại — có link chỉ là bằng chứng để đối chiếu, không đồng nghĩa
+  // Sale đã thật sự nhắn tin qua lại. Trạng thái này chỉ do Sale CHỦ ĐỘNG gán
+  // sau khi đã liên hệ (xem "Ghi nhận đã liên hệ" ở use-interaction-detail.ts
+  // và resolveFollowup() bên dưới) — lúc TẠO MỚI luôn chỉ có 2 khả năng.
   const initialStatus = qualified ? STATUS.PHONE : STATUS.WAITING;
 
-  // Chỉ sinh + ghi customerKey khi Đủ tiêu chuẩn — liên hệ "Chờ" chưa có
-  // Customer tương ứng (xem comment customerKey trong schema.prisma).
-  const customerKey = qualified ? dup.existingCustomerKey || makeCustomerKey("url:" + info.canonicalLink) : null;
+  // Chỉ sinh + ghi customerKey khi Đủ tiêu chuẩn — liên hệ "Chờ"/"Có nhu cầu"
+  // chưa có Customer tương ứng (xem comment customerKey trong schema.prisma).
+  // Ưu tiên GHÉP vào Customer đã có cùng SĐT (findCustomerKeyByPhone) trước
+  // khi sinh customerKey mới theo link — tránh tạo 2 hồ sơ cho cùng 1 người
+  // khi nhập hàng loạt từ nhiều nguồn/link khác nhau cho cùng 1 SĐT (xem
+  // comment ở duplicate.ts).
+  const customerKey = qualified
+    ? dup.existingCustomerKey || (await findCustomerKeyByPhone(phoneNorm)) || makeCustomerKey("url:" + info.canonicalLink)
+    : null;
+
+  // Mốc tư vấn kèm theo (nhập Excel dữ liệu tư vấn cũ, xem leads-import-view.tsx)
+  // — chỉ áp dụng lúc TẠO MỚI hồ sơ Customer (nhánh create bên dưới), không
+  // bao giờ ghi đè mốc của 1 Customer đã tồn tại — 1 dòng Excel cũ/thiếu
+  // thông tin không được phép làm lùi tiến trình tư vấn thật đang có. "Không
+  // quan tâm" bắt buộc kèm lý do y hệt updateCustomerStage(); thiếu lý do thì
+  // bỏ qua mốc này (không chặn cả dòng) — Sale phụ trách điền lại sau.
+  const rawStage = input.channel === "facebook" ? (input.stage ?? "").trim() : "";
+  const rawStageReason = input.channel === "facebook" ? (input.stageReason ?? "").trim() : "";
+  const isValidStageValue = (Object.values(CUSTOMER_STAGE) as string[]).includes(rawStage);
+  const stageToApply = isValidStageValue && (rawStage !== CUSTOMER_STAGE.NOT_INTERESTED || rawStageReason) ? rawStage : null;
 
   const now = new Date();
   const interactionId = newInteractionId();
@@ -186,7 +224,7 @@ export async function createInteraction(actor: CurrentUser, input: CreateLeadInp
     if (customerKey) {
       await tx.customer.upsert({
         where: { customerKey },
-        update: { displayName: info.customerName, lastTouchAt: now, currentStatusName: initialStatus },
+        update: { displayName: info.customerName, lastTouchAt: now, currentStatusName: initialStatus, phoneNormalized: phoneNorm },
         create: {
           customerKey,
           displayName: info.customerName,
@@ -194,6 +232,14 @@ export async function createInteraction(actor: CurrentUser, input: CreateLeadInp
           firstTouchAt: now,
           lastTouchAt: now,
           currentStatusName: initialStatus,
+          phoneNormalized: phoneNorm,
+          ...(stageToApply
+            ? {
+                stage: stageToApply,
+                stageReason: rawStageReason || null,
+                ...(stageToApply === CUSTOMER_STAGE.ENROLLED ? { enrolledAt: now } : {}),
+              }
+            : {}),
         },
       });
     }
@@ -257,7 +303,7 @@ export async function createInteraction(actor: CurrentUser, input: CreateLeadInp
 }
 
 // ---------------------------------------------------------------------------
-// Sửa thông tin hội thoại (chỉ khi còn mở — Chờ/Tiếp nhận)
+// Sửa thông tin hội thoại (chỉ khi còn mở — Chờ/Có nhu cầu)
 // ---------------------------------------------------------------------------
 export async function updateInteractionInfo(actor: CurrentUser, interactionId: string, input: LeadInfoInput & { expectedVersion: number }) {
   if (actor.role === ROLES.SALES) requireValidSaleBranchScope(actor);
@@ -280,7 +326,7 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
 
   // Sửa thông tin không đổi trạng thái Đủ điều kiện — chỉ đụng tới Customer
   // nếu hội thoại NÀY đã từng đủ điều kiện từ trước (đã có customerKey); nếu
-  // chưa (đang Chờ/Tiếp nhận), sửa Link/Tên... cũng không tự tạo Customer.
+  // chưa (đang Chờ/Có nhu cầu), sửa Link/Tên... cũng không tự tạo Customer.
   const wasQualified = !!lead.customerKey;
   const customerKey = wasQualified ? dup.existingCustomerKey || makeCustomerKey("url:" + info.canonicalLink) : null;
 
@@ -351,7 +397,7 @@ export async function updateInteractionInfo(actor: CurrentUser, interactionId: s
 // ---------------------------------------------------------------------------
 // Chuyển trạng thái — hàm lõi của toàn bộ workflow.
 // status không bao giờ nhận "Chờ" (chỉ hệ thống gán lúc tạo). Sale chỉ được
-// thao tác khi hội thoại đang mở (Chờ/Tiếp nhận); Leader/Admin có thể sửa cả
+// thao tác khi hội thoại đang mở (Chờ/Có nhu cầu); Leader/Admin có thể sửa cả
 // hội thoại đã đóng (mở lại) nhưng bắt buộc có `note` lý do.
 // ---------------------------------------------------------------------------
 export async function updateStatus(actor: CurrentUser, interactionId: string, input: StatusUpdateInput) {
@@ -385,7 +431,9 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
   }
 
   if (afterKey === "SPAM") {
-    if (!input.spamReason) throw new ApiError(422, "VALIDATION_ERROR", "Vui lòng chọn lý do Spam.");
+    if (!isValidSpamReason(input.spamReason)) {
+      throw new ApiError(422, "VALIDATION_ERROR", `Vui lòng nhập lý do Spam (trên ${SPAM_REASON_MIN_LENGTH} ký tự).`);
+    }
     // Không có link hội thoại thì không ai đối chiếu được đây có thực sự là
     // Spam hay không — chặn ngay ở server (nguồn xác thực duy nhất), UI chỉ
     // disable cho đẹp (xem SpamDialog/followup-view.tsx).
@@ -461,7 +509,7 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
     if (result.count === 0) throw Errors.staleVersion();
     if (afterKey === "PHONE") {
       // Lần đầu đủ điều kiện thì đây là lúc dòng Customer ra đời — trước đó
-      // (đang Chờ/Tiếp nhận) chưa từng ghi vào bảng customers.
+      // (đang Chờ/Có nhu cầu) chưa từng ghi vào bảng customers.
       await tx.customer.upsert({
         where: { customerKey: customerKey! },
         update: { currentStatusName: input.status, lastTouchAt: now, ...(phoneNorm ? { phoneNormalized: phoneNorm } : {}) },
@@ -476,7 +524,7 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
         },
       });
     } else if (lead.customerKey) {
-      // SPAM/Tiếp nhận: chỉ cập nhật nếu ĐÃ có Customer từ trước (từng đủ
+      // SPAM/Có nhu cầu: chỉ cập nhật nếu ĐÃ có Customer từ trước (từng đủ
       // tiêu chuẩn) — updateMany thay vì update để không throw khi liên hệ
       // này chưa từng đủ điều kiện (customerKey null, chưa có Customer nào).
       await tx.customer.updateMany({ where: { customerKey: lead.customerKey }, data: { currentStatusName: input.status, lastTouchAt: now } });
@@ -635,11 +683,17 @@ export async function assignFollowup(actor: CurrentUser, interactionIds: string[
     // sendEmail() — chỉ cần khai báo liên hệ nào email này nói tới.
     await sendEmail({
       to: target.email,
+      toName: target.fullName,
       subject:
         notifyTargets.length === 1
           ? `Cần chăm sóc lại: ${notifyTargets[0].customerName}`
           : `Cần chăm sóc lại: ${notifyTargets.length} liên hệ`,
-      html: `<p>Chào ${escapeHtml(target.fullName ?? "bạn")},</p><p>Bạn vừa được phân bổ chăm sóc lại ${notifyTargets.length} liên hệ:</p><ul>${itemsHtml}</ul>`,
+      html: emailEnvelope({
+        greetingName: target.fullName,
+        purpose: `${actor.fullName} vừa phân bổ cho bạn ${notifyTargets.length} liên hệ cần chăm sóc lại.`,
+        bodyHtml: `<p><strong>Việc cần làm:</strong> liên hệ lại từng khách dưới đây và cập nhật kết quả:</p><ul>${itemsHtml}</ul>`,
+        senderLabel: actor.fullName,
+      }),
       action: SYSTEM_LOG_ACTION.FOLLOWUP_ASSIGN,
       sentByEmail: actor.email,
       interactionIds: notifyTargets.map((t) => t.interactionId),
@@ -651,8 +705,8 @@ export async function assignFollowup(actor: CurrentUser, interactionIds: string[
 
 // ---------------------------------------------------------------------------
 // Sale đánh dấu đã chăm sóc lại xong yêu cầu của Marketing — LUÔN buộc lead
-// tiến triển thật: ép statusName về "Tiếp nhận" (kể cả khi đang Tiếp nhận sẵn
-// từ trước, followup vẫn có thể được gửi trên lead đang Tiếp nhận), tắt cờ
+// tiến triển thật: ép statusName về "Có nhu cầu" (kể cả khi đang Có nhu cầu
+// sẵn từ trước, followup vẫn có thể được gửi trên lead đang Có nhu cầu), tắt cờ
 // needsFollowup, ghi log. Không còn khái niệm "bấm cho có" (MANUAL_DISMISS) vì
 // nút này không còn là no-op nữa — 3 action duy nhất còn lại ở trang chi tiết
 // chăm sóc lại (nút này, Spam, Đủ tiêu chuẩn) đều là tiến triển thật, nên
@@ -690,7 +744,7 @@ export async function resolveFollowup(actor: CurrentUser, interactionId: string,
     await tx.interaction.update({ where: { interactionId }, data });
 
     // Đồng bộ Customer nếu lead này từng đủ tiêu chuẩn từ trước (customerKey đã
-    // có) — mirror nhánh Tiếp nhận trong updateStatus(). Phần lớn trường hợp
+    // có) — mirror nhánh Có nhu cầu trong updateStatus(). Phần lớn trường hợp
     // followup chỉ áp dụng cho lead chưa từng đủ điều kiện nên customerKey
     // thường vẫn null, updateMany bỏ qua an toàn.
     if (lead.customerKey) {
@@ -784,9 +838,9 @@ export async function reassignInteractions(
 
 // ---------------------------------------------------------------------------
 // Admin xử lý Spam ở /admin/spam-review — mirror ý tưởng của pushFollowup()
-// (Marketing gửi "Chăm sóc lại") nhưng bắt đầu từ Spam thay vì Chờ/Tiếp nhận,
-// nên không tái dùng được nguyên hàm đó. 2 hành động: khôi phục về "Tiếp
-// nhận" rồi đẩy thẳng vào hàng đợi Chăm sóc lại (Leader phân bổ tiếp ở
+// (Marketing gửi "Chăm sóc lại") nhưng bắt đầu từ Spam thay vì Chờ/Có nhu cầu,
+// nên không tái dùng được nguyên hàm đó. 2 hành động: khôi phục về "Có nhu
+// cầu" rồi đẩy thẳng vào hàng đợi Chăm sóc lại (Leader phân bổ tiếp ở
 // /followup-assign), hoặc xoá hẳn liên hệ rác — chỉ áp dụng cho liên hệ ĐANG
 // Spam tại thời điểm xử lý (bỏ qua nếu đã đổi trạng thái từ lúc chọn).
 // ---------------------------------------------------------------------------

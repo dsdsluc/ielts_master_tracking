@@ -14,7 +14,7 @@ import { AdIdRegistryView, type AdIdRegistryRow } from "@/app/(app)/ad-ids/ad-id
 // việc THEO DÕI hiệu quả Ad ID đã đăng ký, đúng vai Marketing hơn.
 export default async function AdIdsPage() {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "adIds");
+  await requireFeatureAccess(user, "adIds");
 
   const [leadRows, costRows] = await Promise.all([
     prisma.interaction.findMany({

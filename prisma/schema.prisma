@@ -143,7 +143,9 @@ model User {
   customersAssignedTo Customer[]        @relation("CustomerAssignedTo")
   customersAssignedBy Customer[]        @relation("CustomerAssignedBy")
   customersUpdatedBy  Customer[]        @relation("CustomerUpdatedBy")
+  customersDeclinedBy Customer[]        @relation("CustomerDeclinedBy")
   customerCareLogs    CustomerCareLog[]
+  userFeaturePermissions UserFeaturePermission[]
 
   @@map("users")
 }
@@ -188,6 +190,26 @@ model FeaturePermission {
 
   @@id([feature, role])
   @@map("feature_permissions")
+}
+
+// Phân quyền riêng cho TỪNG NGƯỜI DÙNG — cấp thêm quyền vào 1 feature cho
+// đúng 1 user mà không cần mở cho cả vai trò của họ (vd 1 Saler cụ thể được
+// xem /ads-cost mà các Saler khác thì không). CỘNG DỒN với FeaturePermission
+// theo vai trò (OR — xem canAccessFeature() ở lib/auth/feature-access.ts),
+// không phải cơ chế "override/thu hồi" — chưa hỗ trợ cấm riêng 1 người trong
+// khi cả vai trò đang được phép. Admin không cần dòng riêng (luôn full quyền).
+model UserFeaturePermission {
+  userEmail String  @map("user_email")
+  feature   String
+  canCreate Boolean @default(false) @map("can_create")
+  canEdit   Boolean @default(false) @map("can_edit")
+  canDelete Boolean @default(false) @map("can_delete")
+  canReport Boolean @default(false) @map("can_report")
+
+  user User @relation(fields: [userEmail], references: [email], onDelete: Cascade)
+
+  @@id([userEmail, feature])
+  @@map("user_feature_permissions")
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +262,15 @@ model Customer {
   // thử", cho phép tự phát hiện "quá hạn hẹn mà chưa cập nhật kết quả".
   appointmentAt      DateTime? @map("appointment_at")
 
+  // "Tư vấn xong" (khách từ chối) — Sale bấm khi gọi điện mà khách từ chối,
+  // không tư vấn tiếp được nữa. Set đúng 1 lần (mirror enrolledAt, không dùng
+  // updatedAt vì bị bump bởi chỉnh sửa khác) — đồng thời gán assignedToEmail
+  // về null để đưa khách ra khỏi Workspace của Sale đó, chờ Leader/Admin xem
+  // lại ở /admin/declined-customers. declinedByEmail giữ lại ĐÚNG Sale đã tư
+  // vấn tới lúc từ chối, không bị mất khi assignedToEmail đã về null.
+  declinedAt      DateTime? @map("declined_at")
+  declinedByEmail String?   @map("declined_by_email")
+
   // null = Leader chưa phân bổ cho Sale nào — chỉ có giá trị SAU khi Leader
   // phân bổ ở /customer-assignment (khác lúc mới trở thành Customer).
   assignedToEmail String?   @map("assigned_to_email")
@@ -255,9 +286,11 @@ model Customer {
   assignedTo    User?             @relation("CustomerAssignedTo", fields: [assignedToEmail], references: [email])
   assignedBy    User?             @relation("CustomerAssignedBy", fields: [assignedByEmail], references: [email])
   updatedBy     User?             @relation("CustomerUpdatedBy", fields: [updatedByEmail], references: [email])
+  declinedBy    User?             @relation("CustomerDeclinedBy", fields: [declinedByEmail], references: [email])
   careLogs      CustomerCareLog[]
 
   @@index([assignedToEmail])
+  @@index([declinedAt])
   @@map("customers")
 }
 
@@ -408,11 +441,20 @@ model EmailMessage {
   action      String
   sentByEmail String?  @map("sent_by_email")
   sentAt      DateTime @default(now()) @map("sent_at")
+  // Khoá hội thoại CHUNG CHUNG cho email KHÔNG gắn với 1 liên hệ cụ thể (nhắc
+  // KPI theo Sale/tháng, digest SLA, digest gợi ý phân bổ, thông báo phân bổ
+  // khách hàng...) — cùng threadKey thì các lần gửi sau LUÔN reply vào email
+  // đầu tiên (giữ nguyên Subject gốc + In-Reply-To/References), thay vì mỗi
+  // lần chạy cron lại tách thành 1 email rời rạc mới. Độc lập với cơ chế
+  // threading qua EmailMessageInteraction ở dưới — 1 email có thể có cả hai,
+  // threadKey được ưu tiên hơn khi cả hai cùng có mặt (xem sendEmail()).
+  threadKey   String?  @map("thread_key")
 
   sentBy       User?                     @relation(fields: [sentByEmail], references: [email])
   interactions EmailMessageInteraction[]
 
   @@index([sentAt])
+  @@index([threadKey])
   @@map("email_messages")
 }
 

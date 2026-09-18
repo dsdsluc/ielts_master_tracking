@@ -8,7 +8,7 @@ import { ROLES, SYSTEM_LOG_ACTION, CUSTOMER_STAGE } from "@/lib/interactions/con
 import { isLeaderLike } from "@/lib/interactions/scope";
 import { logAction } from "@/lib/interactions/audit";
 import { customerDetailInclude, toCustomerDetail, type CustomerDetail } from "@/lib/customers/serialize";
-import { sendEmail, appLink } from "@/lib/email";
+import { sendEmail, appLink, emailEnvelope } from "@/lib/email";
 import { escapeHtml } from "@/lib/html-escape";
 import type { CurrentUser } from "@/lib/auth/dal";
 
@@ -90,10 +90,17 @@ export async function assignCustomers(
       .join("");
     await sendEmail({
       to: target.email,
+      toName: target.fullName,
       subject: notified.length === 1 ? `Bạn được phân bổ tư vấn: ${notified[0].displayName}` : `Bạn được phân bổ tư vấn ${notified.length} khách hàng`,
-      html: `<p>Chào ${escapeHtml(target.fullName)},</p><p>Bạn vừa được phân bổ phụ trách tư vấn ${notified.length} khách hàng:</p><ul>${itemsHtml}</ul>`,
+      html: emailEnvelope({
+        greetingName: target.fullName,
+        purpose: `${actor.fullName} vừa phân bổ cho bạn ${notified.length} khách hàng mới để tư vấn ghi danh.`,
+        bodyHtml: `<p><strong>Việc cần làm:</strong> liên hệ tư vấn từng khách dưới đây và cập nhật mốc tư vấn:</p><ul>${itemsHtml}</ul>`,
+        senderLabel: actor.fullName,
+      }),
       action: SYSTEM_LOG_ACTION.ASSIGN_CUSTOMER,
       sentByEmail: actor.email,
+      threadKey: `customer-assignments:${target.email}`,
     });
   }
 
@@ -128,13 +135,147 @@ export async function transferCustomer(actor: CurrentUser, customerKey: string, 
   const safeName = escapeHtml(customer.displayName);
   await sendEmail({
     to: target.email,
+    toName: target.fullName,
     subject: `Bạn được điều chuyển tiếp nhận: ${customer.displayName}`,
-    html: `<p>Chào ${escapeHtml(target.fullName)},</p><p>Bạn vừa được điều chuyển tiếp nhận tư vấn khách hàng ${link ? `<a href="${link}">${safeName}</a>` : safeName}.</p>`,
+    html: emailEnvelope({
+      greetingName: target.fullName,
+      purpose: `${actor.fullName} vừa điều chuyển 1 khách hàng cho bạn tiếp nhận tư vấn.`,
+      bodyHtml: `<p><strong>Việc cần làm:</strong> tiếp nhận tư vấn khách hàng ${link ? `<a href="${link}">${safeName}</a>` : safeName}.</p>`,
+      senderLabel: actor.fullName,
+    }),
     action: SYSTEM_LOG_ACTION.TRANSFER_CUSTOMER,
     sentByEmail: actor.email,
+    threadKey: `customer-assignments:${target.email}`,
   });
 
   return reloadDetail(customerKey);
+}
+
+// ---------------------------------------------------------------------------
+// Leader/Admin điều chuyển HÀNG LOẠT Customer (đã có người phụ trách hoặc
+// không) sang thẳng 1 Sale khác trong 1 bước — dùng khi cân bằng tải hoặc rút
+// khách từ Sale nghỉ việc và GIAO NGAY cho người thay thế, thay vì phải thu
+// hồi về "chưa phân bổ" rồi qua /customer-assignment gán lại (2 bước, dễ quên
+// bước sau). Mirror assignCustomers() (bulk + email gộp) nhưng KHÔNG đòi
+// assignedToEmail: null — vế where chỉ loại chính xác trường hợp đích trùng
+// nguồn (đỡ phải update+log vô ích).
+// ---------------------------------------------------------------------------
+export async function transferCustomers(
+  actor: CurrentUser,
+  customerKeys: string[],
+  targetEmail: string
+): Promise<{ moved: number; skipped: number }> {
+  if (!isLeaderLike(actor)) throw Errors.forbidden("Chỉ Leader/Admin được điều chuyển khách hàng.");
+  const target = await validateAssignTarget(targetEmail);
+
+  const rows = await prisma.customer.findMany({
+    where: { customerKey: { in: customerKeys } },
+    select: { customerKey: true, displayName: true, assignedToEmail: true },
+  });
+  const rowByKey = new Map(rows.map((r) => [r.customerKey, r]));
+
+  const now = new Date();
+  let moved = 0;
+  let skipped = 0;
+  const notified: { customerKey: string; displayName: string }[] = [];
+
+  for (const customerKey of customerKeys) {
+    const row = rowByKey.get(customerKey);
+    if (!row || row.assignedToEmail === target.email) {
+      skipped++;
+      continue;
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.customer.update({
+          where: { customerKey },
+          data: { assignedToEmail: target.email, assignedByEmail: actor.email, assignedAt: now, updatedByEmail: actor.email, updatedAt: now },
+        });
+        await logAction(
+          tx,
+          actor,
+          SYSTEM_LOG_ACTION.TRANSFER_CUSTOMER,
+          null,
+          { customerKey, assignedToEmail: row.assignedToEmail },
+          { customerKey, assignedToEmail: target.email }
+        );
+      });
+      moved++;
+      notified.push({ customerKey, displayName: row.displayName });
+    } catch {
+      skipped++;
+    }
+  }
+
+  if (notified.length > 0) {
+    const itemsHtml = notified
+      .map((c) => {
+        const link = appLink(`/customers/${c.customerKey}`);
+        const safeName = escapeHtml(c.displayName);
+        return `<li>${link ? `<a href="${link}">${safeName}</a>` : safeName}</li>`;
+      })
+      .join("");
+    await sendEmail({
+      to: target.email,
+      toName: target.fullName,
+      subject: notified.length === 1 ? `Bạn được điều chuyển tiếp nhận: ${notified[0].displayName}` : `Bạn được điều chuyển tiếp nhận ${notified.length} khách hàng`,
+      html: emailEnvelope({
+        greetingName: target.fullName,
+        purpose: `${actor.fullName} vừa điều chuyển cho bạn tiếp nhận tư vấn ${notified.length} khách hàng.`,
+        bodyHtml: `<p><strong>Việc cần làm:</strong> tiếp nhận tư vấn từng khách dưới đây:</p><ul>${itemsHtml}</ul>`,
+        senderLabel: actor.fullName,
+      }),
+      action: SYSTEM_LOG_ACTION.TRANSFER_CUSTOMER,
+      sentByEmail: actor.email,
+      threadKey: `customer-assignments:${target.email}`,
+    });
+  }
+
+  return { moved, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Leader/Admin thu hồi hàng loạt Customer đang có người phụ trách mà CHƯA
+// quyết định giao ngay cho ai (Sale nghỉ việc nhưng chưa chọn được người thay
+// thế) — đưa về trạng thái chưa có ai phụ trách để phân bổ sau qua
+// /customer-assignment. Trường hợp đã biết rõ giao cho ai ngay thì dùng
+// transferCustomers() ở trên, khỏi phải qua bước trung gian này. Không gửi
+// email (Sale cũ thường không còn theo dõi hộp thư công việc) và không cần
+// thống kê riêng — bộ đếm "Chưa phân bổ" sẵn có ở Dashboard Leader tự phản
+// ánh đúng sau khi thu hồi.
+// ---------------------------------------------------------------------------
+export async function reclaimCustomers(actor: CurrentUser, customerKeys: string[]): Promise<{ reclaimed: number; skipped: number }> {
+  if (!isLeaderLike(actor)) throw Errors.forbidden("Chỉ Leader/Admin được thu hồi khách hàng.");
+
+  const now = new Date();
+  let reclaimed = 0;
+  let skipped = 0;
+
+  for (const customerKey of customerKeys) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        const customer = await tx.customer.findUnique({ where: { customerKey }, select: { assignedToEmail: true } });
+        if (!customer || !customer.assignedToEmail) throw Errors.conflict("Khách hàng này hiện không có ai phụ trách.");
+        await tx.customer.update({
+          where: { customerKey },
+          data: { assignedToEmail: null, assignedByEmail: null, assignedAt: null, updatedByEmail: actor.email, updatedAt: now },
+        });
+        await logAction(
+          tx,
+          actor,
+          SYSTEM_LOG_ACTION.RECLAIM_CUSTOMER,
+          null,
+          { customerKey, assignedToEmail: customer.assignedToEmail },
+          { customerKey, assignedToEmail: null }
+        );
+      });
+      reclaimed++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  return { reclaimed, skipped };
 }
 
 export type CustomerProfileInput = {
@@ -189,6 +330,11 @@ export async function updateCustomerStage(actor: CurrentUser, customerKey: strin
   if (!canAccessCustomer(actor, customer)) throw Errors.forbidden("Bạn không được cập nhật khách hàng này.");
   if (!Object.values(CUSTOMER_STAGE).includes(input.stage as never)) {
     throw new ApiError(422, "VALIDATION_ERROR", "Mốc tư vấn không hợp lệ.");
+  }
+  // Bắt buộc ghi lại lý do khi đánh dấu "Không quan tâm" — tránh để trống,
+  // Leader/Admin xem lại sau không biết vì sao khách từ chối.
+  if (input.stage === CUSTOMER_STAGE.NOT_INTERESTED && !input.stageReason?.trim()) {
+    throw new ApiError(422, "VALIDATION_ERROR", 'Vui lòng nhập lý do khi đánh dấu "Không quan tâm".');
   }
 
   const now = new Date();

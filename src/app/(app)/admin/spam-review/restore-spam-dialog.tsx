@@ -60,9 +60,9 @@ export function RestoreSpamDialog({
               <Sparkles className="size-5 text-gold" />
             </span>
             <p className="font-condensed text-[10px] tracking-[0.2em] text-gold uppercase">Quản trị</p>
-            <DialogTitle className="text-lg">Khôi phục về Tiếp nhận ({selectedCount})</DialogTitle>
+            <DialogTitle className="text-lg">Khôi phục về Có nhu cầu ({selectedCount})</DialogTitle>
             <DialogDescription>
-              Liên hệ sẽ chuyển về &quot;Tiếp nhận&quot; và vào ngay hàng đợi &quot;Cần chăm sóc lại&quot; — Leader sẽ phân bổ Sale phụ trách sau, giống hệt khi Marketing gửi yêu cầu.
+              Liên hệ sẽ chuyển về &quot;Có nhu cầu&quot; và vào ngay hàng đợi &quot;Cần chăm sóc lại&quot; — Leader sẽ phân bổ Sale phụ trách sau, giống hệt khi Marketing gửi yêu cầu.
             </DialogDescription>
           </DialogHeader>
 

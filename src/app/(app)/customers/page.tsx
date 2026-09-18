@@ -19,6 +19,7 @@ import { getCurrentUser } from "@/lib/auth/dal";
 import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { customerScopeWhere, qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
 import { StageBadge } from "@/app/(app)/customers/stage-badge";
+import { CustomersStageFilter } from "@/app/(app)/customers/customers-stage-filter";
 import { CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 
 const PAGE_SIZE = 20;
@@ -35,7 +36,7 @@ export default async function CustomersPage({
   searchParams: Promise<{ page?: string; stage?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "customers");
+  await requireFeatureAccess(user, "customers");
   const { page: pageParam, stage: stageParam } = await searchParams;
   const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
   const stageFilter =
@@ -49,7 +50,7 @@ export default async function CustomersPage({
 
   const pageHref = (targetPage: number) => `/customers?page=${targetPage}${stageFilter ? `&stage=${encodeURIComponent(stageFilter)}` : ""}`;
 
-  const exportHref = "/api/customers/export";
+  const exportHref = stageFilter ? `/api/customers/export?stage=${encodeURIComponent(stageFilter)}` : "/api/customers/export";
 
   const [totalItems, customers] = await Promise.all([
     prisma.customer.count({ where }),
@@ -81,9 +82,12 @@ export default async function CustomersPage({
         title="Khách hàng"
         description="Khách hàng Đủ tiêu chuẩn (có SĐT), gộp theo Link chuẩn — mỗi khách có thể có nhiều lượt liên hệ."
         action={
-          <Button variant="outline" size="sm" className="h-10 rounded-full" nativeButton={false} render={<a href={exportHref} />}>
-            <FileDown className="size-3.5" /> Xuất Excel
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <CustomersStageFilter value={stageFilter} />
+            <Button variant="outline" size="sm" className="h-10 rounded-full" nativeButton={false} render={<a href={exportHref} />}>
+              <FileDown className="size-3.5" /> Xuất Excel{stageFilter ? " (đã lọc)" : ""}
+            </Button>
+          </div>
         }
       />
 

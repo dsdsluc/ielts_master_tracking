@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canAccessBranch } from "@/lib/interactions/scope";
@@ -18,13 +19,13 @@ const MAX_ROWS = 300;
 const STATUS_TABS = [
   { key: undefined, label: "Tổng liên hệ" },
   { key: STATUS.WAITING, label: "Chờ" },
-  { key: STATUS.PROCESSING, label: "Tiếp nhận" },
+  { key: STATUS.PROCESSING, label: "Có nhu cầu" },
   { key: STATUS.PHONE, label: "Đủ tiêu chuẩn" },
   { key: STATUS.SPAM, label: "Spam" },
 ] as const;
 
 // Router chi tiết cho các ô KPI ở Dashboard tổng ("/") — bấm vào 1 ô (Tổng
-// liên hệ/Đủ tiêu chuẩn/Tiếp nhận/Spam) để xem đúng danh sách liên hệ đứng
+// liên hệ/Đủ tiêu chuẩn/Có nhu cầu/Spam) để xem đúng danh sách liên hệ đứng
 // sau con số đó, thay vì chỉ có mỗi con số. Đây là view QUẢN TRỊ (toàn hệ
 // thống theo scope của actor), khác /leads (công cụ tác nghiệp riêng của
 // Sale) — nên tách route riêng, không dùng lại /leads cho đối tượng khác.
@@ -43,6 +44,7 @@ export default async function InteractionsOverviewPage({
   }>;
 }) {
   const user = await getCurrentUser();
+  await requireFeatureAccess(user, "interactionsOverview");
   const { status, days: daysParam, branch: branchParam, source: sourceParam, fanpage: fanpageParam, adId: adIdParam, from: fromParam, to: toParam } =
     await searchParams;
 

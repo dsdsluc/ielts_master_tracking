@@ -32,8 +32,10 @@ export type PagedInteractions = {
   totalPages: number;
 };
 
-// Nhãn tiếng Việt hiển thị cho Sale <-> mã lưu DB (statusUpdateSchema chỉ
-// chấp nhận đúng 3 mã này — xem SPAM_REASON trong lib/interactions/constants).
+// Gợi ý nhanh cho ô nhập lý do Spam (statusUpdateSchema giờ nhận nhập tay tự
+// do, xem isValidSpamReason trong lib/interactions/constants) — bấm 1 gợi ý
+// chỉ điền sẵn label vào ô nhập, không còn ép chọn đúng 1 trong 3 mã này.
+// Vẫn giữ để tra nhãn hiển thị cho dữ liệu cũ đã lưu bằng mã (spamReasonLabel).
 export const SPAM_REASON_OPTIONS = [
   { code: SPAM_REASON.NO_REPLY, label: "Khách im lặng (đủ số lần chăm sóc theo cấu hình)" },
   { code: SPAM_REASON.NO_NEED, label: "Khách xác nhận không có nhu cầu" },

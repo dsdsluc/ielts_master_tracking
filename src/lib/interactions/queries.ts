@@ -291,14 +291,14 @@ export async function listInteractions(actor: CurrentUser, params: ListInteracti
 }
 
 // Tab "Đủ tiêu chuẩn" ở /leads chỉ cần soi lại các lead MỚI chuyển đủ điều
-// kiện gần đây — khác với Chờ/Tiếp nhận (tự nhiên luôn ít vì lead không nằm
+// kiện gần đây — khác với Chờ/Có nhu cầu (tự nhiên luôn ít vì lead không nằm
 // lâu ở đó), Đủ tiêu chuẩn là trạng thái vĩnh viễn nên tập đầy đủ sẽ phình to
 // dần theo thời gian dùng hệ thống. Xem lịch sử toàn bộ ở /customers.
 const QUALIFIED_QUEUE_WINDOW_DAYS = 30;
 
 /**
  * Snapshot đầy đủ cho trang /leads. Trang này thực hiện search/filter/sort/
- * phân trang ở client cho 3 tab (Chờ/Tiếp nhận/Đủ tiêu chuẩn gần đây), nên một
+ * phân trang ở client cho 3 tab (Chờ/Có nhu cầu/Đủ tiêu chuẩn gần đây), nên một
  * query duy nhất nhẹ hơn việc gọi lại DB sau mỗi thao tác giao diện. Phạm vi
  * chi nhánh và điều kiện loại lead cần chăm sóc lại vẫn dùng chung
  * buildInteractionWhere().
@@ -328,7 +328,7 @@ export async function listOpenInteractions(actor: CurrentUser): Promise<Interact
 const QUEUE_GROUP_LABELS: Record<Exclude<LeadQueueGroup["key"], "recently_closed">, string> = {
   new_waiting: "Mới đang Chờ",
   sla_breaching: "Sắp/đã quá SLA",
-  processing_no_phone: "Tiếp nhận, chưa có SĐT",
+  processing_no_phone: "Có nhu cầu, chưa có SĐT",
 };
 const QUEUE_ORDER = ["new_waiting", "sla_breaching", "processing_no_phone"] as const;
 // Trần an toàn để tránh payload quá lớn — phân trang thật trong mỗi nhóm nằm
@@ -358,7 +358,7 @@ async function computePersonalKpi(actor: CurrentUser): Promise<LeadQueue["person
 }
 
 /**
- * Hàng đợi ưu tiên: mới đang Chờ → sắp/đã quá SLA → Tiếp nhận chưa có SĐT
+ * Hàng đợi ưu tiên: mới đang Chờ → sắp/đã quá SLA → Có nhu cầu chưa có SĐT
  * (đúng thứ tự banner ở trang Liên hệ). Mỗi lead chỉ rơi vào ĐÚNG 1 nhóm —
  * nhóm đầu tiên khớp theo thứ tự trên thắng, để không hiển thị trùng lặp
  * giữa các nhóm. Liên hệ "Cần chăm sóc lại" bị loại ngay từ truy vấn — chỉ
@@ -367,9 +367,9 @@ async function computePersonalKpi(actor: CurrentUser): Promise<LeadQueue["person
  *
  * SLA tính theo TỪNG cơ sở (Branch.slaReceiveMinutes/slaProcessHours, sửa ở
  * /admin/catalog) — không còn 1 mốc chung toàn hệ thống. "Chờ" quá
- * slaReceiveMinutes = chưa ai liên hệ kịp; "Tiếp nhận" quá slaProcessHours =
+ * slaReceiveMinutes = chưa ai liên hệ kịp; "Có nhu cầu" quá slaProcessHours =
  * đã liên hệ nhưng xử lý (xin SĐT) quá lâu. Lưu ý: schema không có mốc "vào
- * Tiếp nhận" riêng, nên dùng createdLeadAt (giờ tạo lead) làm gốc đo cho cả 2
+ * Có nhu cầu" riêng, nên dùng createdLeadAt (giờ tạo lead) làm gốc đo cho cả 2
  * trạng thái — chấp nhận đây là ước lượng, không phải SLA xử lý tuyệt đối chính xác.
  */
 export async function getQueue(actor: CurrentUser): Promise<LeadQueue> {

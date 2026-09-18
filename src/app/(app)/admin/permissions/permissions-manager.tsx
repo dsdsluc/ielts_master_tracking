@@ -9,6 +9,7 @@ import { PermissionsTable } from "@/app/(app)/admin/permissions/permissions-tabl
 import { updateFeaturePermissions } from "@/app/(app)/admin/permissions/actions";
 import {
   PERMISSION_FEATURES,
+  PERMISSION_FEATURE_GROUPS,
   type PermissionFeatureKey,
   type PermissionRow,
   type PermissionActionKey,
@@ -29,13 +30,6 @@ function GroupHeading({ title }: { title: string }) {
     </h2>
   );
 }
-
-// Nhóm feature theo `group` (khớp tên nhóm nav ở lib/nav.ts: Saler/Leader/
-// Marketing) chỉ để hiển thị dễ theo dõi hơn — không ảnh hưởng dữ liệu lưu.
-const FEATURE_GROUPS = Array.from(new Set(PERMISSION_FEATURES.map((f) => f.group))).map((group) => ({
-  group,
-  features: PERMISSION_FEATURES.filter((f) => f.group === group),
-}));
 
 // 1 nút DUY NHẤT cập nhật quyền cho TOÀN BỘ tính năng cùng lúc, thay vì mỗi
 // bảng 1 nút riêng — gửi nguyên cả N dòng (N tính năng x 3 vai trò, mỗi
@@ -81,7 +75,7 @@ export function PermissionsManager({
 
   return (
     <div className="flex flex-col gap-10">
-      {FEATURE_GROUPS.map(({ group, features }) => (
+      {PERMISSION_FEATURE_GROUPS.map(({ group, features }) => (
         <div key={group}>
           <GroupHeading title={group} />
           <div className="flex flex-col gap-8">

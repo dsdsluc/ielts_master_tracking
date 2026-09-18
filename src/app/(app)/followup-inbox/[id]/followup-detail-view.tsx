@@ -61,7 +61,7 @@ export function FollowupDetailView({
 
   async function handleResolve(note: string) {
     await resolveFollowup(detail.interactionId, note);
-    toast.success("Đã đánh dấu chăm sóc lại — liên hệ chuyển sang Tiếp nhận.");
+    toast.success("Đã đánh dấu chăm sóc lại — liên hệ chuyển sang Có nhu cầu.");
     router.refresh();
   }
 

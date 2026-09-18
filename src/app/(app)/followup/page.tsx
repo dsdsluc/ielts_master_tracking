@@ -21,7 +21,7 @@ export default async function FollowupPage({
   searchParams: Promise<{ branch?: string; source?: string; status?: string; stale?: string }>;
 }) {
   const user = await getCurrentUser();
-  await requireFeatureAccess(user.role, "followup");
+  await requireFeatureAccess(user, "followup");
   const { branch, source, status, stale } = await searchParams;
 
   const [branches, sourceRows] = await Promise.all([
