@@ -12,17 +12,19 @@ type TabKey = "role" | "user";
 
 const TAB_DESCRIPTIONS: Record<TabKey, string> = {
   role: "Tick bất kỳ cột nào (Thêm/Sửa/Xóa/Báo cáo) để cấp quyền truy cập trang tương ứng cho CẢ vai trò. Admin luôn có đủ quyền, không cần cấu hình.",
-  user: "Cấp quyền riêng cho ĐÚNG 1 người dùng — dùng khi chỉ muốn mở 1 vài trang cho riêng người đó (vd 1 Saler cụ thể), không phải mở cho cả vai trò. Cộng dồn với quyền theo vai trò ở trên, không thay thế.",
+  user: "Mặc định mỗi người được hiển thị sẵn đúng quyền theo vai trò của họ. Chỉ khi bấm Lưu, lưới hiện tại mới trở thành quyền RIÊNG cho người đó và ĐÈ LÊN quyền theo vai trò (mở thêm hoặc thu hồi bớt) — vai trò ở tab bên kia chỉ là mặc định ban đầu.",
 };
 
 export function PermissionsTabs({
   roleData,
   users,
   userData,
+  overriddenFeatures,
 }: {
   roleData: Record<PermissionFeatureKey, PermissionRow[]>;
   users: PermissionUser[];
   userData: Record<string, UserGrants>;
+  overriddenFeatures: Record<string, PermissionFeatureKey[]>;
 }) {
   const [tab, setTab] = useState<TabKey>("role");
 
@@ -47,7 +49,7 @@ export function PermissionsTabs({
         <PermissionsManager initialData={roleData} />
       </TabsContent>
       <TabsContent value="user">
-        <UserPermissionsManager users={users} initialData={userData} />
+        <UserPermissionsManager users={users} initialData={userData} overriddenFeatures={overriddenFeatures} />
       </TabsContent>
     </Tabs>
   );

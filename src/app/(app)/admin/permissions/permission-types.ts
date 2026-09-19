@@ -75,10 +75,11 @@ export type PermissionRow = {
   canReport: boolean;
 };
 
-// Quyền cấp riêng cho 1 người dùng cụ thể (tab "Theo người dùng") — CỘNG DỒN
-// (OR) với PermissionRow theo vai trò ở trên, xem canAccessFeature() ở
-// lib/auth/feature-access.ts. 1 người có thể có nhiều dòng, mỗi dòng khớp 1
-// feature trong PERMISSION_FEATURES.
+// Quyền cấp riêng cho 1 người dùng cụ thể (tab "Theo người dùng") — ĐÈ LÊN
+// (không cộng dồn) PermissionRow theo vai trò khi đã có dòng riêng cho đúng
+// feature/người đó, xem canAccessFeature() ở lib/auth/feature-access.ts.
+// Chưa có dòng riêng thì vẫn dùng mặc định theo vai trò. 1 người có thể có
+// nhiều dòng, mỗi dòng khớp 1 feature trong PERMISSION_FEATURES.
 export type UserPermissionCell = {
   canCreate: boolean;
   canEdit: boolean;

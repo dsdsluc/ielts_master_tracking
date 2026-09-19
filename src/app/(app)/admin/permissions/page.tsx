@@ -47,21 +47,40 @@ export default async function AdminPermissionsPage() {
     ])
   ) as Record<PermissionFeatureKey, PermissionRow[]>;
 
+  // Tab "Theo người dùng": mỗi feature CHƯA có dòng riêng cho người đó thì
+  // HIỂN THỊ SẴN đúng quyền mặc định theo vai trò của họ (không để trống) —
+  // tránh cảm giác "xung đột"/thiếu quyền giả tạo khi vai trò đã cấp sẵn.
+  // Bấm Lưu sẽ ghi lại TOÀN BỘ lưới hiện tại thành dòng riêng của người đó
+  // (kể cả những ô đang chỉ là kế thừa từ vai trò) — từ đó về sau feature nào
+  // đã có dòng riêng thì dòng đó LÀ NGUỒN DUY NHẤT quyết định, không còn phụ
+  // thuộc vai trò nữa (xem canAccessFeature() ở lib/auth/feature-access.ts).
   const byUserAndFeature = new Map(userFeatureRows.map((r) => [`${r.userEmail}:${r.feature}`, r]));
   const userData: Record<string, UserGrants> = Object.fromEntries(
     users.map((u) => [
       u.email,
       Object.fromEntries(
         PERMISSION_FEATURES.map((feature) => {
-          const row = byUserAndFeature.get(`${u.email}:${feature.key}`);
+          const userRow = byUserAndFeature.get(`${u.email}:${feature.key}`);
+          if (userRow) {
+            return [feature.key, { canCreate: userRow.canCreate, canEdit: userRow.canEdit, canDelete: userRow.canDelete, canReport: userRow.canReport }];
+          }
+          const roleRow = byFeatureAndRole.get(`${feature.key}:${u.role}`);
           return [
             feature.key,
-            row ? { canCreate: row.canCreate, canEdit: row.canEdit, canDelete: row.canDelete, canReport: row.canReport } : EMPTY_PERMISSION_CELL,
+            roleRow
+              ? { canCreate: roleRow.canCreate, canEdit: roleRow.canEdit, canDelete: roleRow.canDelete, canReport: roleRow.canReport }
+              : EMPTY_PERMISSION_CELL,
           ];
         })
       ) as UserGrants,
     ])
   );
 
-  return <PermissionsTabs roleData={roleData} users={users} userData={userData} />;
+  // Feature nào đã có dòng riêng (bất kể true/false) — dùng để UI phân biệt
+  // "đang theo mặc định vai trò" với "đã tuỳ chỉnh riêng cho người này".
+  const overriddenFeatures: Record<string, PermissionFeatureKey[]> = Object.fromEntries(
+    users.map((u) => [u.email, userFeatureRows.filter((r) => r.userEmail === u.email).map((r) => r.feature as PermissionFeatureKey)])
+  );
+
+  return <PermissionsTabs roleData={roleData} users={users} userData={userData} overriddenFeatures={overriddenFeatures} />;
 }

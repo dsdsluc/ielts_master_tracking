@@ -17,9 +17,11 @@ import {
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { requireFeatureAccess } from "@/lib/auth/feature-access";
+import { isLeaderLike } from "@/lib/interactions/scope";
 import { customerScopeWhere, qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
 import { StageBadge } from "@/app/(app)/customers/stage-badge";
-import { CustomersStageFilter } from "@/app/(app)/customers/customers-stage-filter";
+import { CustomerStageQuickEdit } from "@/app/(app)/customers/customer-stage-quick-edit";
+import { CustomersFilterBar } from "@/app/(app)/customers/customers-filter-bar";
 import { CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 
 const PAGE_SIZE = 20;
@@ -33,24 +35,47 @@ function formatDate(date: Date) {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; stage?: string }>;
+  searchParams: Promise<{ page?: string; stage?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   await requireFeatureAccess(user, "customers");
-  const { page: pageParam, stage: stageParam } = await searchParams;
+  const canQuickEditStage = isLeaderLike(user);
+  const { page: pageParam, stage: stageParam, q: qParam } = await searchParams;
   const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
   const stageFilter =
     stageParam === "none" || (stageParam && (CUSTOMER_STAGE_VALUES as readonly string[]).includes(stageParam)) ? stageParam : null;
+  const search = (qParam ?? "").trim();
 
   const where: Prisma.CustomerWhereInput = {
     ...customerScopeWhere(user),
     ...qualifiedCustomerWhere(),
     ...(stageFilter ? { stage: stageFilter === "none" ? null : stageFilter } : {}),
+    // Tìm theo tên khách, SĐT hoặc tên Sale đang phụ trách — cùng nghiệp vụ
+    // cho phép Leader tìm nhanh 1 khách để cập nhật mốc tư vấn ngay tại trang
+    // này, không cần biết trước mã khách (mirror andConditions ở queries.ts).
+    ...(search
+      ? {
+          OR: [
+            { displayName: { contains: search, mode: "insensitive" } },
+            { phoneNormalized: { contains: search, mode: "insensitive" } },
+            { assignedTo: { fullName: { contains: search, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
   };
 
-  const pageHref = (targetPage: number) => `/customers?page=${targetPage}${stageFilter ? `&stage=${encodeURIComponent(stageFilter)}` : ""}`;
+  const queryString = (targetPage: number) => {
+    const params = new URLSearchParams();
+    params.set("page", String(targetPage));
+    if (stageFilter) params.set("stage", stageFilter);
+    if (search) params.set("q", search);
+    return params.toString();
+  };
+  const pageHref = (targetPage: number) => `/customers?${queryString(targetPage)}`;
 
-  const exportHref = stageFilter ? `/api/customers/export?stage=${encodeURIComponent(stageFilter)}` : "/api/customers/export";
+  const exportParams = new URLSearchParams();
+  if (stageFilter) exportParams.set("stage", stageFilter);
+  const exportHref = exportParams.size > 0 ? `/api/customers/export?${exportParams.toString()}` : "/api/customers/export";
 
   const [totalItems, customers] = await Promise.all([
     prisma.customer.count({ where }),
@@ -67,6 +92,10 @@ export default async function CustomersPage({
         firstTouchAt: true,
         lastTouchAt: true,
         stage: true,
+        stageReason: true,
+        appointmentAt: true,
+        caseDeadline: true,
+        needsLeaderSupport: true,
         assignedTo: { select: { fullName: true } },
         _count: { select: { interactions: true } },
       },
@@ -83,7 +112,7 @@ export default async function CustomersPage({
         description="Khách hàng Đủ tiêu chuẩn (có SĐT), gộp theo Link chuẩn — mỗi khách có thể có nhiều lượt liên hệ."
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <CustomersStageFilter value={stageFilter} />
+            <CustomersFilterBar q={search} stage={stageFilter} />
             <Button variant="outline" size="sm" className="h-10 rounded-full" nativeButton={false} render={<a href={exportHref} />}>
               <FileDown className="size-3.5" /> Xuất Excel{stageFilter ? " (đã lọc)" : ""}
             </Button>
@@ -91,14 +120,27 @@ export default async function CustomersPage({
         }
       />
 
-      {stageFilter && (
-        <Link
-          href="/customers"
-          className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
-        >
-          Đang lọc theo mốc: {stageFilter === "none" ? "Chưa gọi" : stageFilter}
-          <X className="size-3.5" />
-        </Link>
+      {(stageFilter || search) && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {stageFilter && (
+            <Link
+              href={search ? `/customers?q=${encodeURIComponent(search)}` : "/customers"}
+              className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
+            >
+              Đang lọc theo mốc: {stageFilter === "none" ? "Chưa gọi" : stageFilter}
+              <X className="size-3.5" />
+            </Link>
+          )}
+          {search && (
+            <Link
+              href={stageFilter ? `/customers?stage=${encodeURIComponent(stageFilter)}` : "/customers"}
+              className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
+            >
+              Đang tìm: “{search}”
+              <X className="size-3.5" />
+            </Link>
+          )}
+        </div>
       )}
 
       {customers.length === 0 ? (
@@ -184,7 +226,19 @@ export default async function CustomersPage({
                     <StatusPill status={c.currentStatusName} />
                   </TableCell>
                   <TableCell className="hidden px-4 text-sm sm:table-cell">
-                    <StageBadge stage={c.stage} assigned={!!c.assignedTo} />
+                    {canQuickEditStage ? (
+                      <CustomerStageQuickEdit
+                        customerKey={c.customerKey}
+                        stage={c.stage}
+                        assigned={!!c.assignedTo}
+                        stageReason={c.stageReason}
+                        appointmentAt={c.appointmentAt}
+                        caseDeadline={c.caseDeadline}
+                        needsLeaderSupport={c.needsLeaderSupport}
+                      />
+                    ) : (
+                      <StageBadge stage={c.stage} assigned={!!c.assignedTo} />
+                    )}
                     {c.assignedTo && <p className="mt-1 truncate text-xs text-muted-foreground" title={c.assignedTo.fullName}>{c.assignedTo.fullName}</p>}
                   </TableCell>
                   <TableCell className="hidden px-4 text-center font-mono text-sm text-muted-foreground sm:table-cell">
