@@ -110,18 +110,17 @@ export function FollowupView({
   }
 
   async function handlePush(suggestion: string) {
-    const { pushed, skipped } = await apiFetch<{ pushed: number; skipped: number }>(
+    const { pushed, skipped, autoSpammed } = await apiFetch<{ pushed: number; skipped: number; autoSpammed: number }>(
       "/api/interactions/followup/push",
       {
         method: "POST",
         body: JSON.stringify({ interactionIds: [...selected], suggestion: suggestion || undefined }),
       }
     );
-    toast.success(
-      skipped > 0
-        ? `Đã gửi ${pushed} liên hệ — bỏ qua ${skipped} (đã đổi trạng thái/đã gửi yêu cầu trước đó).`
-        : `Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ — Leader sẽ phân bổ Sale phụ trách.`
-    );
+    const parts = [`Đã gửi yêu cầu chăm sóc lại cho ${pushed} liên hệ.`];
+    if (autoSpammed > 0) parts.push(`${autoSpammed} liên hệ đã đủ số lần chăm sóc lại tối đa nên tự động chuyển Spam.`);
+    if (skipped > 0) parts.push(`Bỏ qua ${skipped} (đã đổi trạng thái/đã gửi yêu cầu trước đó).`);
+    toast.success(parts.join(" "));
     setSelected(new Set());
     router.refresh();
   }

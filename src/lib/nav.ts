@@ -18,6 +18,7 @@ import {
   ListPlus,
   MessageCircleOff,
   CalendarRange,
+  ClipboardList,
 } from "lucide-react";
 import { ROLES } from "@/lib/interactions/constants";
 import { PERMISSION_FEATURES } from "@/app/(app)/admin/permissions/permission-types";
@@ -81,6 +82,7 @@ export const navGroups: NavGroup[] = [
     label: "Saler",
     items: [
       { title: "Dashboard Sale", href: "/dashboard-sale", icon: Gauge },
+      { title: "Báo cáo cuối ngày", href: "/daily-report", icon: ClipboardList },
       { title: "Liên hệ", href: "/leads", icon: Inbox },
       { title: "Workspace của tôi", href: "/workspace", icon: Briefcase },
       { title: "Cần chăm sóc lại", href: "/followup-inbox", icon: Sparkles },

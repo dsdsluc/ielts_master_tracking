@@ -11,18 +11,45 @@ export type AssignableCustomer = {
   phoneNormalized: string | null;
   firstTouchAt: string;
   lastTouchAt: string;
+  sourceName: string | null;
+  consultantName: string | null;
 };
 
 /** Customer đã Đủ tiêu chuẩn nhưng CHƯA có Sale nào phụ trách — nguồn cho
  * /customer-assignment. Không lọc theo cơ sở (xem quyết định tách hẳn khỏi
- * Interaction) — chỉ Leader/Admin gọi trang này, vốn đã thấy toàn công ty. */
+ * Interaction) — chỉ Leader/Admin gọi trang này, vốn đã thấy toàn công ty.
+ * "Nguồn" và "Tư vấn viên" chỉ mang tính THAM KHẢO cho Leader ra quyết định
+ * phân bổ — lấy từ Interaction ĐỦ TIÊU CHUẨN gần nhất (không phải Customer,
+ * Customer.assignedToEmail ở đây luôn null theo định nghĩa của trang này) —
+ * "Tư vấn viên" là Sale đã gọi khách đạt mốc này, KHÁC với Sale sẽ được giao
+ * tư vấn ghi danh tiếp theo. */
 export async function getAssignableCustomers(): Promise<AssignableCustomer[]> {
   const rows = await prisma.customer.findMany({
     where: { currentStatusName: STATUS.PHONE, assignedToEmail: null },
     orderBy: { firstTouchAt: "asc" },
-    select: { customerKey: true, displayName: true, phoneNormalized: true, firstTouchAt: true, lastTouchAt: true },
+    select: {
+      customerKey: true,
+      displayName: true,
+      phoneNormalized: true,
+      firstTouchAt: true,
+      lastTouchAt: true,
+      interactions: {
+        where: { statusName: STATUS.PHONE },
+        orderBy: { createdLeadAt: "desc" },
+        take: 1,
+        select: { sourceName: true, assignedSale: { select: { fullName: true } } },
+      },
+    },
   });
-  return rows.map((r) => ({ ...r, firstTouchAt: r.firstTouchAt.toISOString(), lastTouchAt: r.lastTouchAt.toISOString() }));
+  return rows.map((r) => ({
+    customerKey: r.customerKey,
+    displayName: r.displayName,
+    phoneNormalized: r.phoneNormalized,
+    firstTouchAt: r.firstTouchAt.toISOString(),
+    lastTouchAt: r.lastTouchAt.toISOString(),
+    sourceName: r.interactions[0]?.sourceName ?? null,
+    consultantName: r.interactions[0]?.assignedSale?.fullName ?? null,
+  }));
 }
 
 export type CustomerListItem = {

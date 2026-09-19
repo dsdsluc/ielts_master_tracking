@@ -26,6 +26,7 @@ export const PERMISSION_FEATURES = [
   { key: "dashboard", label: "Dashboard", href: "/", group: "Tổng quan" },
   { key: "interactionsOverview", label: "Chi tiết theo trạng thái (Dashboard)", href: "/interactions-overview", group: "Tổng quan" },
   { key: "dashboardSale", label: "Dashboard Sale", href: "/dashboard-sale", group: "Saler" },
+  { key: "dailyReport", label: "Báo cáo cuối ngày", href: "/daily-report", group: "Saler" },
   { key: "interactions", label: "Liên hệ", href: "/leads", group: "Saler" },
   { key: "workspace", label: "Workspace của tôi", href: "/workspace", group: "Saler" },
   { key: "followupInbox", label: "Cần chăm sóc lại", href: "/followup-inbox", group: "Saler" },

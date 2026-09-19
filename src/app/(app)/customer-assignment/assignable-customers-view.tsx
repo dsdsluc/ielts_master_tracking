@@ -123,6 +123,8 @@ export function AssignableCustomersView({ customers }: { customers: AssignableCu
               )}
               <TableHead className="px-5 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase">Khách hàng</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase sm:table-cell">SĐT</TableHead>
+              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Nguồn</TableHead>
+              <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase md:table-cell">Tư vấn viên</TableHead>
               <TableHead className="hidden px-4 font-condensed text-[10px] tracking-wider text-muted-foreground uppercase lg:table-cell">Lần chạm đầu</TableHead>
               <TableHead className="w-40 pr-5" />
             </TableRow>
@@ -156,6 +158,8 @@ export function AssignableCustomersView({ customers }: { customers: AssignableCu
                       <span className="text-muted-foreground">Chưa có</span>
                     )}
                   </TableCell>
+                  <TableCell className="hidden px-4 py-3.5 text-sm text-muted-foreground md:table-cell">{item.sourceName ?? "—"}</TableCell>
+                  <TableCell className="hidden px-4 py-3.5 text-sm text-muted-foreground md:table-cell">{item.consultantName ?? "Chưa gán"}</TableCell>
                   <TableCell className="hidden px-4 py-3.5 text-xs text-muted-foreground lg:table-cell">{formatDateTime(item.firstTouchAt)}</TableCell>
                   <TableCell className="py-3.5 pr-5 pl-1 text-right" onClick={(e) => e.stopPropagation()}>
                     {!selecting && (

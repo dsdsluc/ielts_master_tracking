@@ -29,6 +29,7 @@ import { spamReasonLabel } from "@/app/(app)/admin/spam-reason";
 import type { CurrentUser } from "@/lib/auth/dal";
 import type { CreateLeadInput, LeadInfoInput, StatusUpdateInput } from "@/lib/interactions/validation";
 import { getInteractionDetail } from "@/lib/interactions/queries";
+import { getMaxFollowupBeforeSpam } from "@/lib/interactions/settings";
 
 // ---------------------------------------------------------------------------
 // Thông báo chủ động qua email khi liên hệ đổi trạng thái (bổ sung cho
@@ -452,13 +453,17 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
   const detail = await prisma.$transaction(async (tx) => {
     // Unchecked (không phải Checked) vì statusName backing quan hệ Status —
     // updateMany không cho set field FK-quan-hệ qua input Checked thông thường.
+    // KHÔNG gán customerKey mới (customerKey !== lead.customerKey — lần đầu
+    // Đủ tiêu chuẩn) vào đây — dòng Customer tương ứng CHƯA tồn tại lúc này,
+    // gán ngay sẽ vi phạm khoá ngoại interactions_customer_key_fkey (Postgres
+    // kiểm tra FK ngay khi UPDATE chạy xong, không đợi hết transaction). Phải
+    // tạo Customer trước (xem dưới), rồi mới gán customerKey ở update riêng.
     const data: Prisma.InteractionUncheckedUpdateManyInput = {
       version: { increment: 1 },
       statusName: input.status,
       updatedByEmail: actor.email,
       updatedAt: now,
       ...(actor.role === ROLES.SALES ? { assignedSaleEmail: actor.email } : {}),
-      ...(customerKey !== lead.customerKey ? { customerKey } : {}),
     };
 
     if (afterKey === "WAITING" || afterKey === "PROCESSING") {
@@ -523,6 +528,11 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
           phoneNormalized: phoneNorm || null,
         },
       });
+      // Customer vừa tồn tại (upsert ở trên) — giờ mới an toàn gán customerKey
+      // mới vào Interaction nếu đây là lần đầu (xem comment ở khai báo `data`).
+      if (customerKey !== lead.customerKey) {
+        await tx.interaction.update({ where: { interactionId }, data: { customerKey } });
+      }
     } else if (lead.customerKey) {
       // SPAM/Có nhu cầu: chỉ cập nhật nếu ĐÃ có Customer từ trước (từng đủ
       // tiêu chuẩn) — updateMany thay vì update để không throw khi liên hệ
@@ -576,10 +586,18 @@ export async function updateStatus(actor: CurrentUser, interactionId: string, in
 // yêu cầu chăm sóc lại cho đúng liên hệ này qua suốt vòng đời của nó (không còn
 // đếm số lần Sale bấm "đã xử lý" như trước — xem resolveFollowup() bên dưới,
 // giờ luôn buộc tiến triển thật nên không còn khái niệm "bấm cho có" để đếm).
+//
+// Liên hệ đã bị gửi đủ MAX_FOLLOWUP_BEFORE_SPAM lần (mặc định 3, cấu hình ở
+// /admin/monitoring) thì KHÔNG gửi thêm lần nữa — tự động chuyển thẳng sang
+// Spam (qua updateStatus() để đi đúng 1 luồng đóng Spam duy nhất, giữ nguyên
+// mọi ràng buộc/tác dụng phụ của nó, vd bắt buộc có link hội thoại). Tránh
+// vòng lặp chăm sóc lại vô thời hạn (4, 5 lần...) mà không có điểm dừng.
 // ---------------------------------------------------------------------------
 export async function pushFollowup(actor: CurrentUser, interactionIds: string[], suggestion?: string) {
+  const maxBeforeSpam = await getMaxFollowupBeforeSpam();
   let pushed = 0;
   let skipped = 0;
+  let autoSpammed = 0;
   const now = new Date();
 
   for (const interactionId of interactionIds) {
@@ -591,6 +609,21 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
     const key = canonicalStatusKey(lead.statusName);
     if ((key !== "WAITING" && key !== "PROCESSING") || lead.needsFollowup) {
       skipped++;
+      continue;
+    }
+    if (lead.followupResolvedCount >= maxBeforeSpam) {
+      try {
+        await updateStatus(actor, interactionId, {
+          status: STATUS.SPAM,
+          spamReason: `Đã gửi yêu cầu chăm sóc lại đủ ${maxBeforeSpam} lần, không còn phản hồi.`,
+          expectedVersion: lead.version,
+        });
+        autoSpammed++;
+      } catch {
+        // Không đóng Spam được (vd thiếu link hội thoại) — bỏ qua, để Marketing
+        // tự xử lý thủ công thay vì chặn cả batch vì 1 liên hệ lỗi.
+        skipped++;
+      }
       continue;
     }
     await prisma.$transaction(async (tx) => {
@@ -611,7 +644,7 @@ export async function pushFollowup(actor: CurrentUser, interactionIds: string[],
     pushed++;
   }
 
-  return { pushed, skipped };
+  return { pushed, skipped, autoSpammed };
 }
 
 // ---------------------------------------------------------------------------

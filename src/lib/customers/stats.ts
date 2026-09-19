@@ -83,9 +83,10 @@ export type TeamPersonalKpi = {
 };
 
 /** Bảng chỉ tiêu từng Sale cho Leader — chỉ Leader/Admin gọi, Customer không
- * scope theo cơ sở nên luôn tính trên toàn công ty. */
-export async function computeTeamPersonalKpi(): Promise<TeamPersonalKpi> {
-  const month = currentKpiMonth();
+ * scope theo cơ sở nên luôn tính trên toàn công ty. Nhận `month` tuỳ chọn để
+ * tính lại cho 1 THÁNG ĐÃ QUA (vd. email tổng kết KPI cuối tháng ở
+ * /api/cron/kpi-month-summary) — mặc định tháng hiện tại như trước giờ. */
+export async function computeTeamPersonalKpi(month: string = currentKpiMonth()): Promise<TeamPersonalKpi> {
   const { start, end } = monthRange(month);
 
   const [sales, companyTarget, assignedGroups, enrolledGroups] = await Promise.all([
