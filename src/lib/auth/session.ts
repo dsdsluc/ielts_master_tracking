@@ -1,6 +1,6 @@
 import "server-only";
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 const SESSION_COOKIE = "session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -40,9 +40,18 @@ async function decrypt(token: string | undefined): Promise<SessionPayload | null
 export async function createSession(payload: SessionPayload) {
   const token = await encrypt(payload);
   const cookieStore = await cookies();
+  // Không dùng NODE_ENV === "production" để quyết định cờ Secure — build
+  // production (next start) LUÔN có NODE_ENV=production kể cả khi tạm chạy
+  // qua HTTP thô (vd VPS chưa có domain/SSL, chỉ có Nginx proxy HTTP). Cookie
+  // Secure bị trình duyệt âm thầm từ chối lưu lại trên kết nối HTTP, khiến
+  // login xong nhưng mọi trang sau đó không thấy session, tự đá về lại
+  // /login. Dò đúng giao thức thực tế qua "x-forwarded-proto" (Vercel edge và
+  // Nginx reverse proxy trong dự án này đều tự gắn header này) — tự động
+  // chuyển sang Secure khi bật HTTPS sau này, không cần sửa code lại.
+  const proto = (await headers()).get("x-forwarded-proto");
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: proto === "https",
     expires: new Date(Date.now() + SESSION_DURATION_MS),
     sameSite: "lax",
     path: "/",
