@@ -8,7 +8,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { canAccessFeature, requireFeatureAccess } from "@/lib/auth/feature-access";
-import { INTERACTION_ACTIVITY, ROLES, STATUS } from "@/lib/interactions/constants";
+import { INTERACTION_ACTIVITY, ROLES, SALE_LIKE_ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { computeFunnelSummary, CUSTOMER_STAGE_ORDER } from "@/lib/customers/stats";
 import { qualifiedCustomerWhere } from "@/app/(app)/customers/customer-scope";
@@ -96,7 +96,7 @@ async function computeSalePerformance(
 ): Promise<SalePerfRow[]> {
   const createdWindow = { gte: windowStart };
   const [sales, createdGroups, closedGroups, touchGroups, qualifyRows] = await Promise.all([
-    prisma.user.findMany({ where: { role: ROLES.SALES, active: true }, select: { email: true, fullName: true, branchCode: true } }),
+    prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES }, active: true }, select: { email: true, fullName: true, branchCode: true } }),
     prisma.interaction.groupBy({
       by: ["createdByEmail"],
       where: { ...scope, activeFlag: true, createdLeadAt: createdWindow },

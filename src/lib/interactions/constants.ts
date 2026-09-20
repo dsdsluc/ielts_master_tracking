@@ -9,6 +9,14 @@ export const ROLES = {
   ADMIN: "Admin",
 } as const;
 
+// Leader trong tổ chức này CŨNG tự tay tư vấn khách như 1 Sale (có Dashboard
+// Sale, Workspace riêng, được giao khách...) — mọi báo cáo/thống kê HIỆU SUẤT
+// THEO SALE (đã chốt, chỉ tiêu, khối lượng đang cầm, gợi ý phân bổ...) phải
+// tính luôn cả Leader vào danh sách, không chỉ role Saler, nếu không sẽ mất
+// hẳn số liệu của Leader dù họ có hoạt động thật. Dùng hằng số này thay vì gõ
+// tay [ROLES.SALES, ROLES.LEADER] rải rác để không sót chỗ nào lần sau.
+export const SALE_LIKE_ROLES: string[] = [ROLES.SALES, ROLES.LEADER];
+
 // PROCESSING = "Có nhu cầu" — Sale ĐÃ nhắn tin qua lại thật với khách (không
 // chỉ vì có sẵn link cuộc hội thoại) nhưng CHƯA xin được SĐT. Tên cũ "Tiếp
 // nhận" gây hiểu lầm là 1 bước tự động ngay khi có link hội thoại — SAI, đây
@@ -155,6 +163,7 @@ export const SYSTEM_LOG_ACTION = {
   ALLOCATION_SUGGESTION_DIGEST: "ALLOCATION_SUGGESTION_DIGEST",
   KPI_MONTH_SETUP_REMINDER: "KPI_MONTH_SETUP_REMINDER",
   KPI_MONTH_SUMMARY: "KPI_MONTH_SUMMARY",
+  DAILY_REPORT_EMAIL: "DAILY_REPORT_EMAIL",
 } as const;
 
 // Phễu tư vấn ghi danh (mốc xa nhất Sale đã đạt được với 1 Customer). null

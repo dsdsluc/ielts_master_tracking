@@ -7,7 +7,7 @@ import "server-only";
 // mẫu số tăng lên). Tỷ lệ THẤP hơn khoảng mục tiêu nghĩa là Sale đang gặp khó
 // khăn — Leader nên hỗ trợ/kèm cặp trước, KHÔNG giao thêm việc lúc này.
 import { prisma } from "@/lib/prisma";
-import { ROLES, CUSTOMER_STAGE } from "@/lib/interactions/constants";
+import { SALE_LIKE_ROLES, CUSTOMER_STAGE } from "@/lib/interactions/constants";
 
 export const ALLOCATION_TARGET_MIN = 50;
 export const ALLOCATION_TARGET_MAX = 60;
@@ -53,7 +53,7 @@ const KIND_PRIORITY: Record<AllocationSuggestionKind, number> = { increase: 0, s
  * kỳ. Sắp increase/support lên đầu để Leader thấy ngay ai cần xử lý. */
 export async function getSaleAllocationSuggestions(): Promise<SaleAllocationSuggestion[]> {
   const [sales, assignedGroups, enrolledGroups] = await Promise.all([
-    prisma.user.findMany({ where: { role: ROLES.SALES, active: true }, select: { email: true, fullName: true } }),
+    prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES }, active: true }, select: { email: true, fullName: true } }),
     prisma.customer.groupBy({ by: ["assignedToEmail"], where: { assignedToEmail: { not: null } }, _count: { _all: true } }),
     prisma.customer.groupBy({
       by: ["assignedToEmail"],

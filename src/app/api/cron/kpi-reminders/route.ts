@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ROLES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
+import { SALE_LIKE_ROLES, SYSTEM_LOG_ACTION } from "@/lib/interactions/constants";
 import { computeSalePersonalKpi } from "@/lib/customers/stats";
 import { logSystemAction } from "@/lib/interactions/audit";
 import { sendEmail, appLink, emailEnvelope } from "@/lib/email";
@@ -23,7 +23,7 @@ function isAuthorized(request: NextRequest): boolean {
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) return new Response("Unauthorized", { status: 401 });
 
-  const sales = await prisma.user.findMany({ where: { role: ROLES.SALES, active: true }, select: { email: true, fullName: true } });
+  const sales = await prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES }, active: true }, select: { email: true, fullName: true } });
 
   let sent = 0;
   for (const sale of sales) {

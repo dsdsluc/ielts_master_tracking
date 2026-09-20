@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ROLES, STATUS, CUSTOMER_STAGE } from "@/lib/interactions/constants";
+import { ROLES, SALE_LIKE_ROLES, STATUS, CUSTOMER_STAGE } from "@/lib/interactions/constants";
 import { isLeaderLike } from "@/lib/interactions/scope";
 import { Errors } from "@/lib/interactions/errors";
 import { customerDetailInclude, toCustomerDetail, type CustomerDetail } from "@/lib/customers/serialize";
@@ -114,7 +114,7 @@ const CLOSED_STAGES: readonly string[] = [CUSTOMER_STAGE.ENROLLED, CUSTOMER_STAG
  * NULL (chưa gọi) lại phải được TÍNH vào tải. */
 export async function getSaleWorkloads(): Promise<SaleWorkload[]> {
   const [sales, assigned] = await Promise.all([
-    prisma.user.findMany({ where: { role: ROLES.SALES }, select: { email: true, fullName: true, active: true } }),
+    prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES } }, select: { email: true, fullName: true, active: true } }),
     prisma.customer.findMany({
       where: { assignedToEmail: { not: null } },
       select: { assignedToEmail: true, stage: true, needsLeaderSupport: true, appointmentAt: true, caseDeadline: true },

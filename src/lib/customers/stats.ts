@@ -1,7 +1,7 @@
 // Chỉ tiêu tư vấn ghi danh theo tháng — tách hẳn khỏi Interaction, chỉ dựa
 // trên Customer.assignedToEmail/enrolledAt.
 import { prisma } from "@/lib/prisma";
-import { ROLES, CUSTOMER_STAGE } from "@/lib/interactions/constants";
+import { SALE_LIKE_ROLES, CUSTOMER_STAGE } from "@/lib/interactions/constants";
 import { currentKpiMonth, getMonthlyKpiTarget } from "@/lib/interactions/settings";
 
 export type KpiPeriod = { target: number; achieved: number };
@@ -90,7 +90,7 @@ export async function computeTeamPersonalKpi(month: string = currentKpiMonth()):
   const { start, end } = monthRange(month);
 
   const [sales, companyTarget, assignedGroups, enrolledGroups] = await Promise.all([
-    prisma.user.findMany({ where: { role: ROLES.SALES, active: true }, select: { email: true, fullName: true } }),
+    prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES }, active: true }, select: { email: true, fullName: true } }),
     getMonthlyKpiTarget(month),
     prisma.customer.groupBy({ by: ["assignedToEmail"], where: { assignedAt: { gte: start, lt: end }, assignedToEmail: { not: null } }, _count: { _all: true } }),
     prisma.customer.groupBy({ by: ["assignedToEmail"], where: { enrolledAt: { gte: start, lt: end }, assignedToEmail: { not: null } }, _count: { _all: true } }),

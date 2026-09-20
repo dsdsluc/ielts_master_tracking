@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { requireFeatureAccess } from "@/lib/auth/feature-access";
 import { isLeaderLike } from "@/lib/interactions/scope";
-import { ROLES, STATUS, SYSTEM_LOG_ACTION, CUSTOMER_STAGE, CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
+import { SALE_LIKE_ROLES, STATUS, SYSTEM_LOG_ACTION, CUSTOMER_STAGE, CUSTOMER_STAGE_VALUES } from "@/lib/interactions/constants";
 import { DailyReportSalePicker } from "@/app/(app)/daily-report/daily-report-sale-picker";
 import { CopyReportButton } from "@/app/(app)/daily-report/copy-report-button";
 
@@ -44,7 +44,7 @@ export default async function DailyReportPage({
 
   const sales = canViewOthers
     ? await prisma.user.findMany({
-        where: { role: ROLES.SALES, active: true },
+        where: { role: { in: SALE_LIKE_ROLES }, active: true },
         select: { email: true, fullName: true },
         orderBy: { fullName: "asc" },
       })

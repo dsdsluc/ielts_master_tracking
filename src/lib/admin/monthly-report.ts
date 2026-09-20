@@ -8,7 +8,7 @@ import "server-only";
 // không có khái niệm "chốt số liệu" như /page-report (báo cáo này chỉ để XEM
 // lại, không ai cần đóng băng số của quá khứ).
 import { prisma } from "@/lib/prisma";
-import { ROLES, STATUS, CUSTOMER_STAGE, EXTERNAL_LEAD_FANPAGE } from "@/lib/interactions/constants";
+import { SALE_LIKE_ROLES, STATUS, CUSTOMER_STAGE, EXTERNAL_LEAD_FANPAGE } from "@/lib/interactions/constants";
 import { getMonthlyKpiTarget } from "@/lib/interactions/settings";
 import { monthRange } from "@/lib/customers/stats";
 import { computeFollowupStats, groupBySaler, type FollowupStatRow, type FollowupStats, type FollowupSalerSummary } from "@/app/(app)/followup-tracking/stats";
@@ -177,7 +177,7 @@ async function computeSalePerformance(dayStart: Date, dayEnd: Date): Promise<Sal
       where: { activeFlag: true, createdLeadAt: { gte: dayStart, lt: dayEnd } },
       _count: { _all: true },
     }),
-    prisma.user.findMany({ where: { role: ROLES.SALES }, select: { email: true, fullName: true } }),
+    prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES } }, select: { email: true, fullName: true } }),
   ]);
   const nameByEmail = new Map(sales.map((s) => [s.email, s.fullName]));
   const byEmail = new Map<string, { created: number; qualified: number }>();
@@ -303,7 +303,7 @@ export async function getSaleActivityDetail(month: string): Promise<SaleActivity
   const { start: dayStart, end: dayEnd } = monthRange(month);
 
   const [sales, leadRows, stageRows] = await Promise.all([
-    prisma.user.findMany({ where: { role: ROLES.SALES }, select: { email: true, fullName: true }, orderBy: { fullName: "asc" } }),
+    prisma.user.findMany({ where: { role: { in: SALE_LIKE_ROLES } }, select: { email: true, fullName: true }, orderBy: { fullName: "asc" } }),
     prisma.interaction.groupBy({
       by: ["createdByEmail", "statusName"],
       where: { activeFlag: true, createdLeadAt: { gte: dayStart, lt: dayEnd } },

@@ -29,6 +29,7 @@ export const LOG_ACTION_LABELS: Record<string, string> = {
   ALLOCATION_SUGGESTION_DIGEST: "Email: gợi ý phân bổ khách hàng",
   KPI_MONTH_SETUP_REMINDER: "Email: nhắc Admin cấu hình KPI tháng mới",
   KPI_MONTH_SUMMARY: "Email: tổng kết KPI cuối tháng",
+  DAILY_REPORT_EMAIL: "Email: báo cáo nhanh hằng ngày cho Admin",
 };
 
 export function actionLabel(action: string) {
@@ -70,6 +71,7 @@ export const ACTION_CATEGORY: Record<string, LogCategoryKey> = {
   ALLOCATION_SUGGESTION_DIGEST: "student",
   KPI_MONTH_SETUP_REMINDER: "student",
   KPI_MONTH_SUMMARY: "student",
+  DAILY_REPORT_EMAIL: "student",
   FLAG_SLA_BREACH: "sla",
   SLA_BREACH_DIGEST: "sla",
   DELETE_SPAM_INTERACTION: "lead",

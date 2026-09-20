@@ -13,16 +13,22 @@ import { fetchOpenInteractions, getCachedOpenInteractions, invalidateOpenInterac
 import { STATUS } from "@/lib/interactions/constants";
 import type { InteractionListItem } from "@/app/(app)/leads/types";
 
-type TabKey = "waiting" | "in_progress" | "qualified";
+type TabKey = "all" | "waiting" | "in_progress" | "qualified";
 
 const PAGE_SIZE = 20;
 const DEFAULT_SORT: LeadsSort = { key: "createdAt", direction: "desc" };
-const TAB_STATUS: Record<TabKey, string> = {
+// "all" cố tình KHÔNG có trong map này — không lọc theo statusName, xử lý
+// riêng ở tabItems/exportHref (xem bên dưới).
+const TAB_STATUS: Partial<Record<TabKey, string>> = {
   waiting: STATUS.WAITING,
   in_progress: STATUS.PROCESSING,
   qualified: STATUS.PHONE,
 };
 const TABS: { key: TabKey; label: string }[] = [
+  // Mặc định "Tất cả" — Sale vừa tạo liên hệ mới xong (Chờ/Có nhu cầu/Đủ tiêu
+  // chuẩn tuỳ SĐT có sẵn hay không) thấy được ngay, không phải đoán đúng tab
+  // nào rồi tự chuyển qua mới thấy liên hệ mình vừa tạo.
+  { key: "all", label: "Tất cả" },
   { key: "waiting", label: "Chờ" },
   { key: "in_progress", label: "Có nhu cầu" },
   // Chỉ gồm lead Đủ tiêu chuẩn GẦN ĐÂY (xem QUALIFIED_QUEUE_WINDOW_DAYS ở
@@ -91,7 +97,7 @@ export function LeadsQueueView({ options, currentUserEmail }: {
   currentUserEmail: string;
 }) {
   const cachedAtMount = useMemo(() => getCachedOpenInteractions(currentUserEmail), [currentUserEmail]);
-  const [tab, setTab] = useState<TabKey>("waiting");
+  const [tab, setTab] = useState<TabKey>("all");
   const [allItems, setAllItems] = useState<InteractionListItem[]>(cachedAtMount ?? []);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(!cachedAtMount);
@@ -125,7 +131,7 @@ export function LeadsQueueView({ options, currentUserEmail }: {
   }, [load]);
 
   const tabItems = useMemo(
-    () => allItems.filter((item) => item.status === TAB_STATUS[tab]),
+    () => (tab === "all" ? allItems : allItems.filter((item) => item.status === TAB_STATUS[tab])),
     [allItems, tab],
   );
   const isSample = !loading && !error && tabItems.length === 0;
@@ -152,7 +158,9 @@ export function LeadsQueueView({ options, currentUserEmail }: {
   function resetFilters() { setSearch(""); setBranch("all"); setSort(DEFAULT_SORT); setPage(1); }
   function refreshSnapshot() { invalidateOpenInteractionsCache(); void load(true); }
   function exportHref(): string {
-    const query = new URLSearchParams({ status: TAB_STATUS[tab] });
+    const query = new URLSearchParams();
+    const statusValue = TAB_STATUS[tab];
+    if (statusValue) query.set("status", statusValue);
     if (branch !== "all") query.set("branch", branch);
     if (search.trim()) query.set("search", search.trim());
     return `/api/interactions/export?${query.toString()}`;
@@ -215,5 +223,5 @@ export function LeadsQueueView({ options, currentUserEmail }: {
 }
 
 function samplesForTab(items: InteractionListItem[], tab: TabKey): InteractionListItem[] {
-  return items.filter((item) => item.status === TAB_STATUS[tab]);
+  return tab === "all" ? items : items.filter((item) => item.status === TAB_STATUS[tab]);
 }

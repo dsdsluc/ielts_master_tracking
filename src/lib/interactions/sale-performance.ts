@@ -1,7 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ROLES, STATUS } from "@/lib/interactions/constants";
+import { SALE_LIKE_ROLES, STATUS } from "@/lib/interactions/constants";
 import { branchScopeWhere } from "@/lib/interactions/queries";
 import { canViewAllBranches } from "@/lib/interactions/scope";
 import type { CurrentUser } from "@/lib/auth/dal";
@@ -34,7 +34,7 @@ export async function computeSalePerformance(actor: CurrentUser, windowDays: num
   windowStart.setDate(windowStart.getDate() - windowDays);
   windowStart.setHours(0, 0, 0, 0);
 
-  const salesWhere: Prisma.UserWhereInput = { role: ROLES.SALES, active: true };
+  const salesWhere: Prisma.UserWhereInput = { role: { in: SALE_LIKE_ROLES }, active: true };
   if (!canViewAllBranches(actor)) {
     salesWhere.branchCode = actor.branchCode ?? "__NONE__";
   }
