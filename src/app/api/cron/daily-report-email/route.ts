@@ -28,7 +28,9 @@ function summaryListHtml(s: DailySummary): string {
 </ul>`;
 }
 
-// Chạy hằng ngày lúc 7h sáng giờ VN (xem vercel.json) — gửi 1 email "Báo cáo
+// Chạy hằng ngày lúc 19h (7h tối) giờ VN — chốt số liệu gần cuối ngày làm
+// việc. CHỈ chạy qua crontab hệ thống trên VPS (không đăng ký ở vercel.json,
+// cố tình — cron này không cần chạy trên Vercel), gửi 1 email "Báo cáo
 // nhanh" duy nhất cho TOÀN BỘ Admin, gồm 2 phần: (1) số liệu gộp TOÀN HỆ
 // THỐNG, (2) số liệu riêng của TỪNG Sale — Leader trong tổ chức này cũng tự
 // tay tư vấn khách nên được tính chung vào phần (2) như 1 Sale bình thường
